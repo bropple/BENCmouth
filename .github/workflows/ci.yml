@@ -91,6 +91,15 @@ jobs:
           make lib OPT="-O2 -Werror -DBM_WITH_MARKUP=0"
           make clean
 
+      # The dictionary is optional, so its build has to stay clean too - and it
+      # is the only configuration that exercises bm_dict.c's search at all.
+      - name: Build and test with CMUdict
+        run: |
+          make clean
+          make dict
+          make test OPT="-O2 -DBM_WITH_DICT=1"
+          make clean
+
       - name: Build at -O0 with sanitizers
         run: |
           make clean

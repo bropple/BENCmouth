@@ -182,7 +182,13 @@ static const bm_phoneme BM_PHONEMES[] = {
             AV_VSTOP,  0.0f,  0.0f, 45.0f, 49.0f, 39.0f,  0.0f)
 };
 
-#define BM_PHONEME_COUNT ((int)(sizeof BM_PHONEMES / sizeof BM_PHONEMES[0]))
+#define BM_PHONEME_TABLE_SIZE ((int)(sizeof BM_PHONEMES / sizeof BM_PHONEMES[0]))
+
+/* Keeps the header's constant honest. If a phoneme is added or removed, this
+ * fails the build and points straight at BM_PHONEME_COUNT - which anything
+ * holding stored phoneme indices, notably the compiled dictionary, depends on. */
+typedef char bm_phoneme_count_matches_table[
+    (BM_PHONEME_TABLE_SIZE == BM_PHONEME_COUNT) ? 1 : -1];
 
 /* ------------------------------------------------------------------ */
 
@@ -212,7 +218,7 @@ const bm_phoneme *bm_phoneme_lookup(const char *name, size_t len)
     }
     if (len == 0) return 0;
 
-    for (i = 0; i < BM_PHONEME_COUNT; i++) {
+    for (i = 0; i < BM_PHONEME_TABLE_SIZE; i++) {
         if (name_matches(BM_PHONEMES[i].name, name, len)) return &BM_PHONEMES[i];
     }
     return 0;
@@ -225,11 +231,11 @@ const bm_phoneme *bm_phoneme_silence(void)
 
 int bm_phoneme_count(void)
 {
-    return BM_PHONEME_COUNT;
+    return BM_PHONEME_TABLE_SIZE;
 }
 
 const bm_phoneme *bm_phoneme_at(int index)
 {
-    if (index < 0 || index >= BM_PHONEME_COUNT) return 0;
+    if (index < 0 || index >= BM_PHONEME_TABLE_SIZE) return 0;
     return &BM_PHONEMES[index];
 }

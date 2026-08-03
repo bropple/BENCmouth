@@ -24,16 +24,19 @@ behind the ordering.
       329 NRL letter-to-sound rules generated from the public-domain source by
       `tools/mkrules.c`
 - [x] `bm` CLI (`src/host/main.c`) — text or phonemes in, WAV out
-- [ ] CMUdict lookup in front of the rules, for the ~10% they miss ("machine").
-      Needs `tools/mkdict.c` and a compile-time switch: 135k entries is far too
-      much for a microcontroller, and the rules alone are the embedded path.
-      **This also replaces the stopgap EXCEPTIONS table in `bm_text.c`** — delete
-      that table when the dictionary lands rather than letting it grow.
-- [ ] Stress assignment. The rules emit no stress marks at all, so every word is
-      spoken with flat, uniform emphasis. Unmarked stress now means "no
-      information" rather than "unstressed" (which was reducing every vowel in
-      every sentence), but real stress needs either the dictionary or a
-      syllabification heuristic. This is the other half of the prosody gap.
+- [x] CMUdict lookup in front of the rules (`tools/mkdict.c`, `bm_dict.c`).
+      124,910 entries, front-coded and compiled to ~1.5 MB, behind `BM_WITH_DICT`
+      and built with `make dict`. Not the default: the core exists to run on
+      microcontrollers and the rules are that path.
+
+      Measured before building it: the rules match cmudict exactly for only 28%
+      of entries, so an exceptions-only table would have had to hold most of the
+      dictionary anyway. The EXCEPTIONS table in `bm_text.c` stays as the
+      no-dictionary fallback rather than being deleted — it is only reached on a
+      dictionary miss.
+- [x] Stress assignment — solved by the dictionary, which carries a stress digit
+      on every vowel. Words that miss the dictionary still come through unmarked,
+      and a syllabification heuristic for those remains open.
 
 ## WAV export
 

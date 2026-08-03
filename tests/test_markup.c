@@ -52,19 +52,26 @@ static void test_off_by_default(void)
 {
     char out[1024];
 
+    char on[1024];
+
     printf("markup off\n");
 
     check(to_phonemes("hello [pitch 70] world", 0u, out, sizeof out) == BM_OK,
           "text with brackets still converts");
+    check(to_phonemes("hello [pitch 70] world", BM_TEXT_MARKUP, on, sizeof on) == BM_OK,
+          "and so does the same text with markup on");
 
-    /* "pitch" and "seventy" must appear as speech, not vanish. Matched on a
-     * fragment rather than the whole word: the rules render "seventy" as
-     * S IY V EH N T IH, which is not quite right, and pinning the exact string
-     * would turn a future dictionary fix into a test failure. */
-    check(strstr(out, "P IH T CH") != 0, "the word \"pitch\" is spoken");
-    check(strstr(out, "V EH N T") != 0, "the number is spoken");
+    /* The property is that the bracketed text becomes speech rather than
+     * vanishing - so compare the two conversions rather than asserting literal
+     * phonemes. An earlier version of this test pinned "P IH T CH" and broke
+     * the moment the dictionary was compiled in, because cmudict spells that
+     * word P IH1 CH. Asserting the behaviour instead of one build's output is
+     * the difference between a test and a snapshot. */
     check(strstr(out, "[") == 0, "no bracket survives into the phoneme stream");
-    printf("    %s\n", out);
+    check(strlen(out) > strlen(on) + 10,
+          "the command is spoken as words, so the output is longer");
+    printf("    off: %s\n", out);
+    printf("    on : %s\n", on);
 }
 
 static void test_on_passes_through(void)

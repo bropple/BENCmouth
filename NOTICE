@@ -10,10 +10,14 @@ binary — ship this file, or reproduce the notices below.
 1. CMU Pronouncing Dictionary  (ref/cmudict-0.7b.txt)
 ================================================================================
 
-Not currently compiled into the binary; present as reference material for the
-planned dictionary lookup. Its license requires the notice below in both source
-and binary redistributions, so it is reproduced here in full rather than only
-linked. Full text: ref/cmudict-LICENSE.txt
+Compiled into the binary when built with `make dict` (-DBM_WITH_DICT=1), via
+the generated src/core/bm_dict_data.c. A default build does not include it, but
+the source is present either way.
+
+Its license requires the notice below in BOTH source and binary
+redistributions, so it is reproduced here in full rather than only linked. If
+you ship a binary built with `make dict`, this file must go with it.
+Full text: ref/cmudict-LICENSE.txt
 
     Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.
 

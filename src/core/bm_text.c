@@ -4,6 +4,7 @@
  */
 
 #include "bm_text.h"
+#include "bm_dict.h"
 #include "bm_lts.h"
 
 #include <stddef.h>
@@ -222,15 +223,9 @@ static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
         if (c >= 'A' && c <= 'Z') return put(out, cap, at, LETTER_NAME[c - 'A'], ' ');
     }
 
-    /* Known rule failures, checked before the rules run. */
-    for (a = 0; a < NEXCEPTIONS; a++) {
-        if (str_eq_ci(EXCEPTIONS[a].word, w, len)) {
-            return put(out, cap, at, EXCEPTIONS[a].phonemes, ' ');
-        }
-    }
-
-    /* Abbreviations expand to words and go round again, so "Dr" is spoken
-     * rather than spelled. */
+    /* Abbreviations first, and before the dictionary: cmudict has entries for
+     * things like "DR" as spelled-out initials, which is not what someone
+     * writing "Dr. Smith" meant. An explicit expansion beats a lookup. */
     for (a = 0; a < NABBREV; a++) {
         if (str_eq_ci(ABBREV[a].from, w, len)) {
             const char *s = ABBREV[a].to;
@@ -243,6 +238,21 @@ static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
                 }
             }
             return at;
+        }
+    }
+
+    /* The dictionary, when one is compiled in. It supplies stress digits,
+     * which the rules cannot produce at all. */
+    if (bm_dict_lookup(w, len, phon, sizeof phon, &n) == BM_OK && n > 0) {
+        return put(out, cap, at, phon, ' ');
+    }
+
+    /* Hand-written fixes for rule failures. Largely redundant once the
+     * dictionary is compiled in - it reaches here only on a dictionary miss -
+     * but it is what a build without the dictionary has, so it stays. */
+    for (a = 0; a < NEXCEPTIONS; a++) {
+        if (str_eq_ci(EXCEPTIONS[a].word, w, len)) {
+            return put(out, cap, at, EXCEPTIONS[a].phonemes, ' ');
         }
     }
 

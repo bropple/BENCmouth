@@ -22,6 +22,12 @@
 
 #include <stddef.h>
 
+/* Number of entries in the inventory. A compile-time constant so that generated
+ * data holding phoneme indices - the compiled dictionary - can be checked
+ * against it; bm_phonemes.c asserts it matches the table, so the two cannot
+ * drift apart silently. */
+#define BM_PHONEME_COUNT 40
+
 /* Only F1..F3 distinguish phonemes. F4 and F5 contribute presence rather than
  * identity and are held fixed across the inventory. */
 #define BM_PH_NTARGETS 3

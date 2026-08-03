@@ -103,7 +103,8 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make` | library, `bm`, and both demos |
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
-| `make test` | run all six test suites |
+| `make dict` | compile CMUdict in and rebuild (see below) |
+| `make test` | run all seven test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
 | `make clean` | remove build products |
 
@@ -220,6 +221,37 @@ that mysteriously sounds wrong, which is far worse to debug than a refusal to lo
 
 Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`.
 
+### The dictionary
+
+The letter-to-sound rules handle any word, but they reproduce CMUdict's exact phonemes for
+only about **28%** of its 125k entries — and they emit no stress marks at all. (That is not
+a contradiction of the NRL report's "90% of running text": common words are far more
+regular than the proper nouns and rare words that make up most of a dictionary.)
+
+```
+make dict
+```
+
+compiles `ref/cmudict-0.7b.txt` into the binary. The difference:
+
+| | without | with |
+|---|---|---|
+| colonel | K AA L OW N EH L | **K ER1 N AH0 L** |
+| Wednesday | W EH D N EH S D EY | **W EH1 N Z D IY0** |
+| schedule | S K EH D UW L | **S K EH1 JH UH0 L** |
+| choir | CH OY R | **K W AY1 ER0** |
+
+Note the stress digits. The rules cannot produce them, and without them every vowel in
+every sentence gets identical emphasis — a large part of why longer words are hard to make
+out. The dictionary is what makes stress possible at all.
+
+Cost: the binary goes from **107 KB to 1.8 MB**. That is why it is not the default — the
+core exists to run on microcontrollers, and 1.5 MB of data is not an option there. The
+rules are the embedded path.
+
+The generated `src/core/bm_dict_data.c` is gitignored: it is 4.6 MB of C and fully
+reproducible from an input that *is* committed.
+
 ### The Retro contract
 
 `BENCmouth Retro` is the original voice and it does not drift. Every naturalness
@@ -275,6 +307,7 @@ Tunables, all overridable with `-D`:
 | `BM_NFORMANTS` | 5 | drop to 3 below ~10 kHz output |
 | `BM_SAMPLE_FLOAT` | 1 | set 0 for `int16_t` output |
 | `BM_WITH_MARKUP` | 1 | set 0 to drop the inline-markup parser |
+| `BM_WITH_DICT` | 0 | set 1 (via `make dict`) to compile CMUdict in |
 | `BM_ENGINE_RESERVED` | 65536 | storage union size; actual use is ~8.5 KB |
 
 ---
@@ -315,6 +348,6 @@ it and you have covered both.
 Working: the synthesizer, the phoneme inventory, frame interpolation, the text front end,
 voices, the CLI.
 
-Not yet: live audio output, CMUdict (the letter-to-sound rules are about 90% accurate on
-running text, and the ~10% they miss is what a dictionary is for), and real prosody — F0
-currently does declination and a stress bump and nothing else.
+Not yet: live audio output, and real prosody — F0 does declination and a stress bump and
+nothing else, with no phrase-final fall and no question contour. That is the biggest
+remaining naturalness gap.

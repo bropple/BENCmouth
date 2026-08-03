@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak clean test check-freestanding
+.PHONY: all lib bm demo speak dict clean test check-freestanding
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -65,7 +65,7 @@ test: $(LIB)
 clean:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
 	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
-	rm -f *.exe
+	rm -f *.exe mkdict $(DICT_DATA)
 
 $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
@@ -76,6 +76,35 @@ bm: $(BIN)
 
 $(BIN): $(HOST_OBJ) $(LIB)
 	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $(HOST_OBJ) $(LIB) $(LDFLAGS) -lm
+
+# ---------------------------------------------------------------------------
+# Optional CMU dictionary.
+#
+# `make dict` compiles ref/cmudict-0.7b.txt into src/core/bm_dict_data.c and
+# rebuilds everything with -DBM_WITH_DICT=1. The generated file is ~1.5 MB of
+# C and is deliberately not committed - it is fully reproducible from an input
+# that is.
+#
+# Not the default: the data is far too large for the microcontroller targets
+# the core exists to support, and the letter-to-sound rules are that path.
+# ---------------------------------------------------------------------------
+
+DICT_SRC  := ref/cmudict-0.7b.txt
+DICT_DATA := src/core/bm_dict_data.c
+
+mkdict: tools/mkdict.c $(LIB)
+	$(CC) $(CFLAGS) -Isrc/core -o $@ $< $(LIB) $(LDFLAGS) -lm
+
+$(DICT_DATA): mkdict $(DICT_SRC)
+	./mkdict $(DICT_SRC) $@
+
+dict: $(DICT_DATA)
+	$(MAKE) clean-objs
+	$(MAKE) all OPT="$(OPT) -DBM_WITH_DICT=1"
+
+# Objects only - keeps the generated dictionary, which takes a while to build.
+clean-objs:
+	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) $(LIB)
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)
