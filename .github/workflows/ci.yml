@@ -88,6 +88,24 @@ jobs:
           make audio
           ./bm -h | grep "audio backend"
 
+  wasm:
+    name: wasm32 (freestanding, no libc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: clang and lld
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+
+      - name: Build
+        run: make wasm
+
+      # Actually runs it. A build that links is not evidence that the module
+      # does anything, and this is the only place the wasm path is exercised at
+      # all - there is no toolchain for it on the machine it was written on.
+      - name: Run the module under Node
+        run: node src/wasm/test_wasm.mjs bencmouth.wasm
+
   strict:
     name: ubuntu strict warnings
     runs-on: ubuntu-latest

@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict audio clean-objs clean test check-freestanding
+.PHONY: all lib bm demo speak dict audio wasm clean-objs clean test check-freestanding
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -65,7 +65,7 @@ test: $(LIB)
 clean:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
 	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
-	rm -f *.exe mkdict $(DICT_DATA)
+	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT)
 
 $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
@@ -133,6 +133,42 @@ endif
 audio:
 	$(MAKE) clean-objs
 	$(MAKE) all OPT="$(OPT) $(AUDIO_FLAGS)" LDFLAGS="$(LDFLAGS) $(AUDIO_LIBS)"
+
+# ---------------------------------------------------------------------------
+# WebAssembly.
+#
+# Bare wasm32 with no libc and no Emscripten runtime, which is only possible
+# because the core is freestanding - the same property `make check-freestanding`
+# has been guarding all along. Needs clang and lld; nothing else does.
+# ---------------------------------------------------------------------------
+
+WASM_CC    ?= clang
+WASM_OUT   := bencmouth.wasm
+WASM_EXPORTS := \
+  -Wl,--export=bm_wasm_init \
+  -Wl,--export=bm_wasm_text_buffer \
+  -Wl,--export=bm_wasm_text_capacity \
+  -Wl,--export=bm_wasm_output_buffer \
+  -Wl,--export=bm_wasm_output_capacity \
+  -Wl,--export=bm_wasm_set_voice \
+  -Wl,--export=bm_wasm_set_param \
+  -Wl,--export=bm_wasm_set_markup \
+  -Wl,--export=bm_wasm_speak \
+  -Wl,--export=bm_wasm_speak_phonemes \
+  -Wl,--export=bm_wasm_to_phonemes \
+  -Wl,--export=bm_wasm_read \
+  -Wl,--export=bm_wasm_speaking \
+  -Wl,--export=bm_wasm_sample_rate \
+  -Wl,--export=bm_wasm_engine_size
+
+wasm: $(WASM_OUT)
+
+$(WASM_OUT): $(CORE_SRC) src/wasm/bm_wasm.c
+	$(WASM_CC) --target=wasm32 -std=c99 -O2 -ffreestanding -nostdlib \
+	  $(WARN) -Iinclude -Isrc/core \
+	  -Wl,--no-entry -Wl,--initial-memory=1048576 $(WASM_EXPORTS) \
+	  -o $@ $(CORE_SRC) src/wasm/bm_wasm.c
+	@echo "  $(WASM_OUT): $$(wc -c < $(WASM_OUT)) bytes"
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

@@ -104,6 +104,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
 | `make audio` | compile live playback in and rebuild |
+| `make wasm` | build `bencmouth.wasm` (needs clang and lld) |
 | `make dict` | compile CMUdict in and rebuild (see below) |
 | `make test` | run all eight test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
@@ -408,7 +409,28 @@ Working: the synthesizer, the phoneme inventory, frame interpolation, the text f
 voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
 and the CLI.
 
-Not yet: a GUI, and the speculative WASM target. See ROADMAP.md.
+### In a browser
+
+```
+make wasm
+```
+
+produces a bare `wasm32` module — no libc, no Emscripten runtime, nothing generated. That
+works only because the core is freestanding, which is what `make check-freestanding` has
+been protecting all along.
+
+```js
+import BENCmouth from './src/wasm/bencmouth.js';
+
+const bm = await BENCmouth.load('bencmouth.wasm');
+console.log(bm.phonemes('hello world'));   // HH EH L OW W ER L D
+await bm.play('hello world');              // through Web Audio
+const pcm = bm.say('hello world');         // or just the Float32Array
+```
+
+`bm.voice(name)` and `bm.param(key, value)` reach the presets and the `.voice` file keys.
+
+Not yet: a GUI. See ROADMAP.md.
 
 For a target without an FPU, `-DBM_FIXED_POINT=1` runs the sample loop in Q18 integer
 arithmetic — 52.9 dB SNR against the float reference, measured on a rendered sentence.

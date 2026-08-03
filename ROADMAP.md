@@ -128,7 +128,16 @@ that need an actual decision when we get there:
   Q18 is the most precision available that still clears the worst excursion the suite
   produces (3869). Two tests carry a fixed-point tolerance and say why: resonator DC gain
   holds to 1e-3 rather than 1e-4, and the nasal pole/zero cancel to 6e-4 rather than 1e-5.
-- WASM target via `clang --target=wasm32`
+- [x] **WASM target** (`make wasm`, `src/wasm/`). Bare wasm32 with no libc and no
+  Emscripten runtime, which is possible only because the core is freestanding - the
+  property `make check-freestanding` has been guarding since the first commit. The glue
+  is about a hundred lines of JavaScript; there is no generated runtime, no emulated
+  filesystem, and nothing allocates.
+
+  *Written without a local toolchain: this machine has no clang, no wasm-ld and no
+  Emscripten. The C and the JS are type- and syntax-checked here; the build and a Node
+  smoke test that renders audio and inspects it run in CI, which is where the evidence
+  that it works actually comes from.*
 - Singing / explicit F0 control through the public `bm_frame` path
 - ~~Inline markup in text~~ — **done**, and it lives in core. `bm_config.markup` gates it
   at runtime (off by default, so brackets stay ordinary text for anyone who did not opt
