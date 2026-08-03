@@ -364,6 +364,7 @@ Tunables, all overridable with `-D`:
 | `BM_MAX_TEXT` | 1024 | bytes of text buffered |
 | `BM_NFORMANTS` | 5 | drop to 3 below ~10 kHz output |
 | `BM_SAMPLE_FLOAT` | 1 | set 0 for `int16_t` output |
+| `BM_FIXED_POINT` | 0 | set 1 for a Q18 integer sample loop (no FPU needed) |
 | `BM_WITH_MARKUP` | 1 | set 0 to drop the inline-markup parser |
 | `BM_WITH_DICT` | 0 | set 1 (via `make dict`) to compile CMUdict in |
 | `BM_ENGINE_RESERVED` | 65536 | storage union size; actual use is ~8.5 KB |
@@ -407,4 +408,8 @@ Working: the synthesizer, the phoneme inventory, frame interpolation, the text f
 voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
 and the CLI.
 
-Not yet: a GUI, and the speculative fixed-point and WASM targets. See ROADMAP.md.
+Not yet: a GUI, and the speculative WASM target. See ROADMAP.md.
+
+For a target without an FPU, `-DBM_FIXED_POINT=1` runs the sample loop in Q18 integer
+arithmetic — 52.9 dB SNR against the float reference, measured on a rendered sentence.
+Coefficients still come from float maths at the frame rate, where it costs nothing.

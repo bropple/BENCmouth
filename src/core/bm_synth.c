@@ -17,6 +17,28 @@ float bm_amp_from_db(float db)
     return bm_db_to_linear(db - BM_FULL_SCALE_DB);
 }
 
+#if BM_FIXED_POINT
+#define BM_AMP(db)   bm_q_from_float(bm_amp_from_db(db))
+#define BM_ZERO      ((bm_q)0)
+#define BM_SMOOTH(f) bm_q_from_float(f)
+typedef bm_q bm_signal;
+#define BM_SIG_FROM_F(x) bm_q_from_float(x)
+#define BM_SIG_TO_F(x)   bm_q_to_float(x)
+#define BM_SIG_MUL(a,b)  bm_q_mul((a), (b))
+#define BM_SIG_ADD(a,b)  bm_q_add((a), (b))
+#define BM_SIG_NEG(a)    ((bm_q)-(a))
+#else
+#define BM_AMP(db)   bm_amp_from_db(db)
+#define BM_ZERO      0.0f
+#define BM_SMOOTH(f) (f)
+typedef float bm_signal;
+#define BM_SIG_FROM_F(x) (x)
+#define BM_SIG_TO_F(x)   (x)
+#define BM_SIG_MUL(a,b)  ((a) * (b))
+#define BM_SIG_ADD(a,b)  ((a) + (b))
+#define BM_SIG_NEG(a)    (-(a))
+#endif
+
 void bm_synth_init(bm_synth *s, float sample_rate)
 {
     int i;
@@ -33,23 +55,26 @@ void bm_synth_init(bm_synth *s, float sample_rate)
     for (i = 0; i < BM_NFORMANTS; i++) {
         bm_resonator_set(&s->cascade[i], 1000.0f, 100.0f, s->sample_rate);
         bm_resonator_set(&s->parallel[i], 1000.0f, 100.0f, s->sample_rate);
-        s->amp_parallel[i] = 0.0f;
+        s->amp_parallel[i] = BM_ZERO;
     }
     bm_resonator_set(&s->nasal_pole, 270.0f, 100.0f, s->sample_rate);
     bm_antiresonator_set(&s->nasal_zero, 270.0f, 100.0f, s->sample_rate);
 
-    s->amp_voicing = 0.0f;
-    s->amp_aspiration = 0.0f;
-    s->amp_frication = 0.0f;
-    s->amp_bypass = 0.0f;
+    s->amp_voicing = BM_ZERO;
+    s->amp_aspiration = BM_ZERO;
+    s->amp_frication = BM_ZERO;
+    s->amp_bypass = BM_ZERO;
     s->flutter = 0.0f;
     s->gain = 1.0f;
 
     /* One-pole coefficient for a ~0.8 ms time constant, so an amplitude change
      * settles in roughly 2.5 ms. Fast enough that a plosive burst still sounds
      * like a burst, slow enough that the frame-boundary step stops clicking. */
-    s->amp_smooth = 1.0f - bm_expf(-1.0f / (0.0008f * s->sample_rate));
-    if (s->amp_smooth > 1.0f) s->amp_smooth = 1.0f;
+    {
+        float k = 1.0f - bm_expf(-1.0f / (0.0008f * s->sample_rate));
+        if (k > 1.0f) k = 1.0f;
+        s->amp_smooth = BM_SMOOTH(k);
+    }
 
     bm_synth_reset(s);
 }
@@ -66,17 +91,17 @@ void bm_synth_reset(bm_synth *s)
     for (i = 0; i < BM_NFORMANTS; i++) {
         bm_resonator_reset(&s->cascade[i]);
         bm_resonator_reset(&s->parallel[i]);
-        s->cur_parallel[i] = 0.0f;
+        s->cur_parallel[i] = BM_ZERO;
     }
     bm_resonator_reset(&s->nasal_pole);
     bm_resonator_reset(&s->nasal_zero);
 
     /* Start silent rather than at the current targets, so an utterance fades
      * up from nothing instead of opening with the same step we just removed. */
-    s->cur_voicing = 0.0f;
-    s->cur_aspiration = 0.0f;
-    s->cur_frication = 0.0f;
-    s->cur_bypass = 0.0f;
+    s->cur_voicing = BM_ZERO;
+    s->cur_aspiration = BM_ZERO;
+    s->cur_frication = BM_ZERO;
+    s->cur_bypass = BM_ZERO;
 }
 
 void bm_synth_set_frame(bm_synth *s, const bm_frame *f)
@@ -90,7 +115,7 @@ void bm_synth_set_frame(bm_synth *s, const bm_frame *f)
     for (i = 0; i < BM_NFORMANTS; i++) {
         bm_resonator_set(&s->cascade[i],  f->freq[i], f->bw[i], s->sample_rate);
         bm_resonator_set(&s->parallel[i], f->freq[i], f->bw[i], s->sample_rate);
-        s->amp_parallel[i] = bm_amp_from_db(f->par_amp[i]);
+        s->amp_parallel[i] = BM_AMP(f->par_amp[i]);
     }
 
     bm_resonator_set(&s->nasal_pole, f->nasal_pole_f, f->nasal_pole_bw,
@@ -98,10 +123,10 @@ void bm_synth_set_frame(bm_synth *s, const bm_frame *f)
     bm_antiresonator_set(&s->nasal_zero, f->nasal_zero_f, f->nasal_zero_bw,
                          s->sample_rate);
 
-    s->amp_voicing    = bm_amp_from_db(f->av);
-    s->amp_aspiration = bm_amp_from_db(f->ah);
-    s->amp_frication  = bm_amp_from_db(f->af);
-    s->amp_bypass     = bm_amp_from_db(f->par_bypass);
+    s->amp_voicing    = BM_AMP(f->av);
+    s->amp_aspiration = BM_AMP(f->ah);
+    s->amp_frication  = BM_AMP(f->af);
+    s->amp_bypass     = BM_AMP(f->par_bypass);
 }
 
 void bm_synth_set_flutter(bm_synth *s, float flutter)
@@ -118,62 +143,82 @@ void bm_synth_set_gain(bm_synth *s, float gain)
     s->gain = bm_clampf(gain, 0.0f, 8.0f);
 }
 
+/* One step of the amplitude smoother, in whichever representation. */
+#if BM_FIXED_POINT
+#define BM_CHASE(cur, target, k) \
+    ((cur) = bm_q_add((cur), bm_q_mul((k), bm_q_add((target), -(cur)))))
+#define BM_TICK_RES(r, x)  bm_resonator_tick_q((r), (x))
+#define BM_TICK_ANTI(r, x) bm_antiresonator_tick_q((r), (x))
+/* Comparable to 1e-6 in float, in Q16 units. */
+#define BM_SIG_EPS ((bm_q)1)
+#else
+#define BM_CHASE(cur, target, k) ((cur) += (k) * ((target) - (cur)))
+#define BM_TICK_RES(r, x)  bm_resonator_tick((r), (x))
+#define BM_TICK_ANTI(r, x) bm_antiresonator_tick((r), (x))
+#define BM_SIG_EPS 1e-6f
+#endif
+
 float bm_synth_tick(bm_synth *s)
 {
-    float noise, cascade_in, parallel_in, out, sign, k;
+    bm_signal noise, cascade_in, parallel_in, out;
     int   i;
 
     if (s == 0) return 0.0f;
 
     /* Chase the frame's amplitude targets at sample rate. Without this every
      * frame boundary is a gain step, and a gain step is a click. */
-    k = s->amp_smooth;
-    s->cur_voicing    += k * (s->amp_voicing    - s->cur_voicing);
-    s->cur_aspiration += k * (s->amp_aspiration - s->cur_aspiration);
-    s->cur_frication  += k * (s->amp_frication  - s->cur_frication);
-    s->cur_bypass     += k * (s->amp_bypass     - s->cur_bypass);
+    BM_CHASE(s->cur_voicing,    s->amp_voicing,    s->amp_smooth);
+    BM_CHASE(s->cur_aspiration, s->amp_aspiration, s->amp_smooth);
+    BM_CHASE(s->cur_frication,  s->amp_frication,  s->amp_smooth);
+    BM_CHASE(s->cur_bypass,     s->amp_bypass,     s->amp_smooth);
     for (i = 0; i < BM_NFORMANTS; i++) {
-        s->cur_parallel[i] += k * (s->amp_parallel[i] - s->cur_parallel[i]);
+        BM_CHASE(s->cur_parallel[i], s->amp_parallel[i], s->amp_smooth);
     }
 
     /* One noise generator feeds both aspiration and frication. They are the
      * same physical turbulence; drawing two independent samples would decorate
-     * the output with noise that is not there in real speech. */
-    noise = bm_noise_tick(&s->noise);
+     * the output with noise that is not there in real speech.
+     *
+     * The two sources stay in float - there is one of each per sample against
+     * twelve resonators, and their polynomial and PRNG arithmetic gains nothing
+     * from conversion. They are converted once on the way in. */
+    noise = BM_SIG_FROM_F(bm_noise_tick(&s->noise));
 
-    cascade_in = s->cur_voicing * bm_glottis_tick(&s->glottis)
-               + s->cur_aspiration * noise;
+    cascade_in = BM_SIG_ADD(
+        BM_SIG_MUL(s->cur_voicing, BM_SIG_FROM_F(bm_glottis_tick(&s->glottis))),
+        BM_SIG_MUL(s->cur_aspiration, noise));
 
     /* Nasal zero before the pole: the zero is what makes a nasal sound nasal.
      * A pole on its own only sounds muffled. */
-    out = bm_antiresonator_tick(&s->nasal_zero, cascade_in);
-    out = bm_resonator_tick(&s->nasal_pole, out);
+    out = BM_TICK_ANTI(&s->nasal_zero, cascade_in);
+    out = BM_TICK_RES(&s->nasal_pole, out);
     for (i = 0; i < BM_NFORMANTS; i++) {
-        out = bm_resonator_tick(&s->cascade[i], out);
+        out = BM_TICK_RES(&s->cascade[i], out);
     }
 
     /* Test the smoothed value, not the target: a branch that switches on the
      * target would cut the parallel branch off while it is still decaying and
      * reintroduce the very step this smoothing exists to remove. */
-    if (s->cur_frication > 1e-6f || s->cur_bypass > 1e-6f) {
-        parallel_in = s->cur_frication * noise;
+    if (s->cur_frication > BM_SIG_EPS || s->cur_bypass > BM_SIG_EPS) {
+        parallel_in = BM_SIG_MUL(s->cur_frication, noise);
 
-        out += s->cur_bypass * parallel_in;
+        out = BM_SIG_ADD(out, BM_SIG_MUL(s->cur_bypass, parallel_in));
 
-        sign = 1.0f;
         for (i = 0; i < BM_NFORMANTS; i++) {
-            float band = bm_resonator_tick(&s->parallel[i], parallel_in);
-            out += sign * s->cur_parallel[i] * band;
-            sign = -sign;
+            bm_signal band = BM_TICK_RES(&s->parallel[i], parallel_in);
+            bm_signal term = BM_SIG_MUL(s->cur_parallel[i], band);
+            /* Successive parallel formants alternate sign; in phase they fill
+             * the spectral valleys and the result sounds muffled. */
+            out = BM_SIG_ADD(out, (i & 1) ? BM_SIG_NEG(term) : term);
         }
     } else {
         /* Keep the parallel filters running even when silent, so that turning
          * frication on mid-utterance does not start from a cold state and
          * click. Cheap insurance: five resonators at zero input. */
         for (i = 0; i < BM_NFORMANTS; i++) {
-            (void)bm_resonator_tick(&s->parallel[i], 0.0f);
+            (void)BM_TICK_RES(&s->parallel[i], (bm_signal)0);
         }
     }
 
-    return out * s->gain;
+    return BM_SIG_TO_F(out) * s->gain;
 }

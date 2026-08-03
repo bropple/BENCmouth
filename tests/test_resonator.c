@@ -9,6 +9,7 @@
  * than catching it by ear later.
  */
 
+#include "bm_fixed.h"
 #include "bm_math.h"
 #include "bm_resonator.h"
 
@@ -17,6 +18,17 @@
 #include <stdio.h>
 
 #define PI 3.14159265358979323846
+
+/* Fixed-point stores coefficients as Q16, so the unity-DC-gain property that
+ * lets the cascade chain without a makeup stage holds to about 1e-3 rather than
+ * exactly. Stated here rather than loosened everywhere: the float path really
+ * is accurate to 1e-4, and hiding that behind one tolerance would lose the
+ * distinction. */
+#if BM_FIXED_POINT
+#define DC_GAIN_TOL 2e-3
+#else
+#define DC_GAIN_TOL 1e-4
+#endif
 
 static int failures = 0;
 
@@ -145,7 +157,7 @@ static void test_resonator(void)
     bm_resonator_reset(&r);
     for (i = 0; i < 20000; i++) (void)bm_resonator_tick(&r, 1.0f);
     dc = (double)bm_resonator_tick(&r, 1.0f);
-    check_close(dc, 1.0, 1e-4, "DC gain is unity (F=700, BW=90)");
+    check_close(dc, 1.0, DC_GAIN_TOL, "DC gain is unity (F=700, BW=90)");
 
     /* The peak should sit where we asked for it. */
     best = 0.0; peak_freq = 0.0;
@@ -197,7 +209,7 @@ static void test_antiresonator(void)
         bm_resonator_reset(&z);
         for (i = 0; i < 20000; i++) (void)bm_antiresonator_tick(&z, 1.0f);
         dc = (double)bm_antiresonator_tick(&z, 1.0f);
-        check_close(dc, 1.0, 1e-4, "antiresonator DC gain is unity");
+        check_close(dc, 1.0, DC_GAIN_TOL, "antiresonator DC gain is unity");
     }
 }
 

@@ -56,10 +56,26 @@ static void bm_pole_pair(float freq, float bw, float sample_rate,
     *out_a    = one_minus * one_minus + rsin * rsin;
 }
 
+/* Stores one coefficient triple in whichever format the sample loop wants. */
+static void store(bm_resonator *r, float a, float b, float c)
+{
+#if BM_FIXED_POINT
+    r->a = bm_q_from_float(a);
+    r->b = bm_q_from_float(b);
+    r->c = bm_q_from_float(c);
+#else
+    r->a = a;
+    r->b = b;
+    r->c = c;
+#endif
+}
+
 void bm_resonator_set(bm_resonator *r, float freq, float bw, float sample_rate)
 {
+    float a, b, c;
     if (r == 0) return;
-    bm_pole_pair(freq, bw, sample_rate, &r->a, &r->b, &r->c);
+    bm_pole_pair(freq, bw, sample_rate, &a, &b, &c);
+    store(r, a, b, c);
 }
 
 void bm_antiresonator_set(bm_resonator *r, float freq, float bw, float sample_rate)
@@ -90,17 +106,49 @@ void bm_antiresonator_set(bm_resonator *r, float freq, float bw, float sample_ra
         inv_a = 1.0f / a;
         if (inv_a > BM_MAX_MAKEUP_GAIN) inv_a = BM_MAX_MAKEUP_GAIN;
     }
-    r->a =  inv_a;
-    r->b = -b * inv_a;
-    r->c = -c * inv_a;
+    store(r, inv_a, -b * inv_a, -c * inv_a);
 }
 
 void bm_resonator_reset(bm_resonator *r)
 {
     if (r == 0) return;
-    r->z1 = 0.0f;
-    r->z2 = 0.0f;
+    r->z1 = 0;
+    r->z2 = 0;
 }
+
+#if BM_FIXED_POINT
+
+bm_q bm_resonator_tick_q(bm_resonator *r, bm_q x)
+{
+    /* History holds past *outputs*. */
+    bm_q y = bm_q_add(bm_q_mul(r->a, x),
+                      bm_q_add(bm_q_mul(r->b, r->z1), bm_q_mul(r->c, r->z2)));
+    r->z2 = r->z1;
+    r->z1 = y;
+    return y;
+}
+
+bm_q bm_antiresonator_tick_q(bm_resonator *r, bm_q x)
+{
+    /* History holds past *inputs* - this is an all-zero filter. */
+    bm_q y = bm_q_add(bm_q_mul(r->a, x),
+                      bm_q_add(bm_q_mul(r->b, r->z1), bm_q_mul(r->c, r->z2)));
+    r->z2 = r->z1;
+    r->z1 = x;
+    return y;
+}
+
+float bm_resonator_tick(bm_resonator *r, float x)
+{
+    return bm_q_to_float(bm_resonator_tick_q(r, bm_q_from_float(x)));
+}
+
+float bm_antiresonator_tick(bm_resonator *r, float x)
+{
+    return bm_q_to_float(bm_antiresonator_tick_q(r, bm_q_from_float(x)));
+}
+
+#else
 
 float bm_resonator_tick(bm_resonator *r, float x)
 {
@@ -119,3 +167,5 @@ float bm_antiresonator_tick(bm_resonator *r, float x)
     r->z1 = x;
     return y;
 }
+
+#endif

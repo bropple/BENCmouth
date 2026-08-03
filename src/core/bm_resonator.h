@@ -22,9 +22,18 @@
 #ifndef BM_RESONATOR_H
 #define BM_RESONATOR_H
 
+#include "bm_fixed.h"
+
+/* Coefficients are always computed in float - see bm_fixed.h - and stored in
+ * whichever representation the sample loop uses. */
 typedef struct bm_resonator {
+#if BM_FIXED_POINT
+    bm_q  a, b, c;
+    bm_q  z1, z2;
+#else
     float a, b, c;   /* difference equation coefficients */
     float z1, z2;    /* history: outputs (resonator) or inputs (antiresonator) */
+#endif
 } bm_resonator;
 
 /* Sets resonator coefficients for a formant at `freq` Hz with 3 dB bandwidth
@@ -45,5 +54,13 @@ float bm_resonator_tick(bm_resonator *r, float x);
 
 /* One sample through the two-zero antiresonator. */
 float bm_antiresonator_tick(bm_resonator *r, float x);
+
+#if BM_FIXED_POINT
+/* The integer path the synthesizer uses directly, so that a whole cascade runs
+ * without converting to float and back at every stage. The float wrappers above
+ * exist for tests and for callers outside the sample loop. */
+bm_q bm_resonator_tick_q(bm_resonator *r, bm_q x);
+bm_q bm_antiresonator_tick_q(bm_resonator *r, bm_q x);
+#endif
 
 #endif /* BM_RESONATOR_H */

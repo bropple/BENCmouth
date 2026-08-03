@@ -106,7 +106,28 @@ that need an actual decision when we get there:
 
 ## Later / speculative
 
-- Fixed-point build (`BM_SAMPLE_FLOAT=0`) — needs Q-format multiply macros through the DSP
+- [x] **Fixed-point sample loop** (`-DBM_FIXED_POINT=1`, `src/core/bm_fixed.h`). Q18 in
+  int32 with int64 products. Off by default: float is the reference, it is what every
+  voice was tuned against, and anything with an FPU is better off with it. The case is
+  the low end — a Cortex-M0 or M3 has no FPU and soft-float costs roughly an order of
+  magnitude on a loop that runs ~50 multiplies per sample.
+
+  Only the per-sample path is converted. Coefficients come from transcendental functions
+  a hundred times a second; they stay in float and are stored as Q18.
+
+  Two measurements drove the design. First, converting *only* the resonator gave 25.1 dB
+  SNR against float — worse than either pure path, because twelve filters in series meant
+  24 round-trip quantizations per sample. Completing the conversion through `bm_synth_tick`
+  took it to 40.3 dB. Second, sweeping the Q format:
+
+      Q16  40.3 dB   headroom +-32768
+      Q18  52.9 dB   headroom +-8192    <- chosen
+      Q20  65.6 dB   headroom +-2048    saturates the stress test
+      Q22  77.0 dB   headroom +-512
+
+  Q18 is the most precision available that still clears the worst excursion the suite
+  produces (3869). Two tests carry a fixed-point tolerance and say why: resonator DC gain
+  holds to 1e-3 rather than 1e-4, and the nasal pole/zero cancel to 6e-4 rather than 1e-5.
 - WASM target via `clang --target=wasm32`
 - Singing / explicit F0 control through the public `bm_frame` path
 - ~~Inline markup in text~~ — **done**, and it lives in core. `bm_config.markup` gates it

@@ -13,6 +13,7 @@
  * measurement straightforward and the failure messages readable.
  */
 
+#include "bm_fixed.h"
 #include "bm_synth.h"
 
 #include <math.h>
@@ -21,6 +22,17 @@
 #include <string.h>
 
 #define PI       3.14159265358979323846
+
+/* The nasal pole and zero cancel because one is the algebraic inverse of the
+ * other. In fixed point each coefficient is quantized separately, so the
+ * inverse is only approximate and the residue rises from ~1e-5 to ~6e-4 -
+ * about -64 dB, inaudible, but not zero. Stated rather than folded into one
+ * loose tolerance, so the float path stays held to what it can actually do. */
+#if BM_FIXED_POINT
+#define NASAL_CANCEL_TOL 2e-3
+#else
+#define NASAL_CANCEL_TOL 1e-4
+#endif
 #define FS       22050.0
 #define NSAMPLES 44100u          /* two seconds; averages down noise variance */
 
@@ -237,7 +249,7 @@ static void test_nasal_cancellation(void)
     diff /= (double)n;
 
     printf("    mean absolute difference %.3g\n", diff);
-    check(diff < 1e-4, "coincident nasal pole/zero is transparent");
+    check(diff < NASAL_CANCEL_TOL, "coincident nasal pole/zero is transparent");
 
     free(a);
     free(b);
