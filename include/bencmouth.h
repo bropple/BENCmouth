@@ -143,6 +143,15 @@ typedef struct bm_voice {
      * 0 hits every target exactly, which is crisp, mechanical, and exactly
      * what an early-eighties synthesizer sounds like. */
     float coarticulation;
+
+    /* Phrase-level intonation, 0..1. At 0 the pitch contour is what BENCmouth
+     * had before bm_prosody.c existed: a single linear decline across the whole
+     * utterance plus a flat bump on stressed phonemes. Above 0 the contour is
+     * planned per phrase, with pitch accents, boundary tones that distinguish a
+     * question from a statement, and phrase-final lengthening.
+     *
+     * Scales together with f0_range, which is the excursion in semitones. */
+    float prosody;
 } bm_voice;
 
 /* Fills in a sane default voice. Start here, then perturb. */

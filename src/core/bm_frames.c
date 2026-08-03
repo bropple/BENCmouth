@@ -5,6 +5,7 @@
 
 #include "bm_frames.h"
 #include "bm_math.h"
+#include "bm_prosody.h"
 #include "bm_text.h"   /* BM_WITH_MARKUP */
 
 #include <stddef.h>
@@ -28,10 +29,17 @@ enum {
 #define DUR_STRESS_SECONDARY 1.10f
 #define DUR_STRESS_NONE      0.85f
 
-/* F0 falls across an utterance. Without this every sentence sounds like a
- * question that never resolves. */
+/* The contour used when voice.prosody is 0: one linear decline across the whole
+ * utterance, plus a flat bump on stressed phonemes. Superseded by bm_prosody.c
+ * for any voice that asks for it, and kept exactly as it was for the ones that
+ * do not - BENCmouth Retro among them. */
 #define F0_DECLINATION 0.82f    /* end pitch as a fraction of start */
 #define F0_STRESS_BUMP 1.06f    /* on primary-stressed phonemes */
+
+/* Pitch chases its planned target rather than stepping to it at each phoneme
+ * boundary. Real pitch cannot jump, and a stepped contour is audible as a
+ * warble. ~40 ms at the nominal 100 Hz frame rate. */
+#define F0_SMOOTH 0.25f
 
 /* ------------------------------------------------------------------ */
 
@@ -79,7 +87,12 @@ static int segment_frames(const bm_frame_gen *g, int index, int seg)
     unsigned short steady = g->mod[index].dur_ms;
 
     if (steady == 0u) {
+        float planned = g->dur_plan[index];
         steady = p->steady_ms;
+        if (planned > 0.0f && planned != 1.0f) {
+            float v = (float)steady * planned;
+            steady = (unsigned short)((v > 65000.0f) ? 65000.0f : v);
+        }
     } else {
         /* An explicit [pause N] means N milliseconds, not N scaled by stress
          * and rate. A pause the author asked for should be the length they
@@ -291,6 +304,8 @@ void bm_frame_gen_reset(bm_frame_gen *g)
     g->segment = SEG_TRANSITION;
     g->frame_in_seg = 0;
     g->frames_done = 0;
+    g->f0_smooth = 0.0f;
+    g->f0_started = 0;
 
     /* Start from silence at a neutral vocal tract, so the first transition
      * glides out of rest rather than starting mid-articulation.
@@ -505,6 +520,11 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
 
     if (g->count == 0) return BM_ERR_ARG;
 
+    /* Plan before measuring the total, because the plan can lengthen phrase
+     * final syllables and the frame count has to include that. */
+    bm_prosody_plan(g->seq, g->stress, g->count, &g->voice,
+                    g->f0_plan, g->dur_plan);
+
     bm_frame_gen_reset(g);
 
     for (k = 0; k < g->count; k++) {
@@ -551,7 +571,21 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
         /* Pitch is applied globally rather than per phoneme, so the contour
          * stays smooth across boundaries instead of being interpolated
          * piecewise from phoneme targets that know nothing about each other. */
-        {
+        if (g->voice.prosody > 0.0f) {
+            /* Follow the planned contour, smoothed. Markup pitch does not
+             * replace the contour, it transposes it - otherwise [pitch 90]
+             * would flatten the intonation of everything after it. */
+            float target = g->f0_plan[g->index];
+            if (g->mod[g->index].f0 > 0.0f && g->voice.f0_base > 1.0f) {
+                target *= g->mod[g->index].f0 / g->voice.f0_base;
+            }
+            if (!g->f0_started) { g->f0_smooth = target; g->f0_started = 1; }
+            g->f0_smooth += F0_SMOOTH * (target - g->f0_smooth);
+            out->f0 = g->f0_smooth;
+        } else {
+            /* Pre-bm_prosody.c contour, preserved verbatim for voices that do
+             * not opt in. Note it is a function of elapsed frames, not phoneme
+             * index, so it cannot simply be expressed as a plan. */
             float t = (g->frames_total > 1)
                     ? (float)g->frames_done / (float)(g->frames_total - 1)
                     : 0.0f;

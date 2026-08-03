@@ -244,7 +244,7 @@ static void test_every_field_has_a_key(void)
         "f0_base", "f0_range", "f0_flutter", "speed",
         "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "gain",
-        "coarticulation"
+        "coarticulation", "prosody"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, mismatched = 0;
@@ -258,7 +258,7 @@ static void test_every_field_has_a_key(void)
      * introduced four bytes of pad and made it report a field that does not
      * exist. Spanning named members is padding-proof. */
     {
-        size_t span = offsetof(bm_voice, coarticulation) + sizeof(float)
+        size_t span = offsetof(bm_voice, prosody) + sizeof(float)
                     - offsetof(bm_voice, f0_base);
         size_t float_fields = span / sizeof(float);
         printf("    %d keys for %lu tunable fields\n", nkeys, (unsigned long)float_fields);

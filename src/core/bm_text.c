@@ -347,10 +347,16 @@ bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
              * pause than a comma by repeating it - crude, but the frame
              * generator has no notion of pause length yet and this is audible
              * in the right direction. */
-            if (c == '.' || c == '!' || c == '?') {
-                at = put(out, out_cap, at, "SIL SIL", ' ');
+            /* Punctuation becomes a boundary phoneme rather than plain
+             * silence, so the prosody planner can tell a question from a
+             * statement. Collapsing both to SIL discarded that distinction
+             * before anything could act on it. */
+            if (c == '?') {
+                at = put(out, out_cap, at, "?", ' ');
+            } else if (c == '.' || c == '!') {
+                at = put(out, out_cap, at, ".", ' ');
             } else if (c == ',' || c == ';' || c == ':' || c == '-') {
-                at = put(out, out_cap, at, "SIL", ' ');
+                at = put(out, out_cap, at, ",", ' ');
             }
             if (at > out_cap) return BM_ERR_OVERFLOW;
             i++;

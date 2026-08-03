@@ -72,8 +72,33 @@
 
 static const bm_phoneme BM_PHONEMES[] = {
 
-    /* ---- silence ------------------------------------------------- */
+    /* ---- silence and phrase boundaries ---------------------------
+     *
+     * SIL is a plain pause with no prosodic meaning. The three punctuation
+     * entries are pauses that also tell the prosody planner what kind of
+     * boundary it is looking at - a question has to be distinguishable from a
+     * statement, and collapsing both to SIL threw that away before the planner
+     * ever saw it.
+     *
+     * They are named for the punctuation that produced them, which makes
+     * `bm -t` legible: "HH AH0 L OW1 . AA1 R Y UW1 DH EH1 R ?". Real phonemes
+     * are all letters, so there is no collision. */
     { "SIL", BM_CLS_SILENCE, 0u, 80u, 30u, 0u, 0u,
+      { 500.0f, 1500.0f, 2500.0f }, { BW1, BW2, BW3 },
+      { 500.0f, 1500.0f, 2500.0f },
+      0.0f, 0.0f, 0.0f, NO_AMPS, 0.0f, 0.0f, NO_AMPS, 0.0f },
+
+    { ",", BM_CLS_SILENCE, 0u, 110u, 30u, 0u, 0u,
+      { 500.0f, 1500.0f, 2500.0f }, { BW1, BW2, BW3 },
+      { 500.0f, 1500.0f, 2500.0f },
+      0.0f, 0.0f, 0.0f, NO_AMPS, 0.0f, 0.0f, NO_AMPS, 0.0f },
+
+    { ".", BM_CLS_SILENCE, 0u, 240u, 30u, 0u, 0u,
+      { 500.0f, 1500.0f, 2500.0f }, { BW1, BW2, BW3 },
+      { 500.0f, 1500.0f, 2500.0f },
+      0.0f, 0.0f, 0.0f, NO_AMPS, 0.0f, 0.0f, NO_AMPS, 0.0f },
+
+    { "?", BM_CLS_SILENCE, 0u, 240u, 30u, 0u, 0u,
       { 500.0f, 1500.0f, 2500.0f }, { BW1, BW2, BW3 },
       { 500.0f, 1500.0f, 2500.0f },
       0.0f, 0.0f, 0.0f, NO_AMPS, 0.0f, 0.0f, NO_AMPS, 0.0f },
@@ -227,6 +252,17 @@ const bm_phoneme *bm_phoneme_lookup(const char *name, size_t len)
 const bm_phoneme *bm_phoneme_silence(void)
 {
     return &BM_PHONEMES[0];
+}
+
+bm_boundary bm_phoneme_boundary(const bm_phoneme *p)
+{
+    if (p == 0 || p->cls != BM_CLS_SILENCE) return BM_BOUND_NONE;
+    switch (p->name[0]) {
+    case ',': return BM_BOUND_COMMA;
+    case '.': return BM_BOUND_PERIOD;
+    case '?': return BM_BOUND_QUESTION;
+    default:  return BM_BOUND_NONE;
+    }
 }
 
 int bm_phoneme_count(void)

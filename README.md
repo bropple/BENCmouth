@@ -104,7 +104,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
 | `make dict` | compile CMUdict in and rebuild (see below) |
-| `make test` | run all seven test suites |
+| `make test` | run all eight test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
 | `make clean` | remove build products |
 
@@ -214,12 +214,38 @@ tilt           = 9
 open_quotient  = 0.58
 gain           = 1.0
 coarticulation = 0          # 0 = hits every target exactly, the retro sound
+prosody        = 0          # 0 = the pre-bm_prosody.c pitch contour
 ```
 
 Unknown keys are **errors**, not warnings — a silently dropped setting produces a voice
 that mysteriously sounds wrong, which is far worse to debug than a refusal to load.
 
 Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`.
+
+### Intonation
+
+Voices with `prosody` above 0 get phrase-level contours rather than one long decline:
+each phrase starts fresh, stressed syllables get pitch accents, the phrase-final syllable
+is lengthened, and the last third of a phrase moves according to how it ends.
+
+```
+$ bm -t "Hello there. Are you awake?"
+HH EH L OW DH EH R . AA R Y UW AH W EY K ?
+```
+
+Punctuation becomes a boundary phoneme rather than generic silence — a question and a
+statement used to both become `SIL SIL`, which discarded the only thing a contour planner
+could act on. Planned pitch for that sentence, in Hz:
+
+| ending | contour |
+|---|---|
+| `.` statement | rises to 133 on the stressed vowel, falls to **83** |
+| `?` question | rises to **149** |
+| `,` continuation | settles at **115** — unfinished, but not a question |
+
+`f0_range` sets how far the contour swings, in semitones. `prosody` at 0 restores the
+older behaviour exactly: one linear decline across the whole utterance and a flat bump on
+stressed phonemes. BENCmouth Retro and Monotone sit at 0.
 
 ### The dictionary
 

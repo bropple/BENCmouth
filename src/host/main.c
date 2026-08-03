@@ -74,11 +74,12 @@ int main(int argc, char **argv)
             int k;
             for (k = 0; k < bm_voice_preset_count(); k++) {
                 const bm_voice *v = bm_voice_preset_at(k);
-                printf("  %-20s f0 %5.1f  throat %.2f  mouth %.2f  speed %.2f"
-                       "  gain %.2f  coart %.2f\n",
-                       v->name, (double)v->f0_base, (double)v->throat,
-                       (double)v->mouth, (double)v->speed, (double)v->gain,
-                       (double)v->coarticulation);
+                printf("  %-20s f0 %5.1f +-%.1fst  throat %.2f  mouth %.2f"
+                       "  speed %.2f  gain %.2f  coart %.2f  prosody %.2f\n",
+                       v->name, (double)v->f0_base, (double)v->f0_range,
+                       (double)v->throat, (double)v->mouth, (double)v->speed,
+                       (double)v->gain, (double)v->coarticulation,
+                       (double)v->prosody);
             }
             return 0;
         }

@@ -55,6 +55,13 @@ typedef struct bm_frame_gen {
     const bm_phoneme *seq[BM_MAX_PHONEMES];
     unsigned char     stress[BM_MAX_PHONEMES];
     bm_phoneme_mod    mod[BM_MAX_PHONEMES];
+
+    /* Planned by bm_prosody.c when the voice asks for it. Consulted only when
+     * voice.prosody > 0; below that the older whole-utterance contour runs
+     * instead, untouched. */
+    float             f0_plan[BM_MAX_PHONEMES];
+    float             dur_plan[BM_MAX_PHONEMES];
+
     int               count;
 
     int index;         /* phoneme being emitted */
@@ -63,6 +70,9 @@ typedef struct bm_frame_gen {
 
     int frames_total;  /* whole utterance, for the declination contour */
     int frames_done;
+
+    float f0_smooth;   /* pitch chases its target; see bm_frame_gen_next */
+    int   f0_started;
 
     bm_frame from;     /* state at the start of the current transition */
     bm_frame to;

@@ -110,9 +110,15 @@ static void test_numbers(void)
 static void test_punctuation_and_abbrev(void)
 {
     printf("normalization\n");
-    /* A full stop should pause longer than a comma. */
-    expect_contains("stop.",  "SIL SIL");
-    expect_contains("a, b",   "SIL");
+
+    /* Punctuation produces boundary phonemes, not generic silence. The
+     * distinction is the whole basis of phrase prosody: a question and a
+     * statement both used to become "SIL SIL", which threw away the only
+     * information a contour planner could have acted on. */
+    expect_contains("stop.",        ".");
+    expect_contains("a, b",         ",");
+    expect_contains("are you sure?", "?");
+    expect_contains("wow!",          ".");   /* exclamation reads as a full stop */
     expect_contains("Dr",     "D AA K T ER");
     /* Expands to two words, both of which go back through the front end. The
      * rules and the dictionary disagree on the vowel in "cetera", so match the

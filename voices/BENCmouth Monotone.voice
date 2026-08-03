@@ -16,3 +16,4 @@ gain           = 0.62
 
 # naturalness controls; 0 is the original BENCmouth behaviour
 coarticulation = 0
+prosody        = 0

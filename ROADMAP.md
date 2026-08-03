@@ -16,9 +16,20 @@ behind the ordering.
       `tools/level_check.c`
 - [x] Frame interpolation (`bm_frames.c`) — target-and-transition model with
       smoothstep glides, stop closure/burst segments, diphthong glides
-- [ ] Prosody: durations, stress, F0 contour — *partially done inside `bm_frames.c`
-      (declination, stress-based duration and pitch). Move it out to `bm_prosody.c`
-      and do phrase-level contours properly. Biggest remaining naturalness gap.*
+- [x] Prosody (`bm_prosody.c`) — phrase-level contours, behind `voice.prosody`.
+      Segments at boundary phonemes so each phrase declines from its own starting
+      pitch instead of a paragraph sliding into the floor; places pitch accents on
+      stressed syllables (which the dictionary made possible); shapes the last third
+      of each phrase by boundary type — fall for a full stop, rise for a question,
+      small lift for a comma; lengthens the phrase-final syllable.
+
+      Required distinguishing punctuation, which the front end had been collapsing:
+      `.` `?` `,` are now boundary phonemes rather than all becoming `SIL`, so
+      `bm -t` reads `HH AH0 L OW1 . AA1 R Y UW1 ?`.
+
+      **`f0_range` finally does something.** It was documented as "semitones of
+      intonation excursion", written into every voice file, and read by nothing at
+      all. It is now the excursion scale for the whole contour.
 - [x] Engine layer (`bm_engine.c`) — full public API, no allocation, 8.5 KB of state
 - [x] Text front end — normalization, number expansion, abbreviations, and the
       329 NRL letter-to-sound rules generated from the public-domain source by
@@ -70,8 +81,9 @@ that need an actual decision when we get there:
       where flutter-bearing voices sit near 0.55. Applied at the synthesizer output, not
       as a dB offset to the source amplitudes — those floor at 0 dB meaning silence, so a
       negative trim there would mute quiet branches outright rather than attenuate them.
+- [x] **Phrase-final F0 fall** — part of `bm_prosody.c`.
 - [ ] More naturalness controls, each following the same contract: perceptually-spaced
-      formant interpolation, per-phoneme bandwidth variation, phrase-final F0 fall.
+      formant interpolation, per-phoneme bandwidth variation.
 - [ ] A `bm_voice_random()` for exploring the space — most good presets will be found by
       accident before they are found by reasoning.
 

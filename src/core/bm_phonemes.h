@@ -26,7 +26,7 @@
  * data holding phoneme indices - the compiled dictionary - can be checked
  * against it; bm_phonemes.c asserts it matches the table, so the two cannot
  * drift apart silently. */
-#define BM_PHONEME_COUNT 40
+#define BM_PHONEME_COUNT 43
 
 /* Only F1..F3 distinguish phonemes. F4 and F5 contribute presence rather than
  * identity and are held fixed across the inventory. */
@@ -94,6 +94,18 @@ const bm_phoneme *bm_phoneme_lookup(const char *name, size_t len);
 
 /* Silence, for pauses and utterance boundaries. Never NULL. */
 const bm_phoneme *bm_phoneme_silence(void);
+
+/* What kind of phrase boundary a phoneme marks, derived from its name. Real
+ * phonemes are all letters, so the punctuation-named silences are
+ * unambiguous. */
+typedef enum bm_boundary {
+    BM_BOUND_NONE = 0,
+    BM_BOUND_COMMA,      /* continuation - the sentence is not over */
+    BM_BOUND_PERIOD,     /* declarative end */
+    BM_BOUND_QUESTION
+} bm_boundary;
+
+bm_boundary bm_phoneme_boundary(const bm_phoneme *p);
 
 /* Iteration, for tests and tooling. */
 int               bm_phoneme_count(void);

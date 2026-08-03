@@ -140,6 +140,7 @@ int bm_voicefile_save(const char *path, const bm_voice *voice)
     fprintf(f, "gain           = %.6g\n\n", (double)voice->gain);
     fprintf(f, "# naturalness controls; 0 is the original BENCmouth behaviour\n");
     fprintf(f, "coarticulation = %.6g\n", (double)voice->coarticulation);
+    fprintf(f, "prosody        = %.6g\n", (double)voice->prosody);
 
     if (to_stdout) { fflush(f); return 0; }
     return (fclose(f) == 0) ? 0 : -1;
