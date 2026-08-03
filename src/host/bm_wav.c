@@ -39,10 +39,21 @@ static float soft_limit(float x, int *engaged)
 
     if (mag <= t) return x;
 
-    *engaged = 1;
+    if (engaged != 0) *engaged = 1;
     over = (mag - t) / (1.0f - t);
     mag  = t + (1.0f - t) * tanhf(over);
     return (x < 0.0f) ? -mag : mag;
+}
+
+int16_t bm_pcm_sample(float x, int *limited)
+{
+    long v;
+
+    x = soft_limit(x, limited);
+    v = lrintf(x * 32767.0f);
+    if (v >  32767) v =  32767;
+    if (v < -32768) v = -32768;
+    return (int16_t)v;
 }
 
 int bm_wav_write(const char *path, const float *samples, size_t count,
@@ -84,20 +95,12 @@ int bm_wav_write(const char *path, const float *samples, size_t count,
     }
 
     for (i = 0; i < count; i++) {
-        float x = samples[i];
-        float mag = fabsf(x);
-        long  v;
+        float mag = fabsf(samples[i]);
         unsigned char pcm[2];
 
         if (mag > peak) peak = mag;
 
-        x = soft_limit(x, &engaged);
-
-        v = lrintf(x * 32767.0f);
-        if (v >  32767) v =  32767;
-        if (v < -32768) v = -32768;
-
-        put_u16(pcm, (uint16_t)(int16_t)v);
+        put_u16(pcm, (uint16_t)bm_pcm_sample(samples[i], &engaged));
         if (fwrite(pcm, 1, 2, f) != 2) {
             if (!to_stdout) fclose(f);
             return -1;

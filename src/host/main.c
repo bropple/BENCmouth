@@ -8,6 +8,7 @@
  */
 
 #include "bencmouth.h"
+#include "bm_audio.h"
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
@@ -24,6 +25,7 @@ static void usage(void)
 "\n"
 "usage: bm [options] \"text to speak\"\n"
 "\n"
+"  -a           play through the speakers instead of writing a file\n"
 "  -o FILE      write WAV here (default out.wav; - for stdout)\n"
 "  -v NAME      use a voice preset\n"
 "  -f FILE      load a voice file\n"
@@ -37,12 +39,15 @@ static void usage(void)
 "  -r RATE      sample rate (default 22050)\n"
 "  -h           this help\n"
 "\n"
+"audio backend: %s\n"
+"\n"
 "examples:\n"
 "  bm \"hello world\" -o hello.wav\n"
 "  bm -v retro -s 0.8 \"I am sorry Dave\"\n"
 "  bm -P \"HH AH0 L OW1\" -o hello.wav\n"
 "  bm -t \"the quick brown fox\"\n"
-"  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n");
+"  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n"
+"  bm -a \"straight out of the speakers\"\n", bm_audio_backend());
 }
 
 int main(int argc, char **argv)
@@ -57,7 +62,7 @@ int main(int argc, char **argv)
 
     const char *input = 0;
     const char *outpath = "out.wav";
-    int         as_phonemes = 0, text_only = 0;
+    int         as_phonemes = 0, text_only = 0, play = 0;
     int         i;
 
     float  *audio = 0;
@@ -85,6 +90,7 @@ int main(int argc, char **argv)
         }
         else if (strcmp(a, "-P") == 0) as_phonemes = 1;
         else if (strcmp(a, "-m") == 0) config.markup = 1;
+        else if (strcmp(a, "-a") == 0) play = 1;
         else if (strcmp(a, "-t") == 0) text_only = 1;
         else if (strcmp(a, "-o") == 0 && i + 1 < argc) outpath = argv[++i];
         else if (strcmp(a, "-r") == 0 && i + 1 < argc)
@@ -147,6 +153,31 @@ int main(int argc, char **argv)
             fprintf(stderr, "bm: %s\n", bm_strerror(rc));
             return 1;
         }
+    }
+
+    /* Live playback streams straight from bm_read() to the device, with no
+     * buffer of the whole utterance in between. That is the interface working
+     * as designed rather than as a convenience: nothing here knows how long the
+     * utterance is, and nothing needs to. */
+    if (play) {
+        bm_audio *dev = 0;
+        char      aerr[192];
+        float     chunk[CHUNK];
+        int       bad = 0;
+
+        if (bm_audio_open(&dev, config.sample_rate, aerr, sizeof aerr) != 0) {
+            fprintf(stderr, "bm: %s\n", aerr);
+            return 1;
+        }
+        while (bm_is_speaking(engine)) {
+            size_t got = bm_read(engine, chunk, CHUNK);
+            if (got == 0) break;
+            if (bm_audio_write(dev, chunk, got) != 0) { bad = 1; break; }
+        }
+        if (!bad) bm_audio_drain(dev);
+        bm_audio_close(dev);
+        if (bad) { fprintf(stderr, "bm: audio device error\n"); return 1; }
+        return 0;
     }
 
     /* Pull until the engine stops producing. Growing the buffer here rather

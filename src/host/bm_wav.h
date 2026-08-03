@@ -25,4 +25,12 @@ typedef struct bm_wav_report {
 int bm_wav_write(const char *path, const float *samples, size_t count,
                  uint32_t sample_rate, bm_wav_report *report);
 
+/* One float sample to 16-bit PCM, soft-limited.
+ *
+ * Shared with the live audio output rather than duplicated there: if the file
+ * and the speaker applied different limiting, a rendered WAV would stop being
+ * a faithful record of what you just heard, which is the one thing it is for.
+ * `limited` is set nonzero if the limiter engaged; it may be NULL. */
+int16_t bm_pcm_sample(float x, int *limited);
+
 #endif /* BM_WAV_H */

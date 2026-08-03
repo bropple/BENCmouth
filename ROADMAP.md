@@ -63,6 +63,13 @@ that need an actual decision when we get there:
 - **`-o -` writes to stdout** so `bm "hello" -o - | aplay` works. Costs nothing, and it is
   how this will get used during development far more than files will.
 
+- [x] **Live output** (`src/host/bm_audio.c`, `bm -a`, `make audio`). ALSA, AudioQueue and
+      waveOut behind one blocking-write interface, streaming from `bm_read()` with no
+      intermediate buffer. Limiting is shared with the WAV writer rather than duplicated,
+      so a rendered file matches what came out of the speakers.
+      *Only the ALSA path has actually been heard; the other two are compile-verified in
+      CI, which is not the same thing.*
+
 ## Voice characteristics
 
 - [x] **Two-axis vocal tract.** `formant_scale` replaced by `throat` (governs F1) and

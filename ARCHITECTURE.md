@@ -64,7 +64,7 @@ src/host/                platform glue; embedded targets simply don't build this
   main.c                 the `bm` CLI
   bm_wav.c               RIFF/WAVE writer, float->int16 with soft limiting
   bm_voicefile.c         `key = value` voice file loader/saver
-  bm_audio_alsa.c        (planned) live playback
+  bm_audio.c             live playback: ALSA / AudioQueue / waveOut
 
 tools/
   mkrules.c              ref/NRL-7948-TRANS.SNO -> src/core/bm_rules_en.c

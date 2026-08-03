@@ -21,6 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: ALSA headers
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - name: Build
         run: make
 
@@ -36,6 +40,14 @@ jobs:
           ./bm -t "the quick brown fox"
           ./bm -l
           ls -l ci.wav
+
+      # Compile-only. A CI runner has no sound card, so this proves the backend
+      # builds and links, not that it plays - only the ALSA path has been heard.
+      - name: Build the audio backend
+        run: |
+          make clean
+          make audio
+          ./bm -h | grep "audio backend"
 
   windows:
     name: windows-latest (ucrt64)
@@ -69,6 +81,12 @@ jobs:
           ./bm -t "the quick brown fox"
           ./bm -l
           ls -l ci.wav
+
+      - name: Build the audio backend
+        run: |
+          make clean
+          make audio
+          ./bm -h | grep "audio backend"
 
   strict:
     name: ubuntu strict warnings

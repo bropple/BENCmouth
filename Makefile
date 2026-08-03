@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict clean test check-freestanding
+.PHONY: all lib bm demo speak dict audio clean-objs clean test check-freestanding
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -105,6 +105,34 @@ dict: $(DICT_DATA)
 # Objects only - keeps the generated dictionary, which takes a while to build.
 clean-objs:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) $(LIB)
+
+# ---------------------------------------------------------------------------
+# Optional live audio output.
+#
+# `make audio` picks a backend from uname and rebuilds. Optional for the same
+# reason the dictionary is: a plain `make` should need nothing but a C compiler,
+# and ALSA headers are a package a first-time builder should not have to find.
+# ---------------------------------------------------------------------------
+
+UNAME := $(shell uname -s)
+
+ifeq ($(UNAME),Darwin)
+  AUDIO_FLAGS := -DBM_AUDIO_COREAUDIO
+  AUDIO_LIBS  := -framework AudioToolbox -framework CoreFoundation
+else ifneq (,$(findstring MINGW,$(UNAME)))
+  AUDIO_FLAGS := -DBM_AUDIO_WINMM
+  AUDIO_LIBS  := -lwinmm
+else ifneq (,$(findstring MSYS,$(UNAME)))
+  AUDIO_FLAGS := -DBM_AUDIO_WINMM
+  AUDIO_LIBS  := -lwinmm
+else
+  AUDIO_FLAGS := -DBM_AUDIO_ALSA
+  AUDIO_LIBS  := -lasound
+endif
+
+audio:
+	$(MAKE) clean-objs
+	$(MAKE) all OPT="$(OPT) $(AUDIO_FLAGS)" LDFLAGS="$(LDFLAGS) $(AUDIO_LIBS)"
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

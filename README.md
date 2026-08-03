@@ -103,6 +103,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make` | library, `bm`, and both demos |
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
+| `make audio` | compile live playback in and rebuild |
 | `make dict` | compile CMUdict in and rebuild (see below) |
 | `make test` | run all eight test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
@@ -172,7 +173,23 @@ brackets stay ordinary characters.
 
 ### Playing it immediately
 
-There is no built-in audio output yet, but `-o -` writes a WAV to stdout:
+```
+make audio
+./bm -a "straight out of the speakers"
+```
+
+`make audio` picks a backend from `uname`: **ALSA** on Linux (`-lasound`), **AudioQueue**
+on macOS, **waveOut** on Windows. `bm -h` prints which one is compiled in.
+
+Optional for the same reason the dictionary is — a plain `make` should need nothing but a
+C compiler, and ALSA headers are a package a first-time builder should not have to hunt
+for. Without it, `-a` says so rather than failing to build.
+
+Playback streams straight from `bm_read()` to the device with no buffer of the whole
+utterance in between, which is the pull interface doing exactly what it was shaped for.
+Limiting is shared with the WAV writer, so a file is a faithful record of what you heard.
+
+`-o -` still writes a WAV to stdout if you would rather pipe it:
 
 ```
 bm "hello world" -o - | aplay              # Linux/ALSA
@@ -372,8 +389,8 @@ it and you have covered both.
 ## Status
 
 Working: the synthesizer, the phoneme inventory, frame interpolation, the text front end,
-voices, the CLI.
+voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
+and the CLI.
 
-Not yet: live audio output, and real prosody — F0 does declination and a stress bump and
-nothing else, with no phrase-final fall and no question contour. That is the biggest
-remaining naturalness gap.
+Not yet: a GUI, perceptually-spaced formant interpolation, per-phoneme bandwidth
+variation, and the speculative fixed-point and WASM targets. See ROADMAP.md.
