@@ -1,0 +1,18 @@
+# BENCmouth voice
+name           = Bright
+
+f0_base        = 168
+f0_range       = 5.5
+f0_flutter     = 0.3
+speed          = 1.05
+
+throat         = 1.1
+mouth          = 1.16
+
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.46
+gain           = 1
+
+# naturalness controls; 0 is the original BENCmouth behaviour
+coarticulation = 0

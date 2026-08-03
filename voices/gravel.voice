@@ -1,0 +1,11 @@
+# BENCmouth voice - a rougher, lower Retro
+name           = Gravel
+preset         = retro      # start from Retro, then override
+
+f0_base        = 96
+f0_flutter     = 0.45
+throat         = 0.88
+mouth          = 0.94
+tilt           = 9
+open_quotient  = 0.58
+coarticulation = 0          # stays crisp

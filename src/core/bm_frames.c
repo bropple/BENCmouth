@@ -1,0 +1,407 @@
+/*
+ * BENCmouth - phoneme sequence to parameter frames
+ * See bm_frames.h for the model.
+ */
+
+#include "bm_frames.h"
+#include "bm_math.h"
+
+#include <stddef.h>
+
+enum {
+    SEG_TRANSITION = 0,
+    SEG_CLOSURE,
+    SEG_BURST,
+    SEG_STEADY,
+    SEG_COUNT
+};
+
+/* Frication level driving a stop or affricate release. The per-phoneme
+ * burst_amp values shape the spectrum; this sets how loud the release is. */
+#define BM_BURST_AF_DB 36.0f
+
+/* Duration multipliers by CMUdict stress digit: 1 primary, 2 secondary,
+ * 0 unstressed. Unstressed vowels reduce noticeably in English and leaving
+ * them full length is one of the loudest tells that speech is synthetic. */
+#define DUR_STRESS_PRIMARY   1.25f
+#define DUR_STRESS_SECONDARY 1.10f
+#define DUR_STRESS_NONE      0.85f
+
+/* F0 falls across an utterance. Without this every sentence sounds like a
+ * question that never resolves. */
+#define F0_DECLINATION 0.82f    /* end pitch as a fraction of start */
+#define F0_STRESS_BUMP 1.06f    /* on primary-stressed phonemes */
+
+/* ------------------------------------------------------------------ */
+
+static float stress_duration_scale(unsigned char stress, const bm_phoneme *p)
+{
+    if (p->cls != BM_CLS_VOWEL && p->cls != BM_CLS_DIPHTHONG) return 1.0f;
+
+    /* No stress digit at all is not the same as a digit saying "unstressed".
+     * The letter-to-sound rules emit no stress marks, so treating absence as
+     * stress 0 reduced every vowel in every word and left sentences with no
+     * stressed syllable anywhere - which is a large part of why longer words
+     * were hard to make out. Absence means "no information", so leave the
+     * nominal duration alone. */
+    if (stress == BM_STRESS_UNMARKED) return 1.0f;
+
+    if (stress == 1u) return DUR_STRESS_PRIMARY;
+    if (stress == 2u) return DUR_STRESS_SECONDARY;
+    return DUR_STRESS_NONE;
+}
+
+static int ms_to_frames(const bm_frame_gen *g, unsigned short ms, float scale)
+{
+    float speed = (g->voice.speed > 0.01f) ? g->voice.speed : 1.0f;
+    float f = (float)ms * scale * g->frame_rate / (1000.0f * speed);
+    int   n = (int)(f + 0.5f);
+    return (n < 1) ? 1 : n;
+}
+
+static int segment_frames(const bm_frame_gen *g, int index, int seg)
+{
+    const bm_phoneme *p = g->seq[index];
+    float scale = stress_duration_scale(g->stress[index], p);
+
+    switch (seg) {
+    case SEG_TRANSITION: return ms_to_frames(g, p->transition_ms, 1.0f);
+    case SEG_CLOSURE:    return (p->closure_ms > 0u)
+                                ? ms_to_frames(g, p->closure_ms, 1.0f) : 0;
+    case SEG_BURST:      return (p->burst_ms > 0u)
+                                ? ms_to_frames(g, p->burst_ms, 1.0f) : 0;
+    default:             return ms_to_frames(g, p->steady_ms, scale);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+
+/* How far this phoneme falls short of its own targets, pulled toward its
+ * neighbours. Zero unless the voice asks for coarticulation. */
+static float undershoot_weight(const bm_frame_gen *g, int index)
+{
+    const bm_phoneme *p = g->seq[index];
+    float coart = g->voice.coarticulation;
+    float dur, w;
+
+    if (coart <= 0.0f) return 0.0f;
+
+    /* Shorter segments undershoot more, because there is less time to travel.
+     * This is exactly why unstressed syllables reduce so heavily in English,
+     * and why a synthesizer that hits every target sounds over-enunciated. */
+    dur = (float)p->steady_ms * stress_duration_scale(g->stress[index], p);
+    if (dur < 1.0f) dur = 1.0f;
+
+    w = 80.0f / dur;
+    w = bm_clampf(w, 0.15f, 1.0f);
+
+    /* Cap at half way to the neighbours - beyond that phonemes stop being
+     * distinguishable from each other. */
+    return coart * w * 0.5f;
+}
+
+/* Mean of the adjacent phonemes' targets for formant `i`, or a negative value
+ * when there are no usable neighbours. */
+static float neighbour_freq(const bm_frame_gen *g, int index, int i)
+{
+    float sum = 0.0f;
+    int   n = 0;
+
+    if (index > 0 && g->seq[index - 1]->cls != BM_CLS_SILENCE) {
+        sum += g->seq[index - 1]->freq_end[i];
+        n++;
+    }
+    if (index + 1 < g->count && g->seq[index + 1]->cls != BM_CLS_SILENCE) {
+        sum += g->seq[index + 1]->freq[i];
+        n++;
+    }
+    if (n == 0) return -1.0f;
+    return sum / (float)n;
+}
+
+/* Builds the parameter target for one phoneme in one segment. `pos` is the
+ * normalized position within the segment, used only by diphthongs. */
+static void build_target(const bm_frame_gen *g, int index, int seg, float pos,
+                         bm_frame *out)
+{
+    const bm_phoneme *p = g->seq[index];
+    float cw = undershoot_weight(g, index);
+    int   i;
+
+    for (i = 0; i < BM_NFORMANTS; i++) {
+        out->freq[i] = 0.0f;
+        out->bw[i] = 100.0f;
+        out->par_amp[i] = 0.0f;
+    }
+
+    for (i = 0; i < BM_PH_NTARGETS; i++) {
+        float f = p->freq[i];
+        if (p->cls == BM_CLS_DIPHTHONG && seg == SEG_STEADY) {
+            /* Glide across the steady segment rather than jumping at its end.
+             * The glide is what a diphthong *is*. */
+            f = p->freq[i] + (p->freq_end[i] - p->freq[i]) * pos;
+        }
+        if (cw > 0.0f) {
+            float nb = neighbour_freq(g, index, i);
+            if (nb > 0.0f) f += (nb - f) * cw;
+        }
+        out->freq[i] = f * bm_voice_formant_scale(&g->voice, i);
+        out->bw[i] = p->bw[i];
+    }
+    out->freq[3] = BM_F4_HZ * bm_voice_formant_scale(&g->voice, 3);
+    out->bw[3] = BM_F4_BW;
+    out->freq[4] = BM_F5_HZ * bm_voice_formant_scale(&g->voice, 4);
+    out->bw[4] = BM_F5_BW;
+
+    out->open_quotient = g->voice.open_quotient;
+    out->tilt = g->voice.tilt;
+
+    /* Nasal pole and zero coincide unless the phoneme is nasal, and a
+     * coincident pair cancels exactly - so this is how the branch switches
+     * off without needing a flag. */
+    out->nasal_pole_f  = BM_NASAL_POLE_HZ;
+    out->nasal_pole_bw = BM_NASAL_BW;
+    if (p->nasal_zero_f > 0.0f) {
+        /* The nasal zero is an oral-cavity feature, so it tracks the same
+         * scaling as the mid formants rather than the pharyngeal axis. */
+        out->nasal_zero_f  = p->nasal_zero_f * bm_voice_formant_scale(&g->voice, 1);
+        out->nasal_zero_bw = BM_NASAL_BW;
+    } else {
+        out->nasal_zero_f  = BM_NASAL_POLE_HZ;
+        out->nasal_zero_bw = BM_NASAL_BW;
+    }
+
+    out->f0 = 0.0f;   /* filled in globally by the caller */
+
+    switch (seg) {
+    case SEG_CLOSURE:
+        /* Occluded: no airflow at the lips. Voiced stops keep a faint voice
+         * bar, which is most of what distinguishes /b/ from /p/. */
+        out->av = p->av;
+        out->ah = 0.0f;
+        out->af = 0.0f;
+        out->par_bypass = 0.0f;
+        break;
+
+    case SEG_BURST:
+        out->av = p->av;
+        out->ah = 0.0f;
+        out->af = BM_BURST_AF_DB;
+        for (i = 0; i < BM_NFORMANTS; i++) out->par_amp[i] = p->burst_amp[i];
+        out->par_bypass = p->burst_bypass;
+        break;
+
+    default:
+        out->av = p->av;
+        out->ah = p->ah;
+        out->af = p->af;
+        for (i = 0; i < BM_NFORMANTS; i++) out->par_amp[i] = p->par_amp[i];
+        out->par_bypass = p->par_bypass;
+        /* Breathiness rides on top of whatever aspiration the phoneme has. */
+        if (out->av > 0.0f && g->voice.breathiness > 0.0f) {
+            float b = out->av - 40.0f + g->voice.breathiness;
+            if (b > out->ah) out->ah = b;
+        }
+        break;
+    }
+}
+
+static float smoothstep(float t)
+{
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+    /* Zero first derivative at both ends, so a transition neither starts nor
+     * stops abruptly. Linear interpolation puts a velocity discontinuity at
+     * every phoneme boundary and it is audible as a faint tick. */
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static void blend(const bm_frame *a, const bm_frame *b, float t, bm_frame *out)
+{
+    int i;
+
+    for (i = 0; i < BM_NFORMANTS; i++) {
+        out->freq[i] = a->freq[i] + (b->freq[i] - a->freq[i]) * t;
+        out->bw[i]   = a->bw[i]   + (b->bw[i]   - a->bw[i])   * t;
+        out->par_amp[i] = a->par_amp[i] + (b->par_amp[i] - a->par_amp[i]) * t;
+    }
+    out->av = a->av + (b->av - a->av) * t;
+    out->ah = a->ah + (b->ah - a->ah) * t;
+    out->af = a->af + (b->af - a->af) * t;
+    out->par_bypass = a->par_bypass + (b->par_bypass - a->par_bypass) * t;
+
+    out->open_quotient = a->open_quotient + (b->open_quotient - a->open_quotient) * t;
+    out->tilt = a->tilt + (b->tilt - a->tilt) * t;
+
+    out->nasal_pole_f  = a->nasal_pole_f  + (b->nasal_pole_f  - a->nasal_pole_f)  * t;
+    out->nasal_pole_bw = a->nasal_pole_bw + (b->nasal_pole_bw - a->nasal_pole_bw) * t;
+    out->nasal_zero_f  = a->nasal_zero_f  + (b->nasal_zero_f  - a->nasal_zero_f)  * t;
+    out->nasal_zero_bw = a->nasal_zero_bw + (b->nasal_zero_bw - a->nasal_zero_bw) * t;
+
+    out->f0 = a->f0 + (b->f0 - a->f0) * t;
+}
+
+/* ------------------------------------------------------------------ */
+
+void bm_frame_gen_init(bm_frame_gen *g, float frame_rate, const bm_voice *voice)
+{
+    if (g == 0) return;
+
+    g->frame_rate = (frame_rate > 0.0f) ? frame_rate : 100.0f;
+    if (voice != 0) {
+        g->voice = *voice;
+    } else {
+        bm_voice_default(&g->voice);
+    }
+    g->count = 0;
+    bm_frame_gen_reset(g);
+}
+
+void bm_frame_gen_reset(bm_frame_gen *g)
+{
+    int   i;
+
+    if (g == 0) return;
+
+    g->index = 0;
+    g->segment = SEG_TRANSITION;
+    g->frame_in_seg = 0;
+    g->frames_done = 0;
+
+    /* Start from silence at a neutral vocal tract, so the first transition
+     * glides out of rest rather than starting mid-articulation.
+     *
+     * The rest position is scaled by formant_scale like every other target: a
+     * longer vocal tract is longer at rest too, and leaving it unscaled would
+     * make every utterance open with a transition from the wrong speaker. */
+    for (i = 0; i < BM_NFORMANTS; i++) {
+        g->last.bw[i] = 100.0f;
+        g->last.par_amp[i] = 0.0f;
+    }
+    g->last.freq[0] =  500.0f * bm_voice_formant_scale(&g->voice, 0);
+    g->last.freq[1] = 1500.0f * bm_voice_formant_scale(&g->voice, 1);
+    g->last.freq[2] = 2500.0f * bm_voice_formant_scale(&g->voice, 2);
+    g->last.freq[3] = BM_F4_HZ * bm_voice_formant_scale(&g->voice, 3);
+    g->last.freq[4] = BM_F5_HZ * bm_voice_formant_scale(&g->voice, 4);
+    g->last.av = 0.0f;
+    g->last.ah = 0.0f;
+    g->last.af = 0.0f;
+    g->last.par_bypass = 0.0f;
+    g->last.open_quotient = g->voice.open_quotient;
+    g->last.tilt = g->voice.tilt;
+    g->last.nasal_pole_f = BM_NASAL_POLE_HZ;
+    g->last.nasal_pole_bw = BM_NASAL_BW;
+    g->last.nasal_zero_f = BM_NASAL_POLE_HZ;
+    g->last.nasal_zero_bw = BM_NASAL_BW;
+    g->last.f0 = g->voice.f0_base;
+
+    g->from = g->last;
+    g->to = g->last;
+}
+
+bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
+                                    size_t len)
+{
+    size_t i = 0;
+    int    total = 0, k, s;
+
+    if (g == 0 || phonemes == 0) return BM_ERR_ARG;
+
+    if (len == 0) {
+        while (phonemes[len] != '\0') len++;
+    }
+
+    g->count = 0;
+
+    while (i < len) {
+        size_t start;
+        unsigned char stress = BM_STRESS_UNMARKED;
+        const bm_phoneme *p;
+
+        while (i < len && (phonemes[i] == ' ' || phonemes[i] == '\t' ||
+                           phonemes[i] == '\n' || phonemes[i] == '\r')) i++;
+        if (i >= len) break;
+
+        start = i;
+        while (i < len && phonemes[i] != ' ' && phonemes[i] != '\t' &&
+               phonemes[i] != '\n' && phonemes[i] != '\r') {
+            if (phonemes[i] >= '0' && phonemes[i] <= '9') {
+                stress = (unsigned char)(phonemes[i] - '0');
+            }
+            i++;
+        }
+
+        p = bm_phoneme_lookup(phonemes + start, i - start);
+        if (p == 0) return BM_ERR_UNSUPPORTED;
+
+        if (g->count >= BM_MAX_PHONEMES) return BM_ERR_OVERFLOW;
+        g->seq[g->count] = p;
+        g->stress[g->count] = stress;
+        g->count++;
+    }
+
+    if (g->count == 0) return BM_ERR_ARG;
+
+    bm_frame_gen_reset(g);
+
+    for (k = 0; k < g->count; k++) {
+        for (s = 0; s < SEG_COUNT; s++) total += segment_frames(g, k, s);
+    }
+    g->frames_total = total;
+
+    return BM_OK;
+}
+
+int bm_frame_gen_length(const bm_frame_gen *g)
+{
+    return (g == 0) ? 0 : g->frames_total;
+}
+
+int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
+{
+    if (g == 0 || out == 0) return 0;
+
+    while (g->index < g->count) {
+        int n = segment_frames(g, g->index, g->segment);
+
+        if (g->frame_in_seg >= n) {
+            g->frame_in_seg = 0;
+            g->segment++;
+            if (g->segment >= SEG_COUNT) {
+                g->segment = SEG_TRANSITION;
+                g->index++;
+            }
+            continue;
+        }
+
+        if (g->segment == SEG_TRANSITION) {
+            if (g->frame_in_seg == 0) {
+                g->from = g->last;
+                build_target(g, g->index, SEG_STEADY, 0.0f, &g->to);
+            }
+            blend(&g->from, &g->to, smoothstep((float)g->frame_in_seg / (float)n), out);
+        } else {
+            float pos = (n > 1) ? (float)g->frame_in_seg / (float)(n - 1) : 0.0f;
+            build_target(g, g->index, g->segment, pos, out);
+        }
+
+        /* Pitch is applied globally rather than per phoneme, so the contour
+         * stays smooth across boundaries instead of being interpolated
+         * piecewise from phoneme targets that know nothing about each other. */
+        {
+            float t = (g->frames_total > 1)
+                    ? (float)g->frames_done / (float)(g->frames_total - 1)
+                    : 0.0f;
+            float f0 = g->voice.f0_base * (1.0f + (F0_DECLINATION - 1.0f) * t);
+            if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;
+            out->f0 = f0;
+        }
+
+        g->last = *out;
+        g->frame_in_seg++;
+        g->frames_done++;
+        return 1;
+    }
+
+    return 0;
+}

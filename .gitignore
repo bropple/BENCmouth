@@ -1,0 +1,24 @@
+# Build artifacts
+*.o
+*.d
+*.a
+bm
+bm_test
+vowel_demo
+speak_demo
+*.exe
+
+# Generated audio. Rendered output is reproducible from the source that made
+# it, so it does not belong in history - regenerate with `make demo && ./vowel_demo`.
+render/
+
+# Reference material is checked in deliberately (see ref/README.md), but the
+# dictionary is 3.5 MB. If that becomes a nuisance, the compiled form produced
+# by tools/mkdict is what the build actually needs.
+
+# OS cruft
+.DS_Store
+._*
+
+# Brand/style assets, kept out of the public repo
+style/

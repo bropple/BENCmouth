@@ -1,0 +1,89 @@
+name: build
+
+# The README claims BENCmouth builds on Linux, macOS and Windows, but only the
+# Linux path was ever built by hand. This is what turns that claim into
+# something verified rather than asserted.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unix:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false      # a macOS-only failure should not hide a Linux one
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make
+
+      - name: Core is freestanding
+        run: make check-freestanding
+
+      - name: Tests
+        run: make test
+
+      - name: Smoke test the CLI
+        run: |
+          ./bm "continuous integration" -o ci.wav
+          ./bm -t "the quick brown fox"
+          ./bm -l
+          ls -l ci.wav
+
+  windows:
+    name: windows-latest (ucrt64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            make
+
+      - name: Build
+        run: make
+
+      - name: Core is freestanding
+        run: make check-freestanding
+
+      - name: Tests
+        run: make test
+
+      - name: Smoke test the CLI
+        run: |
+          ./bm "continuous integration" -o ci.wav
+          ./bm -t "the quick brown fox"
+          ./bm -l
+          ls -l ci.wav
+
+  strict:
+    name: ubuntu strict warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The makefile already builds with -Wall -Wextra -Wpedantic -Wconversion
+      # and friends. This makes any of them fatal, so a warning cannot quietly
+      # accumulate.
+      - name: Build with -Werror
+        run: make OPT="-O2 -Werror"
+
+      - name: Build at -O0 with sanitizers
+        run: |
+          make clean
+          make OPT="-O0 -g -fsanitize=address,undefined" LDFLAGS="-fsanitize=address,undefined"
+          make test OPT="-O0 -g -fsanitize=address,undefined" LDFLAGS="-fsanitize=address,undefined"

@@ -1,0 +1,81 @@
+# BENCmouth
+
+CC      ?= cc
+AR      ?= ar
+CSTD    ?= -std=c99
+WARN    := -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes \
+           -Wmissing-prototypes -Wpointer-arith -Wcast-qual
+OPT     ?= -O2
+# -MMD -MP emits a .d file per object listing the headers it included, and the
+# -include below feeds those back to make. Without this, editing a header
+# recompiles nothing: objects keep a stale view of any struct it defines, and
+# two translation units end up disagreeing about a struct's size. That failure
+# is silent, and it presents as impossible behaviour rather than as a build
+# error - it cost an afternoon once already.
+CFLAGS  += $(CSTD) $(WARN) $(OPT) -Iinclude -MMD -MP
+LDFLAGS +=
+
+CORE_SRC := $(wildcard src/core/*.c)
+HOST_SRC := $(wildcard src/host/*.c)
+CORE_OBJ := $(CORE_SRC:.c=.o)
+HOST_OBJ := $(HOST_SRC:.c=.o)
+# Demos supply their own main, so they link the host objects except main.o.
+HOST_NOMAIN := $(filter-out src/host/main.o,$(HOST_OBJ))
+
+LIB  := libbencmouth.a
+BIN  := bm
+DEMO  := vowel_demo
+SPEAK := speak_demo
+
+.PHONY: all lib bm demo speak clean test check-freestanding
+
+# The bm CLI has no main yet; until it does, the demo is what you run.
+all: lib bm demo speak
+
+lib: $(LIB)
+
+demo: $(DEMO)
+
+speak: $(SPEAK)
+
+$(LIB): $(CORE_OBJ)
+	$(AR) rcs $@ $^
+
+$(DEMO): tools/vowel_demo.c $(HOST_NOMAIN) $(LIB)
+	@mkdir -p render
+	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $< $(HOST_NOMAIN) $(LIB) $(LDFLAGS) -lm
+
+# The core must never reach for the host. If this fires, the embedded build is
+# already broken and you would not otherwise find out until you cross-compiled.
+check-freestanding:
+	@! grep -rnE '#[[:space:]]*include[[:space:]]*<(stdio|stdlib|math|string)\.h>' src/core/ \
+		|| (echo "core/ must not include hosted headers"; exit 1)
+	@echo "core is freestanding-clean"
+
+# Built into the working directory rather than /tmp: MinGW appends .exe to an
+# extensionless -o target, so a hardcoded /tmp/bm_test compiles but then cannot
+# be executed by that name on Windows.
+test: $(LIB)
+	@for t in tests/test_*.c; do \
+		echo "== $$t"; \
+		$(CC) $(CFLAGS) -Isrc/core -o bm_test $$t $(LIB) -lm && ./bm_test || exit 1; \
+	done
+	@rm -f bm_test bm_test.exe
+
+clean:
+	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
+	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
+	rm -f *.exe
+
+$(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
+	@mkdir -p render
+	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $< $(HOST_NOMAIN) $(LIB) $(LDFLAGS) -lm
+
+# The CLI links every host object including main.c.
+bm: $(BIN)
+
+$(BIN): $(HOST_OBJ) $(LIB)
+	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $(HOST_OBJ) $(LIB) $(LDFLAGS) -lm
+
+# Header dependencies emitted by -MMD. Silent if absent (first build).
+-include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

@@ -1,0 +1,18 @@
+# BENCmouth voice
+name           = Deep
+
+f0_base        = 100
+f0_range       = 4.5
+f0_flutter     = 0.35
+speed          = 0.93
+
+throat         = 0.78
+mouth          = 0.84
+
+breathiness    = 0
+tilt           = 9
+open_quotient  = 0.58
+gain           = 1
+
+# naturalness controls; 0 is the original BENCmouth behaviour
+coarticulation = 0
