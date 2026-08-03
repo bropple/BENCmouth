@@ -77,5 +77,13 @@ that need an actual decision when we get there:
 - Fixed-point build (`BM_SAMPLE_FLOAT=0`) — needs Q-format multiply macros through the DSP
 - WASM target via `clang --target=wasm32`
 - Singing / explicit F0 control through the public `bm_frame` path
-- Inline markup in text (`[pitch 80]`, pauses) — decide whether this belongs in core or in a
-  preprocessing layer above `bm_speak_text()`
+- ~~Inline markup in text~~ — **done**, and it lives in core. `bm_config.markup` gates it
+  at runtime (off by default, so brackets stay ordinary text for anyone who did not opt
+  in) and `BM_WITH_MARKUP` removes the parser entirely for embedded builds.
+  `[pitch N]`, `[speed X]`, `[pause N]`, `[reset]`.
+
+  The design decision worth recording: commands survive into the phoneme string rather
+  than being resolved away in the front end. That keeps the phoneme string the single
+  interface between text and synthesizer — `bm -t` shows exactly what will be acted on,
+  `bm_speak_phonemes()` honours markup for free, and there is no side channel to keep in
+  sync. The cost is 6 KB of per-phoneme override storage in the frame generator.

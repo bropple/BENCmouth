@@ -30,6 +30,7 @@ static void usage(void)
 "  -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast\n"
 "  -p PITCH     base pitch in Hz\n"
 "  -P           input is ARPABET phonemes, not text\n"
+"  -m           enable inline markup: [pitch N] [speed X] [pause N] [reset]\n"
 "  -t           print phonemes and exit; render nothing\n"
 "  -w FILE      write the resolved voice to a voice file and exit\n"
 "  -l           list voice presets\n"
@@ -40,7 +41,8 @@ static void usage(void)
 "  bm \"hello world\" -o hello.wav\n"
 "  bm -v retro -s 0.8 \"I am sorry Dave\"\n"
 "  bm -P \"HH AH0 L OW1\" -o hello.wav\n"
-"  bm -t \"the quick brown fox\"\n");
+"  bm -t \"the quick brown fox\"\n"
+"  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n");
 }
 
 int main(int argc, char **argv)
@@ -81,6 +83,7 @@ int main(int argc, char **argv)
             return 0;
         }
         else if (strcmp(a, "-P") == 0) as_phonemes = 1;
+        else if (strcmp(a, "-m") == 0) config.markup = 1;
         else if (strcmp(a, "-t") == 0) text_only = 1;
         else if (strcmp(a, "-o") == 0 && i + 1 < argc) outpath = argv[++i];
         else if (strcmp(a, "-r") == 0 && i + 1 < argc)
@@ -123,7 +126,8 @@ int main(int argc, char **argv)
     if (text_only) {
         char   phonemes[8192];
         size_t n = 0;
-        bm_result rc = bm_text_to_phonemes(input, 0, phonemes, sizeof phonemes, &n);
+        bm_result rc = bm_text_to_phonemes_ex(input, 0, phonemes, sizeof phonemes,
+                                              &n, config.markup ? BM_TEXT_MARKUP : 0u);
         if (rc != BM_OK) { fprintf(stderr, "bm: %s\n", bm_strerror(rc)); return 1; }
         printf("%s\n", phonemes);
         return 0;

@@ -162,8 +162,9 @@ bm_result bm_speak_text(bm_engine *engine, const char *text, size_t len)
 
     if (engine == 0 || text == 0) return BM_ERR_ARG;
 
-    rc = bm_text_to_phonemes(text, len, engine->phonemes,
-                             sizeof engine->phonemes, &n);
+    rc = bm_text_to_phonemes_ex(text, len, engine->phonemes,
+                                sizeof engine->phonemes, &n,
+                                engine->config.markup ? BM_TEXT_MARKUP : 0u);
     if (rc != BM_OK) return rc;
     if (n == 0) return BM_ERR_ARG;
 

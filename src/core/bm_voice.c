@@ -220,6 +220,7 @@ void bm_config_default(bm_config *config)
      * Below about 16 kHz the top formant folds and vowels lose their edge. */
     config->sample_rate = 22050u;
     config->frame_rate = 100u;
+    config->markup = 0;      /* brackets are ordinary text unless asked for */
     bm_voice_default(&config->voice);
 }
 

@@ -82,6 +82,15 @@ jobs:
       - name: Build with -Werror
         run: make OPT="-O2 -Werror"
 
+      # Markup is optional in core, so the build without it has to stay clean
+      # too - an unused-parameter warning there would only surface on an
+      # embedded build, which is the last place anyone wants to find it.
+      - name: Build with markup compiled out
+        run: |
+          make clean
+          make lib OPT="-O2 -Werror -DBM_WITH_MARKUP=0"
+          make clean
+
       - name: Build at -O0 with sanitizers
         run: |
           make clean

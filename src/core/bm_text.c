@@ -8,6 +8,15 @@
 
 #include <stddef.h>
 
+#if BM_WITH_MARKUP
+/* Own copy: the core links no libc. */
+static void bm_memcpy(char *d, const char *s, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) d[i] = s[i];
+}
+#endif
+
 #define MAX_WORD  64
 #define MAX_DIGITS 12
 
@@ -247,10 +256,21 @@ static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
 bm_result bm_text_to_phonemes(const char *text, size_t text_len,
                               char *out, size_t out_cap, size_t *out_len)
 {
+    return bm_text_to_phonemes_ex(text, text_len, out, out_cap, out_len, 0u);
+}
+
+bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
+                                 char *out, size_t out_cap, size_t *out_len,
+                                 unsigned flags)
+{
     size_t    i = 0, at = 0;
     bm_result rc = BM_OK;
 
     if (text == 0 || out == 0 || out_cap == 0) return BM_ERR_ARG;
+
+#if !BM_WITH_MARKUP
+    (void)flags;   /* the parser is compiled out; nothing consults it */
+#endif
 
     if (text_len == 0) {
         while (text[text_len] != '\0') text_len++;
@@ -289,6 +309,29 @@ bm_result bm_text_to_phonemes(const char *text, size_t text_len,
             }
             if (at > out_cap) return BM_ERR_OVERFLOW;
 
+#if BM_WITH_MARKUP
+        } else if (c == '[' && (flags & BM_TEXT_MARKUP) != 0u) {
+            /* Copy the command through verbatim, brackets included. It is not
+             * interpreted here - bm_frames.c does that - so the phoneme string
+             * stays the one interface between front end and synthesizer, and
+             * `bm -t` shows exactly what the synthesizer will act on.
+             *
+             * An unterminated bracket is an error rather than a guess: silently
+             * treating the rest of the line as a command would swallow it. */
+            size_t start = i;
+            while (i < text_len && text[i] != ']') i++;
+            if (i >= text_len) return BM_ERR_ARG;
+            i++;                                   /* include the ']' */
+            {
+                char cmd[64];
+                size_t n = i - start;
+                if (n >= sizeof cmd) return BM_ERR_OVERFLOW;
+                bm_memcpy(cmd, text + start, n);
+                cmd[n] = '\0';
+                at = put(out, out_cap, at, cmd, ' ');
+            }
+            if (at > out_cap) return BM_ERR_OVERFLOW;
+#endif
         } else {
             /* Punctuation becomes silence. Sentence-final marks get a longer
              * pause than a comma by repeating it - crude, but the frame

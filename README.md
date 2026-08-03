@@ -103,7 +103,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make` | library, `bm`, and both demos |
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
-| `make test` | run all five test suites |
+| `make test` | run all six test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
 | `make clean` | remove build products |
 
@@ -120,6 +120,7 @@ bm [options] "text to speak"
   -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast
   -p PITCH     base pitch in Hz
   -P           input is ARPABET phonemes, not text
+  -m           enable inline markup
   -t           print phonemes and exit; render nothing
   -w FILE      write the resolved voice to a voice file and exit
   -l           list voice presets
@@ -134,6 +135,39 @@ bm -P "HH AH0 L OW1" -o hello.wav          # phonemes directly
 bm -t "the quick brown fox"                # see what the rules produced
 bm -f voices/gravel.voice "testing" -o t.wav
 ```
+
+### Inline markup
+
+Off unless you ask for it with `-m`, because with it off `[pitch 70]` is ordinary text
+and gets spoken as the words "pitch seventy" — turning brackets into commands silently
+would swallow text for anyone who did not opt in.
+
+```
+bm -m "normal speed. [speed 0.7] now slower. [pitch 160] and higher."
+bm -m "wait for it [pause 800] there it is"
+bm -m "[pitch 70] low ... [reset] and back to normal"
+```
+
+| Command | Effect |
+|---|---|
+| `[pitch N]` | base pitch in Hz, 20–500, for everything after it |
+| `[speed X]` | rate multiplier, 0.1–10 |
+| `[pause N]` | N milliseconds of silence, inserted here (max 10000) |
+| `[reset]` | back to the voice's own settings |
+
+Commands survive into the phoneme string rather than being resolved away, so `bm -m -t`
+shows exactly what the synthesizer will act on, and `-P` input honours them too:
+
+```
+$ bm -m -t "hello [pitch 70] world"
+HH EH L OW [pitch 70] W ER L D
+```
+
+A malformed command is an error, not a guess — `[pitch]`, `[wobble 3]` and an unterminated
+bracket all fail loudly rather than being quietly ignored.
+
+Compile with `-DBM_WITH_MARKUP=0` to remove the parser entirely; `-m` then does nothing and
+brackets stay ordinary characters.
 
 ### Playing it immediately
 
@@ -240,6 +274,7 @@ Tunables, all overridable with `-D`:
 | `BM_MAX_TEXT` | 1024 | bytes of text buffered |
 | `BM_NFORMANTS` | 5 | drop to 3 below ~10 kHz output |
 | `BM_SAMPLE_FLOAT` | 1 | set 0 for `int16_t` output |
+| `BM_WITH_MARKUP` | 1 | set 0 to drop the inline-markup parser |
 | `BM_ENGINE_RESERVED` | 65536 | storage union size; actual use is ~8.5 KB |
 
 ---

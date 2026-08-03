@@ -5,6 +5,7 @@
 
 #include "bm_frames.h"
 #include "bm_math.h"
+#include "bm_text.h"   /* BM_WITH_MARKUP */
 
 #include <stddef.h>
 
@@ -51,26 +52,49 @@ static float stress_duration_scale(unsigned char stress, const bm_phoneme *p)
     return DUR_STRESS_NONE;
 }
 
-static int ms_to_frames(const bm_frame_gen *g, unsigned short ms, float scale)
+static int ms_to_frames(const bm_frame_gen *g, unsigned short ms,
+                        float scale, float speed)
 {
-    float speed = (g->voice.speed > 0.01f) ? g->voice.speed : 1.0f;
-    float f = (float)ms * scale * g->frame_rate / (1000.0f * speed);
-    int   n = (int)(f + 0.5f);
+    float f;
+    int   n;
+
+    if (speed <= 0.01f) speed = 1.0f;
+    f = (float)ms * scale * g->frame_rate / (1000.0f * speed);
+    n = (int)(f + 0.5f);
     return (n < 1) ? 1 : n;
+}
+
+/* Markup can override speed per phoneme; otherwise the voice decides. */
+static float phoneme_speed(const bm_frame_gen *g, int index)
+{
+    float m = g->mod[index].speed;
+    return (m > 0.0f) ? m : g->voice.speed;
 }
 
 static int segment_frames(const bm_frame_gen *g, int index, int seg)
 {
     const bm_phoneme *p = g->seq[index];
     float scale = stress_duration_scale(g->stress[index], p);
+    float speed = phoneme_speed(g, index);
+    unsigned short steady = g->mod[index].dur_ms;
+
+    if (steady == 0u) {
+        steady = p->steady_ms;
+    } else {
+        /* An explicit [pause N] means N milliseconds, not N scaled by stress
+         * and rate. A pause the author asked for should be the length they
+         * asked for. */
+        scale = 1.0f;
+        speed = 1.0f;
+    }
 
     switch (seg) {
-    case SEG_TRANSITION: return ms_to_frames(g, p->transition_ms, 1.0f);
+    case SEG_TRANSITION: return ms_to_frames(g, p->transition_ms, 1.0f, speed);
     case SEG_CLOSURE:    return (p->closure_ms > 0u)
-                                ? ms_to_frames(g, p->closure_ms, 1.0f) : 0;
+                                ? ms_to_frames(g, p->closure_ms, 1.0f, speed) : 0;
     case SEG_BURST:      return (p->burst_ms > 0u)
-                                ? ms_to_frames(g, p->burst_ms, 1.0f) : 0;
-    default:             return ms_to_frames(g, p->steady_ms, scale);
+                                ? ms_to_frames(g, p->burst_ms, 1.0f, speed) : 0;
+    default:             return ms_to_frames(g, steady, scale, speed);
     }
 }
 
@@ -299,9 +323,112 @@ void bm_frame_gen_reset(bm_frame_gen *g)
     g->to = g->last;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * Inline markup
+ *
+ * Commands ride in the phoneme stream as bracketed tokens, so `bm -t` shows
+ * them and bm_speak_phonemes() honours them. They set state that applies to
+ * every phoneme after them until changed or reset.
+ * ------------------------------------------------------------------ */
+
+#if BM_WITH_MARKUP
+
+static int is_ws(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+/* No strtod in the core, and it would be overkill anyway - these are knob
+ * values typed by a person, not scientific notation. */
+static float parse_number(const char *s, size_t len, int *ok)
+{
+    float v = 0.0f, frac = 0.1f;
+    size_t i = 0;
+    int    dot = 0, digits = 0, neg = 0;
+
+    while (i < len && is_ws(s[i])) i++;
+    if (i < len && s[i] == '-') { neg = 1; i++; }
+
+    for (; i < len; i++) {
+        if (s[i] == '.' && !dot) { dot = 1; continue; }
+        if (s[i] < '0' || s[i] > '9') break;
+        digits++;
+        if (!dot) {
+            v = v * 10.0f + (float)(s[i] - '0');
+        } else {
+            v += (float)(s[i] - '0') * frac;
+            frac *= 0.1f;
+        }
+    }
+    while (i < len && is_ws(s[i])) i++;
+
+    *ok = (digits > 0 && i == len);
+    return neg ? -v : v;
+}
+
+static int word_is(const char *s, size_t len, const char *word)
+{
+    size_t i;
+    for (i = 0; i < len; i++) {
+        char c = s[i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        if (word[i] == '\0' || word[i] != c) return 0;
+    }
+    return word[i] == '\0';
+}
+
+/* Parses one command's contents (between the brackets). Sets `cur` for
+ * subsequent phonemes, or reports a pause to insert here. */
+static bm_result parse_command(const char *s, size_t len,
+                               bm_phoneme_mod *cur, unsigned *pause_ms)
+{
+    size_t k = 0, name_end;
+    int    ok = 0;
+    float  value;
+
+    *pause_ms = 0u;
+
+    while (k < len && is_ws(s[k])) k++;
+    name_end = k;
+    while (name_end < len && !is_ws(s[name_end])) name_end++;
+    if (name_end == k) return BM_ERR_ARG;
+
+    if (word_is(s + k, name_end - k, "reset")) {
+        cur->f0 = 0.0f;
+        cur->speed = 0.0f;
+        cur->dur_ms = 0u;
+        return BM_OK;
+    }
+
+    value = parse_number(s + name_end, len - name_end, &ok);
+    /* An unparseable or missing argument is an error rather than a default.
+     * "[pitch]" almost certainly means the author mistyped something, and
+     * quietly ignoring it produces speech that is subtly not what they
+     * asked for. */
+    if (!ok) return BM_ERR_ARG;
+
+    if (word_is(s + k, name_end - k, "pitch")) {
+        if (value < 20.0f || value > 500.0f) return BM_ERR_ARG;
+        cur->f0 = value;
+    } else if (word_is(s + k, name_end - k, "speed")) {
+        if (value < 0.1f || value > 10.0f) return BM_ERR_ARG;
+        cur->speed = value;
+    } else if (word_is(s + k, name_end - k, "pause")) {
+        if (value < 0.0f || value > 10000.0f) return BM_ERR_ARG;
+        *pause_ms = (unsigned)value;
+    } else {
+        return BM_ERR_UNSUPPORTED;
+    }
+    return BM_OK;
+}
+
+#endif /* BM_WITH_MARKUP */
+
 bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
                                     size_t len)
 {
+    bm_phoneme_mod cur;
     size_t i = 0;
     int    total = 0, k, s;
 
@@ -312,6 +439,9 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
     }
 
     g->count = 0;
+    cur.f0 = 0.0f;
+    cur.speed = 0.0f;
+    cur.dur_ms = 0u;
 
     while (i < len) {
         size_t start;
@@ -321,6 +451,37 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
         while (i < len && (phonemes[i] == ' ' || phonemes[i] == '\t' ||
                            phonemes[i] == '\n' || phonemes[i] == '\r')) i++;
         if (i >= len) break;
+
+        if (phonemes[i] == '[') {
+#if BM_WITH_MARKUP
+            size_t   cs = ++i;
+            unsigned pause_ms = 0u;
+            bm_result rc;
+
+            /* Scan to the closing bracket regardless of whitespace: a command
+             * such as "[pitch 90]" spans what would otherwise be two tokens. */
+            while (i < len && phonemes[i] != ']') i++;
+            if (i >= len) return BM_ERR_ARG;      /* unterminated */
+
+            rc = parse_command(phonemes + cs, i - cs, &cur, &pause_ms);
+            if (rc != BM_OK) return rc;
+            i++;                                  /* past the ']' */
+
+            if (pause_ms > 0u) {
+                if (g->count >= BM_MAX_PHONEMES) return BM_ERR_OVERFLOW;
+                g->seq[g->count] = bm_phoneme_silence();
+                g->stress[g->count] = BM_STRESS_UNMARKED;
+                g->mod[g->count] = cur;
+                g->mod[g->count].dur_ms = (unsigned short)pause_ms;
+                g->count++;
+            }
+            continue;
+#else
+            /* Markup compiled out, so a bracket cannot mean anything. Saying
+             * so beats silently speaking the command as if it were phonemes. */
+            return BM_ERR_UNSUPPORTED;
+#endif
+        }
 
         start = i;
         while (i < len && phonemes[i] != ' ' && phonemes[i] != '\t' &&
@@ -337,6 +498,8 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
         if (g->count >= BM_MAX_PHONEMES) return BM_ERR_OVERFLOW;
         g->seq[g->count] = p;
         g->stress[g->count] = stress;
+        g->mod[g->count] = cur;
+        g->mod[g->count].dur_ms = 0u;   /* only [pause] sets an absolute length */
         g->count++;
     }
 
@@ -392,7 +555,9 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
             float t = (g->frames_total > 1)
                     ? (float)g->frames_done / (float)(g->frames_total - 1)
                     : 0.0f;
-            float f0 = g->voice.f0_base * (1.0f + (F0_DECLINATION - 1.0f) * t);
+            float base = (g->mod[g->index].f0 > 0.0f)
+                       ? g->mod[g->index].f0 : g->voice.f0_base;
+            float f0 = base * (1.0f + (F0_DECLINATION - 1.0f) * t);
             if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;
             out->f0 = f0;
         }

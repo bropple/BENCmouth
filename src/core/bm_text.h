@@ -16,6 +16,13 @@
 
 #include <stddef.h>
 
+/* Set to 0 to compile the inline-markup parser out entirely. The public
+ * BM_TEXT_MARKUP flag and bm_config.markup then do nothing, and brackets stay
+ * ordinary characters. */
+#ifndef BM_WITH_MARKUP
+#define BM_WITH_MARKUP 1
+#endif
+
 /* Declared in bencmouth.h; repeated here so this header stands alone:
  *
  *   bm_result bm_text_to_phonemes(const char *text, size_t text_len,

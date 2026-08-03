@@ -245,6 +245,13 @@ typedef struct bm_config {
     uint32_t sample_rate;        /* Hz; 22050 is the sweet spot for 5 formants */
     uint32_t frame_rate;         /* parameter updates/sec; 100 is standard */
     bm_voice voice;
+
+    /* Enables inline markup in bm_speak_text(). Off by default, and that
+     * default matters: with markup off, "[pitch 80]" is ordinary text and gets
+     * spoken as the words "pitch eighty". Turning it on changes brackets from
+     * characters into commands, which would silently swallow text for any
+     * caller who did not ask for it. See BM_TEXT_MARKUP. */
+    int markup;
 } bm_config;
 
 void bm_config_default(bm_config *config);
@@ -293,6 +300,36 @@ int bm_is_speaking(const bm_engine *engine);
  * practical win, since front-end bugs are much easier to read than hear. */
 bm_result bm_text_to_phonemes(const char *text, size_t text_len,
                               char *out, size_t out_cap, size_t *out_len);
+
+/* ------------------------------------------------------------------ *
+ * Inline markup
+ *
+ * Bracketed commands embedded in text, off unless asked for:
+ *
+ *   [pitch 90]    base pitch in Hz for everything after it
+ *   [speed 1.4]   rate multiplier
+ *   [pause 400]   milliseconds of silence, inserted here
+ *   [reset]       back to the voice's own settings
+ *
+ *   bm_speak_text(e, "normally. [pitch 70][speed 0.8] and now slowly.", 0);
+ *
+ * Commands survive into the phoneme string rather than being resolved away, so
+ * `bm -t` shows them and bm_speak_phonemes() honours them too. That keeps the
+ * phoneme string the single interface between the front end and the
+ * synthesizer instead of adding a side channel around it.
+ *
+ * Compile with -DBM_WITH_MARKUP=0 to remove the parser entirely; the flag
+ * below then does nothing and brackets stay ordinary characters. Nothing else
+ * changes, so an embedded build gives up the feature and not the API.
+ * ------------------------------------------------------------------ */
+
+#define BM_TEXT_MARKUP 0x01u
+
+/* As bm_text_to_phonemes(), with behaviour flags. Passing 0 is identical to
+ * the plain call, which is what that call does. */
+bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
+                                 char *out, size_t out_cap, size_t *out_len,
+                                 unsigned flags);
 
 /* Drives the DSP directly from a caller-supplied frame, ignoring any queued
  * speech. Renders exactly one frame period worth of samples. */

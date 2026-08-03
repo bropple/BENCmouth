@@ -37,12 +37,24 @@
  * 0, which means the input explicitly said unstressed. */
 #define BM_STRESS_UNMARKED 0xFFu
 
+/* Per-phoneme overrides set by inline markup. Zero in every field means "no
+ * override", so a sequence with no markup costs nothing but the memory.
+ *
+ * Held per phoneme rather than as running parser state because the generator
+ * can be reset and replayed, and a command's effect has to survive that. */
+typedef struct bm_phoneme_mod {
+    float          f0;      /* absolute Hz;   0 = use the voice */
+    float          speed;   /* multiplier;    0 = use the voice */
+    unsigned short dur_ms;  /* steady length; 0 = use the phoneme */
+} bm_phoneme_mod;
+
 typedef struct bm_frame_gen {
     float    frame_rate;
     bm_voice voice;
 
     const bm_phoneme *seq[BM_MAX_PHONEMES];
     unsigned char     stress[BM_MAX_PHONEMES];
+    bm_phoneme_mod    mod[BM_MAX_PHONEMES];
     int               count;
 
     int index;         /* phoneme being emitted */
