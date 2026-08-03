@@ -1,0 +1,89 @@
+BENCmouth
+Copyright (c) 2026 Ben Ropple
+Licensed under the MIT License. See LICENSE.
+
+This file lists third-party material included in this repository, and the
+attribution that must travel with it. If you redistribute BENCmouth — source or
+binary — ship this file, or reproduce the notices below.
+
+================================================================================
+1. CMU Pronouncing Dictionary  (ref/cmudict-0.7b.txt)
+================================================================================
+
+Not currently compiled into the binary; present as reference material for the
+planned dictionary lookup. Its license requires the notice below in both source
+and binary redistributions, so it is reproduced here in full rather than only
+linked. Full text: ref/cmudict-LICENSE.txt
+
+    Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+    1. Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+       The contents of this file are deemed to be source code.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in
+       the documentation and/or other materials provided with the
+       distribution.
+
+    This work was supported in part by funding from the Defense Advanced
+    Research Projects Agency, the Office of Naval Research and the National
+    Science Foundation of the United States of America, and by member
+    companies of the Carnegie Mellon Sphinx Speech Consortium. We acknowledge
+    the contributions of many volunteers to the expansion and improvement of
+    this dictionary.
+
+    THIS SOFTWARE IS PROVIDED BY CARNEGIE MELLON UNIVERSITY ``AS IS'' AND
+    ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+    THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+    PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY
+    NOR ITS EMPLOYEES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+2. NRL Report 7948 letter-to-sound rules
+   (ref/NRL-7948-TRANS.SNO, and src/core/bm_rules_en.c generated from it)
+================================================================================
+
+    Elovitz, H. S., Johnson, R. W., McHugh, A., & Shore, J. E. (1976).
+    "Automatic Translation of English Text to Phonetics by Means of
+    Letter-to-Sound Rules." NRL Report 7948, Naval Research Laboratory,
+    Washington, D.C. (AD/A021 929)
+
+A work of the United States federal government and therefore in the public
+domain. No attribution is legally required. It is given anyway, because these
+rules are the reason BENCmouth can read English at all, and because knowing
+where they came from is genuinely useful to anyone reading the generated table.
+
+================================================================================
+3. Formant synthesis literature
+================================================================================
+
+The synthesizer is an independent implementation from published descriptions —
+principally Klatt, D. H. (1980), "Software for a cascade/parallel formant
+synthesizer," JASA 67(3), and Klatt & Klatt (1990), JASA 87(2). Those papers are
+copyrighted by the Acoustical Society of America and are NOT included in this
+repository; only the algorithms they describe are implemented here.
+
+Vowel formant targets derive from the published measurements of Peterson &
+Barney (1952).
+
+BENCmouth is not derived from S.A.M. (Software Automatic Mouth) or from any port
+or decompilation of it. See ref/README.md for the sources deliberately not
+consulted, and why.
+
+================================================================================
+4. Future additions
+================================================================================
+
+The planned GUI would embed the Terminess font (SIL OFL 1.1 with Reserved Font
+Names). If that ships, the OFL text must be added here and to the distribution.

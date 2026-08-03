@@ -259,6 +259,18 @@ render/               generated audio; gitignored
 
 ---
 
+## License
+
+MIT — see `LICENSE`. Do what you like with it; keep the copyright notice.
+
+The repository also contains third-party material with its own terms, listed in `NOTICE`:
+the CMU Pronouncing Dictionary is 2-clause BSD and its notice must be reproduced in binary
+redistributions, and the NRL letter-to-sound rules are US federal government work and
+therefore public domain. If you redistribute BENCmouth in any form, ship `NOTICE` alongside
+it and you have covered both.
+
+---
+
 ## Status
 
 Working: the synthesizer, the phoneme inventory, frame interpolation, the text front end,
