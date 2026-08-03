@@ -12,6 +12,9 @@
 
 # BENCmouth
 
+[![build](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml/badge.svg)](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-78b946)](LICENSE)
+
 A formant speech synthesizer in C99. Text goes in, speech comes out.
 
 It is an original work in the spirit of S.A.M. (Software Automatic Mouth) — not a port,
@@ -88,10 +91,10 @@ cl /std:c11 /O2 /Iinclude /Isrc\core /Isrc\host /Fe:bm.exe ^
 MSVC needs `/std:c11` (or `/std:c17`) rather than a C99 flag; its C99 mode is not
 selectable and the default is too old for `stdint.h` usage in the public header.
 
-> **Verified builds:** Linux/GCC is the configuration built and tested here. The macOS and
-> Windows instructions follow from the code being dependency-free C99 with a GNU makefile,
-> but they have not been run on those platforms. If one of them fails, that is a bug worth
-> reporting rather than a limitation.
+> **These are verified, not assumed.** CI builds and runs the full test suite on
+> `ubuntu-latest`, `macos-latest` and `windows-latest` (MSYS2/UCRT64) on every push, plus a
+> strict pass with `-Werror` and one under AddressSanitizer and UBSan. If a documented
+> build path breaks, that is a bug rather than a limitation.
 
 ### Make targets
 
@@ -261,7 +264,8 @@ render/               generated audio; gitignored
 
 ## License
 
-MIT — see `LICENSE`. Do what you like with it; keep the copyright notice.
+MIT — see `LICENSE`. Do what you like with it; keep the copyright notice. That is the only
+condition, and it is there because Ben thought of it.
 
 The repository also contains third-party material with its own terms, listed in `NOTICE`:
 the CMU Pronouncing Dictionary is 2-clause BSD and its notice must be reproduced in binary
