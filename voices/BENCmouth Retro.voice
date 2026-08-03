@@ -18,3 +18,4 @@ gain           = 1
 coarticulation = 0
 prosody        = 0
 formant_glide  = 0
+bandwidth_track= 0

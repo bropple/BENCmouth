@@ -142,6 +142,7 @@ int bm_voicefile_save(const char *path, const bm_voice *voice)
     fprintf(f, "coarticulation = %.6g\n", (double)voice->coarticulation);
     fprintf(f, "prosody        = %.6g\n", (double)voice->prosody);
     fprintf(f, "formant_glide  = %.6g\n", (double)voice->formant_glide);
+    fprintf(f, "bandwidth_track= %.6g\n", (double)voice->bandwidth_track);
 
     if (to_stdout) { fflush(f); return 0; }
     return (fclose(f) == 0) ? 0 : -1;

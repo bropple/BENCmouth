@@ -156,6 +156,36 @@ static float neighbour_freq(const bm_frame_gen *g, int index, int i)
     return sum / (float)n;
 }
 
+/* Mid-range frequency for each formant. A phoneme whose formant sits here gets
+ * the bandwidth the table asked for; everything else is scaled relative to it. */
+static const float BM_BW_REFERENCE[BM_NFORMANTS] = {
+    500.0f, 1500.0f, 2500.0f, BM_F4_HZ, BM_F5_HZ
+};
+
+/* Exponent relating bandwidth to frequency. Wall losses grow roughly with the
+ * square root of frequency and radiation losses faster than that; 0.7 sits
+ * between them and lands measured vowel bandwidths close enough - B1 of 39 Hz
+ * for /i/ and 78 Hz for /a/ against measured values near 45 and 90. */
+#define BM_BW_EXPONENT 0.7f
+
+/* Scales a table bandwidth to suit the frequency the formant actually ended up
+ * at, blended by `track`. At 0 the table value is returned unchanged. */
+static float track_bandwidth(float bw, float freq, float reference, float track)
+{
+    float ratio, scaled;
+
+    if (track <= 0.0f || freq <= 1.0f || reference <= 1.0f) return bw;
+
+    ratio = freq / reference;
+    scaled = bw * bm_exp2f(BM_BW_EXPONENT * bm_log2f(ratio));
+
+    /* Keep it inside the range the resonator is happy with, and inside the
+     * range a formant can plausibly have. A 5 Hz bandwidth rings for a quarter
+     * of a second. */
+    scaled = bm_clampf(scaled, 20.0f, 600.0f);
+    return bw + (scaled - bw) * track;
+}
+
 /* Interpolates a formant frequency, blending between linear-in-hertz and
  * geometric by `logness`.
  *
@@ -204,12 +234,15 @@ static void build_target(const bm_frame_gen *g, int index, int seg, float pos,
             if (nb > 0.0f) f += (nb - f) * cw;
         }
         out->freq[i] = f * bm_voice_formant_scale(&g->voice, i);
-        out->bw[i] = p->bw[i];
+        out->bw[i] = track_bandwidth(p->bw[i], out->freq[i],
+                                     BM_BW_REFERENCE[i], g->voice.bandwidth_track);
     }
     out->freq[3] = BM_F4_HZ * bm_voice_formant_scale(&g->voice, 3);
-    out->bw[3] = BM_F4_BW;
+    out->bw[3] = track_bandwidth(BM_F4_BW, out->freq[3],
+                                 BM_BW_REFERENCE[3], g->voice.bandwidth_track);
     out->freq[4] = BM_F5_HZ * bm_voice_formant_scale(&g->voice, 4);
-    out->bw[4] = BM_F5_BW;
+    out->bw[4] = track_bandwidth(BM_F5_BW, out->freq[4],
+                                 BM_BW_REFERENCE[4], g->voice.bandwidth_track);
 
     out->open_quotient = g->voice.open_quotient;
     out->tilt = g->voice.tilt;

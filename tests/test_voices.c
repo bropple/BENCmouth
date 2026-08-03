@@ -244,7 +244,7 @@ static void test_every_field_has_a_key(void)
         "f0_base", "f0_range", "f0_flutter", "speed",
         "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "gain",
-        "coarticulation", "prosody", "formant_glide"
+        "coarticulation", "prosody", "formant_glide", "bandwidth_track"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, mismatched = 0;
@@ -258,7 +258,7 @@ static void test_every_field_has_a_key(void)
      * introduced four bytes of pad and made it report a field that does not
      * exist. Spanning named members is padding-proof. */
     {
-        size_t span = offsetof(bm_voice, formant_glide) + sizeof(float)
+        size_t span = offsetof(bm_voice, bandwidth_track) + sizeof(float)
                     - offsetof(bm_voice, f0_base);
         size_t float_fields = span / sizeof(float);
         printf("    %d keys for %lu tunable fields\n", nkeys, (unsigned long)float_fields);
@@ -354,6 +354,49 @@ static void test_formant_glide(void)
           "Retro has formant_glide off");
 }
 
+/* Last-frame bandwidth for a phoneme, at a given tracking strength. */
+static void bandwidths_for(const char *ph, float track, float *f1, float *b1)
+{
+    bm_frame_gen g;
+    bm_voice     v;
+    bm_frame     f;
+    int          any = 0;
+
+    bm_voice_default(&v);
+    v.bandwidth_track = track;
+    v.coarticulation = 0.0f;    /* keep the formant on its table value */
+    bm_frame_gen_init(&g, FRAME_HZ, &v);
+    if (bm_frame_gen_set_phonemes(&g, ph, 0) != BM_OK) { *f1 = *b1 = 0.0f; return; }
+    while (bm_frame_gen_next(&g, &f)) any = 1;
+    *f1 = any ? f.freq[0] : 0.0f;
+    *b1 = any ? f.bw[0] : 0.0f;
+}
+
+static void test_bandwidth_tracking(void)
+{
+    float fi, bi, fa, ba, b_off;
+
+    printf("bandwidth tracking\n");
+
+    bandwidths_for("IY1", 0.0f, &fi, &b_off);
+    check(b_off == 60.0f, "off, every vowel gets the table's 60 Hz first formant");
+
+    bandwidths_for("IY1", 1.0f, &fi, &bi);
+    bandwidths_for("AA1", 1.0f, &fa, &ba);
+
+    printf("    /i/ F1 %.0f -> B1 %.1f Hz   (measured speech: ~45)\n",
+           (double)fi, (double)bi);
+    printf("    /a/ F1 %.0f -> B1 %.1f Hz   (measured speech: ~90)\n",
+           (double)fa, (double)ba);
+
+    check(bi < b_off && ba > b_off,
+          "a low first formant narrows, a high one widens");
+    check(bi > 30.0f && bi < 55.0f, "/i/ B1 is near the measured value");
+    check(ba > 65.0f && ba < 100.0f, "/a/ B1 is near the measured value");
+    check(bm_voice_preset("retro")->bandwidth_track == 0.0f,
+          "Retro has bandwidth tracking off");
+}
+
 static void test_random_voices(void)
 {
     bm_voice v, w;
@@ -393,6 +436,7 @@ int main(void)
 {
     printf("\nBENCmouth voice tests\n\n");
     test_formant_glide();
+    test_bandwidth_tracking();
     test_random_voices();
     test_presets();
     test_params();

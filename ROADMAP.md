@@ -97,8 +97,12 @@ that need an actual decision when we get there:
 - [x] **`bm_voice_random()`** (`bm -R SEED`). Deterministic from the seed; `-w` captures
       one worth keeping. Gain is trimmed by flutter rather than drawn at random, because
       low-flutter voices stack peaks — without that roughly a third of draws clipped.
-- [ ] Per-phoneme bandwidth variation — bandwidths are currently fixed per phoneme class,
-      where real ones track formant frequency and voicing.
+- [x] **Per-phoneme bandwidth variation** (`bandwidth_track`). The table gives one
+      bandwidth per formant per phoneme class, so every vowel got a 60 Hz first formant
+      whether F1 sat at 270 for /i/ or 730 for /a/. Bandwidth now scales as
+      `(F / F_reference)^0.7`, putting those at 39 and 78 against measured values near 45
+      and 90. Also fixes a quieter problem: `throat` and `mouth` move formants without
+      touching the table, so a large speaker was getting a small speaker's bandwidths.
 
 ## Later / speculative
 

@@ -234,6 +234,7 @@ gain           = 1.0
 coarticulation = 0          # 0 = hits every target exactly, the retro sound
 prosody        = 0          # 0 = the pre-bm_prosody.c pitch contour
 formant_glide  = 0          # 0 = linear in Hz, 1 = geometric (as heard)
+bandwidth_track= 0          # 0 = table bandwidths, 1 = scaled by formant frequency
 ```
 
 Unknown keys are **errors**, not warnings — a silently dropped setting produces a voice
@@ -406,5 +407,4 @@ Working: the synthesizer, the phoneme inventory, frame interpolation, the text f
 voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
 and the CLI.
 
-Not yet: a GUI, per-phoneme bandwidth variation, and the speculative fixed-point and WASM
-targets. See ROADMAP.md.
+Not yet: a GUI, and the speculative fixed-point and WASM targets. See ROADMAP.md.

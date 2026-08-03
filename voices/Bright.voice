@@ -18,3 +18,4 @@ gain           = 1
 coarticulation = 0.6
 prosody        = 0.9
 formant_glide  = 1
+bandwidth_track= 0.8

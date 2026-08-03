@@ -162,6 +162,20 @@ typedef struct bm_voice {
      * ratios per unit time - which is how pitch and formant movement are
      * actually perceived. */
     float formant_glide;
+
+    /* How much a formant's bandwidth follows its frequency, 0..1.
+     *
+     * The phoneme table gives one bandwidth per formant per phoneme class, so
+     * every vowel currently gets a 60 Hz first formant whether F1 sits at 270
+     * for /i/ or 730 for /a/. Real bandwidths track frequency - measured B1 is
+     * nearer 45 Hz for /i/ and 90 Hz for /a/ - because the losses that set them
+     * scale with it. At 1 the bandwidth is scaled by (F / F_reference)^0.7,
+     * which puts those two at 39 and 78.
+     *
+     * This also matters for voices: throat and mouth move formants without
+     * touching the table, so a large speaker used to get a small speaker's
+     * bandwidths. */
+    float bandwidth_track;
 } bm_voice;
 
 /* Fills in a sane default voice. Start here, then perturb. */

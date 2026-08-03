@@ -36,7 +36,7 @@ static const bm_voice BM_PRESETS[] = {
       118.0f, 4.0f, 0.30f, 1.0f,
       1.0f, 1.0f,
       0.0f, 6.0f, 0.50f, 1.0f,
-      0.60f, 0.85f, 1.0f },
+      0.60f, 0.85f, 1.0f, 0.80f },
 
     /* BENCmouth Retro - the original voice.
      *
@@ -55,8 +55,9 @@ static const bm_voice BM_PRESETS[] = {
       0.50f,    /* open_quotient */
       1.0f,     /* gain          */
       0.0f,     /* coarticulation - off, and staying off */
-      0.0f,     /* prosody       - likewise */
-      0.0f },   /* formant_glide - likewise */
+      0.0f,     /* prosody        - likewise */
+      0.0f,     /* formant_glide  - likewise */
+      0.0f },   /* bandwidth_track - likewise */
 
     /* Retro taken further: no flutter, no intonation. The gain trim is not
      * cosmetic - with flutter at zero the pulse train is perfectly periodic,
@@ -66,7 +67,7 @@ static const bm_voice BM_PRESETS[] = {
       120.0f, 0.0f, 0.0f, 1.0f,
       1.0f, 1.0f,
       0.0f, 4.0f, 0.50f, 0.62f,
-      0.0f, 0.0f, 0.0f },
+      0.0f, 0.0f, 0.0f, 0.0f },
 
     /* Larger speaker. The tuning here is deliberate: an earlier version
      * dropped f0 to 92 with only a slight tract change and was heard as Retro
@@ -80,7 +81,7 @@ static const bm_voice BM_PRESETS[] = {
       100.0f, 4.5f, 0.35f, 0.93f,
       0.78f, 0.84f,
       0.0f, 9.0f, 0.58f, 1.0f,
-      0.60f, 0.85f, 1.0f },
+      0.60f, 0.85f, 1.0f, 0.80f },
 
     /* Smaller speaker: shorter tract, higher pitch, brighter because less
      * spectral tilt. */
@@ -88,7 +89,7 @@ static const bm_voice BM_PRESETS[] = {
       168.0f, 5.5f, 0.30f, 1.05f,
       1.10f, 1.16f,
       0.0f, 3.0f, 0.46f, 1.0f,
-      0.60f, 0.90f, 1.0f }
+      0.60f, 0.90f, 1.0f, 0.80f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
@@ -247,6 +248,7 @@ void bm_voice_random(bm_voice *voice, uint32_t seed)
     voice->coarticulation = rnd_range(&st, 0.35f, 0.80f);
     voice->prosody        = rnd_range(&st, 0.55f, 1.00f);
     voice->formant_glide  = rnd_range(&st, 0.40f, 1.00f);
+    voice->bandwidth_track = rnd_range(&st, 0.50f, 1.00f);
 }
 
 bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
@@ -272,6 +274,7 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
     else if (key_equals("coarticulation", key, key_len)) voice->coarticulation = value;
     else if (key_equals("prosody",        key, key_len)) voice->prosody = value;
     else if (key_equals("formant_glide",  key, key_len)) voice->formant_glide = value;
+    else if (key_equals("bandwidth_track",key, key_len)) voice->bandwidth_track = value;
     else return BM_ERR_ARG;
 
     return BM_OK;
