@@ -110,6 +110,23 @@ static void test_math(void)
                 1e-5, "-6 dB matches 10^(db/20)");
     check_close((double)bm_db_to_linear(20.0f),  10.0,  1e-2, "+20 dB is ten times");
     check_close((double)bm_sinf((float)(PI / 6.0)), 0.5, 1e-5, "sin(pi/6) is 0.5");
+
+    {
+        double worst_log = 0.0;
+        for (i = -600; i <= 600; i++) {
+            double x = pow(10.0, i * 0.01);          /* 1e-6 .. 1e6 */
+            double err = fabs((double)bm_log2f((float)x) - log2(x));
+            if (err > worst_log) worst_log = err;
+        }
+        check(worst_log < 2e-6, "bm_log2f absolute error < 2e-6 over [1e-6, 1e6]");
+        printf("      worst absolute error: %.3g\n", worst_log);
+
+        check_close((double)bm_log2f(1.0f), 0.0, 1e-6, "log2(1) is 0");
+        check_close((double)bm_log2f(1024.0f), 10.0, 1e-5, "log2(1024) is 10");
+        /* Round trip against the exp2 it will be paired with. */
+        check_close((double)bm_exp2f(bm_log2f(440.0f)), 440.0, 0.02,
+                    "exp2(log2(440)) round-trips");
+    }
 }
 
 static void test_resonator(void)

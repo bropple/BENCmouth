@@ -89,10 +89,16 @@ that need an actual decision when we get there:
       as a dB offset to the source amplitudes — those floor at 0 dB meaning silence, so a
       negative trim there would mute quiet branches outright rather than attenuate them.
 - [x] **Phrase-final F0 fall** — part of `bm_prosody.c`.
-- [ ] More naturalness controls, each following the same contract: perceptually-spaced
-      formant interpolation, per-phoneme bandwidth variation.
-- [ ] A `bm_voice_random()` for exploring the space — most good presets will be found by
-      accident before they are found by reasoning.
+- [x] **Perceptually-spaced formant interpolation** (`formant_glide`). Linear-in-hertz
+      spends most of a transition in the top of the range; geometric spacing moves in
+      equal ratios per unit time, which is how formant movement is actually heard. A
+      300→2300 Hz glide passes through 830 Hz at the halfway point rather than 1300.
+      Needed `bm_log2f`, which the core did not have.
+- [x] **`bm_voice_random()`** (`bm -R SEED`). Deterministic from the seed; `-w` captures
+      one worth keeping. Gain is trimmed by flutter rather than drawn at random, because
+      low-flutter voices stack peaks — without that roughly a third of draws clipped.
+- [ ] Per-phoneme bandwidth variation — bandwidths are currently fixed per phoneme class,
+      where real ones track formant frequency and voicing.
 
 ## Later / speculative
 

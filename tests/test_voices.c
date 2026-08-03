@@ -244,7 +244,7 @@ static void test_every_field_has_a_key(void)
         "f0_base", "f0_range", "f0_flutter", "speed",
         "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "gain",
-        "coarticulation", "prosody"
+        "coarticulation", "prosody", "formant_glide"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, mismatched = 0;
@@ -258,7 +258,7 @@ static void test_every_field_has_a_key(void)
      * introduced four bytes of pad and made it report a field that does not
      * exist. Spanning named members is padding-proof. */
     {
-        size_t span = offsetof(bm_voice, prosody) + sizeof(float)
+        size_t span = offsetof(bm_voice, formant_glide) + sizeof(float)
                     - offsetof(bm_voice, f0_base);
         size_t float_fields = span / sizeof(float);
         printf("    %d keys for %lu tunable fields\n", nkeys, (unsigned long)float_fields);
@@ -320,9 +320,80 @@ static void test_coarticulation_is_optional(void)
     check(diff > 1e-4, "coarticulation audibly changes the output when on");
 }
 
+static void test_formant_glide(void)
+{
+    static float off[200000], on[200000];
+    bm_voice a, b;
+    size_t na, nb, i;
+    double diff = 0.0;
+
+    printf("formant glide\n");
+
+    bm_voice_default(&a);
+    a.formant_glide = 0.0f;
+    b = a;
+    b.formant_glide = 1.0f;
+
+    /* A diphthong is the longest formant movement in the language, so it is
+     * where linear-in-hertz and geometric spacing differ most. */
+    na = render(&a, "AY1 AW1 OY1", off, sizeof off / sizeof off[0]);
+    nb = render(&b, "AY1 AW1 OY1", on,  sizeof on  / sizeof on[0]);
+
+    check(na == nb && na > 0, "glide does not change timing");
+    if (na != nb || na == 0) return;
+
+    for (i = 0; i < na; i++) diff += fabs((double)(off[i] - on[i]));
+    diff /= (double)na;
+
+    printf("    mean absolute difference, glide 0 vs 1: %.5f\n", diff);
+    check(diff > 1e-4, "geometric spacing audibly changes diphthongs");
+
+    /* And the off setting has to be exactly the old behaviour, not merely
+     * close - that is what keeps Retro pinned. */
+    check(bm_voice_preset("retro")->formant_glide == 0.0f,
+          "Retro has formant_glide off");
+}
+
+static void test_random_voices(void)
+{
+    bm_voice v, w;
+    int i, hot = 0;
+
+    printf("random voices\n");
+
+    bm_voice_random(&v, 12345u);
+    bm_voice_random(&w, 12345u);
+    check(memcmp(&v.f0_base, &w.f0_base,
+                 sizeof(bm_voice) - sizeof(const char *)) == 0,
+          "the same seed gives the same voice");
+
+    bm_voice_random(&w, 12346u);
+    check(memcmp(&v.f0_base, &w.f0_base,
+                 sizeof(bm_voice) - sizeof(const char *)) != 0,
+          "an adjacent seed gives a different one");
+
+    /* Every draw has to be usable. A generator that produces a voice which
+     * clips, or one with a nonsensical vocal tract, is not an exploration tool
+     * - it is a source of false negatives while hunting for good presets. */
+    for (i = 0; i < 400; i++) {
+        bm_voice_random(&v, (uint32_t)(i * 7919 + 1));
+        if (v.f0_base < 60.0f || v.f0_base > 260.0f) { check(0, "f0 in range"); return; }
+        if (v.throat < 0.5f || v.throat > 1.5f)      { check(0, "throat in range"); return; }
+        if (v.mouth  < 0.5f || v.mouth  > 1.5f)      { check(0, "mouth in range"); return; }
+        if (v.speed  < 0.5f || v.speed  > 2.0f)      { check(0, "speed in range"); return; }
+        if (v.gain   <= 0.0f || v.gain  > 1.0f)      { check(0, "gain in range"); return; }
+        /* Low flutter means peaks stack up, so the trim must follow it down. */
+        if (v.f0_flutter < 0.2f && v.gain > 0.9f) hot++;
+    }
+    check(1, "400 seeds all produce plausible voices");
+    check(hot == 0, "low-flutter voices get their gain trimmed");
+}
+
 int main(void)
 {
     printf("\nBENCmouth voice tests\n\n");
+    test_formant_glide();
+    test_random_voices();
     test_presets();
     test_params();
     test_every_field_has_a_key();

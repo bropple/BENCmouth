@@ -152,6 +152,16 @@ typedef struct bm_voice {
      *
      * Scales together with f0_range, which is the excursion in semitones. */
     float prosody;
+
+    /* How formant transitions are spaced, 0..1.
+     *
+     * At 0 a glide from 300 Hz to 2300 Hz moves linearly in hertz, which is
+     * what BENCmouth always did and is not how the ear hears it: linear-in-Hz
+     * spends most of its time in the top of the range, so the transition sounds
+     * like it lurches up and then dawdles. At 1 the glide is geometric - equal
+     * ratios per unit time - which is how pitch and formant movement are
+     * actually perceived. */
+    float formant_glide;
 } bm_voice;
 
 /* Fills in a sane default voice. Start here, then perturb. */
@@ -179,6 +189,16 @@ const bm_voice *bm_voice_preset_at(int index);
  * silently ignored. */
 bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
                              float value);
+
+/* Fills `voice` with a randomly generated but plausible voice, determined
+ * entirely by `seed` so the same seed always gives the same voice.
+ *
+ * Exists because the parameter space is large and mostly uninteresting, and
+ * the good corners of it are found by accident far more often than by
+ * reasoning. `bm -R 12345 -w found.voice` captures one worth keeping.
+ *
+ * `name` points at static storage; rename it yourself if you keep it. */
+void bm_voice_random(bm_voice *voice, uint32_t seed);
 
 /* The frequency multiplier this voice applies to formant `index` (0-based).
  * Blends `throat` and `mouth` according to which cavity dominates that

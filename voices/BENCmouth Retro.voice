@@ -17,3 +17,4 @@ gain           = 1
 # naturalness controls; 0 is the original BENCmouth behaviour
 coarticulation = 0
 prosody        = 0
+formant_glide  = 0

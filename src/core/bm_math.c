@@ -100,6 +100,38 @@ float bm_db_to_linear(float db)
     return bm_exp2f(db * 0.16609640f);
 }
 
+/* log2, by splitting off the IEEE-754 exponent and expanding what is left.
+ *
+ * With the mantissa m in [1,2), substituting t = (m-1)/(m+1) puts t in
+ * [0, 1/3], where the odd series 2/ln2 * (t + t^3/3 + t^5/5 + ...) converges
+ * fast enough that five terms are already below binary32 resolution. Taking
+ * the exponent separately is what keeps the argument range that small. */
+float bm_log2f(float x)
+{
+    union { float f; uint32_t u; } v;
+    float m, t, t2, series;
+    int   e;
+
+    if (x <= 0.0f) return -1e30f;
+
+    v.f = x;
+    e = (int)((v.u >> 23) & 0xFFu) - 127;
+    v.u = (v.u & 0x007FFFFFu) | 0x3F800000u;   /* mantissa, now in [1,2) */
+    m = v.f;
+
+    t = (m - 1.0f) / (m + 1.0f);
+    t2 = t * t;
+    series = t * (1.0f
+           + t2 * (0.33333333f
+           + t2 * (0.2f
+           + t2 * (0.14285714f
+           + t2 * (0.11111111f
+           + t2 *  0.09090909f)))));
+
+    /* 2 / ln(2) */
+    return (float)e + 2.88539008f * series;
+}
+
 /* ------------------------------------------------------------------ *
  * cos / sin
  *

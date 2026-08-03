@@ -15,6 +15,7 @@
 #include "bencmouth.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* How much of each formant is governed by the throat rather than the mouth.
  * F1 tracks the pharyngeal cavity almost entirely, F3 and above track the oral
@@ -35,7 +36,7 @@ static const bm_voice BM_PRESETS[] = {
       118.0f, 4.0f, 0.30f, 1.0f,
       1.0f, 1.0f,
       0.0f, 6.0f, 0.50f, 1.0f,
-      0.60f, 0.85f },
+      0.60f, 0.85f, 1.0f },
 
     /* BENCmouth Retro - the original voice.
      *
@@ -54,7 +55,8 @@ static const bm_voice BM_PRESETS[] = {
       0.50f,    /* open_quotient */
       1.0f,     /* gain          */
       0.0f,     /* coarticulation - off, and staying off */
-      0.0f },   /* prosody       - likewise */
+      0.0f,     /* prosody       - likewise */
+      0.0f },   /* formant_glide - likewise */
 
     /* Retro taken further: no flutter, no intonation. The gain trim is not
      * cosmetic - with flutter at zero the pulse train is perfectly periodic,
@@ -64,7 +66,7 @@ static const bm_voice BM_PRESETS[] = {
       120.0f, 0.0f, 0.0f, 1.0f,
       1.0f, 1.0f,
       0.0f, 4.0f, 0.50f, 0.62f,
-      0.0f, 0.0f },
+      0.0f, 0.0f, 0.0f },
 
     /* Larger speaker. The tuning here is deliberate: an earlier version
      * dropped f0 to 92 with only a slight tract change and was heard as Retro
@@ -78,7 +80,7 @@ static const bm_voice BM_PRESETS[] = {
       100.0f, 4.5f, 0.35f, 0.93f,
       0.78f, 0.84f,
       0.0f, 9.0f, 0.58f, 1.0f,
-      0.60f, 0.85f },
+      0.60f, 0.85f, 1.0f },
 
     /* Smaller speaker: shorter tract, higher pitch, brighter because less
      * spectral tilt. */
@@ -86,7 +88,7 @@ static const bm_voice BM_PRESETS[] = {
       168.0f, 5.5f, 0.30f, 1.05f,
       1.10f, 1.16f,
       0.0f, 3.0f, 0.46f, 1.0f,
-      0.60f, 0.90f }
+      0.60f, 0.90f, 1.0f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
@@ -188,6 +190,65 @@ float bm_voice_formant_scale(const bm_voice *voice, int index)
     return throat * w + mouth * (1.0f - w);
 }
 
+/* xorshift32: deterministic, tiny, and the core links no rand(). */
+static uint32_t rnd_next(uint32_t *state)
+{
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+static float rnd_range(uint32_t *state, float lo, float hi)
+{
+    /* Top bits only - xorshift's low bits are its weakest. */
+    float u = (float)(rnd_next(state) >> 8) * (1.0f / 16777216.0f);
+    return lo + (hi - lo) * u;
+}
+
+void bm_voice_random(bm_voice *voice, uint32_t seed)
+{
+    uint32_t st = (seed != 0u) ? seed : 0x9E3779B9u;
+    int i;
+
+    if (voice == 0) return;
+
+    /* Warm up: consecutive seeds otherwise produce visibly similar first
+     * draws, and "seed 1 and seed 2 sound the same" defeats the point. */
+    for (i = 0; i < 8; i++) (void)rnd_next(&st);
+
+    voice->name = "Random";
+
+    voice->f0_base       = rnd_range(&st, 82.0f, 215.0f);
+    voice->f0_range      = rnd_range(&st, 2.0f, 7.0f);
+    voice->f0_flutter    = rnd_range(&st, 0.12f, 0.50f);
+    voice->speed         = rnd_range(&st, 0.85f, 1.20f);
+
+    voice->throat        = rnd_range(&st, 0.74f, 1.22f);
+    voice->mouth         = rnd_range(&st, 0.80f, 1.26f);
+
+    voice->breathiness   = rnd_range(&st, 0.0f, 8.0f);
+    voice->tilt          = rnd_range(&st, 2.0f, 12.0f);
+    voice->open_quotient = rnd_range(&st, 0.42f, 0.62f);
+
+    /* Trim by flutter rather than picking a gain at random. Low flutter means
+     * a near-periodic pulse train, the cascade resonators ring in lockstep and
+     * peaks stack up - the effect that sent BENCmouth Monotone to 0.96 where
+     * flutter-bearing voices sat near 0.55. Without this a random voice would
+     * hit the limiter roughly a third of the time. */
+    {
+        float f = voice->f0_flutter / 0.35f;
+        if (f > 1.0f) f = 1.0f;
+        voice->gain = 0.72f + 0.28f * f;
+    }
+
+    voice->coarticulation = rnd_range(&st, 0.35f, 0.80f);
+    voice->prosody        = rnd_range(&st, 0.55f, 1.00f);
+    voice->formant_glide  = rnd_range(&st, 0.40f, 1.00f);
+}
+
 bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
                              float value)
 {
@@ -210,6 +271,7 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
     else if (key_equals("gain",           key, key_len)) voice->gain = value;
     else if (key_equals("coarticulation", key, key_len)) voice->coarticulation = value;
     else if (key_equals("prosody",        key, key_len)) voice->prosody = value;
+    else if (key_equals("formant_glide",  key, key_len)) voice->formant_glide = value;
     else return BM_ERR_ARG;
 
     return BM_OK;

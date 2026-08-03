@@ -156,6 +156,25 @@ static float neighbour_freq(const bm_frame_gen *g, int index, int i)
     return sum / (float)n;
 }
 
+/* Interpolates a formant frequency, blending between linear-in-hertz and
+ * geometric by `logness`.
+ *
+ * At 0 this is exactly what blend() always did, which is what keeps voices with
+ * formant_glide off bit-identical. Above 0 it moves toward equal ratios per
+ * unit time - a glide from 300 Hz to 2300 Hz passes through 830 Hz at the
+ * halfway point rather than 1300 Hz, which is where the ear expects it. */
+static float glide_freq(float a, float b, float t, float logness)
+{
+    float lin = a + (b - a) * t;
+
+    if (logness <= 0.0f || a <= 1.0f || b <= 1.0f) return lin;
+
+    {
+        float geo = a * bm_exp2f(t * bm_log2f(b / a));
+        return lin + (geo - lin) * logness;
+    }
+}
+
 /* Builds the parameter target for one phoneme in one segment. `pos` is the
  * normalized position within the segment, used only by diphthongs. */
 static void build_target(const bm_frame_gen *g, int index, int seg, float pos,
@@ -175,8 +194,10 @@ static void build_target(const bm_frame_gen *g, int index, int seg, float pos,
         float f = p->freq[i];
         if (p->cls == BM_CLS_DIPHTHONG && seg == SEG_STEADY) {
             /* Glide across the steady segment rather than jumping at its end.
-             * The glide is what a diphthong *is*. */
-            f = p->freq[i] + (p->freq_end[i] - p->freq[i]) * pos;
+             * The glide is what a diphthong *is* - and it is the longest
+             * formant movement in the language, so it is where the spacing
+             * matters most. */
+            f = glide_freq(p->freq[i], p->freq_end[i], pos, g->voice.formant_glide);
         }
         if (cw > 0.0f) {
             float nb = neighbour_freq(g, index, i);
@@ -253,12 +274,13 @@ static float smoothstep(float t)
     return t * t * (3.0f - 2.0f * t);
 }
 
-static void blend(const bm_frame *a, const bm_frame *b, float t, bm_frame *out)
+static void blend(const bm_frame *a, const bm_frame *b, float t,
+                  float logness, bm_frame *out)
 {
     int i;
 
     for (i = 0; i < BM_NFORMANTS; i++) {
-        out->freq[i] = a->freq[i] + (b->freq[i] - a->freq[i]) * t;
+        out->freq[i] = glide_freq(a->freq[i], b->freq[i], t, logness);
         out->bw[i]   = a->bw[i]   + (b->bw[i]   - a->bw[i])   * t;
         out->par_amp[i] = a->par_amp[i] + (b->par_amp[i] - a->par_amp[i]) * t;
     }
@@ -562,7 +584,8 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
                 g->from = g->last;
                 build_target(g, g->index, SEG_STEADY, 0.0f, &g->to);
             }
-            blend(&g->from, &g->to, smoothstep((float)g->frame_in_seg / (float)n), out);
+            blend(&g->from, &g->to, smoothstep((float)g->frame_in_seg / (float)n),
+                  g->voice.formant_glide, out);
         } else {
             float pos = (n > 1) ? (float)g->frame_in_seg / (float)(n - 1) : 0.0f;
             build_target(g, g->index, g->segment, pos, out);

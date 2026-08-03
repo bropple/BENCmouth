@@ -119,6 +119,7 @@ bm [options] "text to speak"
   -o FILE      write WAV here (default out.wav; - for stdout)
   -v NAME      use a voice preset
   -f FILE      load a voice file
+  -R SEED      generate a random voice from SEED
   -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast
   -p PITCH     base pitch in Hz
   -P           input is ARPABET phonemes, not text
@@ -232,12 +233,25 @@ open_quotient  = 0.58
 gain           = 1.0
 coarticulation = 0          # 0 = hits every target exactly, the retro sound
 prosody        = 0          # 0 = the pre-bm_prosody.c pitch contour
+formant_glide  = 0          # 0 = linear in Hz, 1 = geometric (as heard)
 ```
 
 Unknown keys are **errors**, not warnings — a silently dropped setting produces a voice
 that mysteriously sounds wrong, which is far worse to debug than a refusal to load.
 
 Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`.
+
+### Finding new voices
+
+```
+bm -R 4242 "hello there"          # random, but the same every time for that seed
+bm -R 4242 -w found.voice         # keep one you liked
+```
+
+The parameter space is large and mostly uninteresting, and the good corners of it turn up
+by accident more often than by reasoning. Draws are deterministic from the seed, and gain
+is trimmed by flutter rather than drawn at random — low-flutter voices stack peaks, and
+without that roughly a third of them clipped.
 
 ### Intonation
 
@@ -392,5 +406,5 @@ Working: the synthesizer, the phoneme inventory, frame interpolation, the text f
 voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
 and the CLI.
 
-Not yet: a GUI, perceptually-spaced formant interpolation, per-phoneme bandwidth
-variation, and the speculative fixed-point and WASM targets. See ROADMAP.md.
+Not yet: a GUI, per-phoneme bandwidth variation, and the speculative fixed-point and WASM
+targets. See ROADMAP.md.

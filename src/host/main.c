@@ -29,6 +29,7 @@ static void usage(void)
 "  -o FILE      write WAV here (default out.wav; - for stdout)\n"
 "  -v NAME      use a voice preset\n"
 "  -f FILE      load a voice file\n"
+"  -R SEED      generate a random voice from SEED\n"
 "  -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast\n"
 "  -p PITCH     base pitch in Hz\n"
 "  -P           input is ARPABET phonemes, not text\n"
@@ -47,7 +48,9 @@ static void usage(void)
 "  bm -P \"HH AH0 L OW1\" -o hello.wav\n"
 "  bm -t \"the quick brown fox\"\n"
 "  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n"
-"  bm -a \"straight out of the speakers\"\n", bm_audio_backend());
+"  bm -a \"straight out of the speakers\"\n"
+"  bm -R 4242 -w found.voice   # keep a random voice you liked\n",
+        bm_audio_backend());
 }
 
 int main(int argc, char **argv)
@@ -106,6 +109,9 @@ int main(int argc, char **argv)
                 return 1;
             }
             voice = *p;
+        }
+        else if (strcmp(a, "-R") == 0 && i + 1 < argc) {
+            bm_voice_random(&voice, (uint32_t)strtoul(argv[++i], 0, 10));
         }
         else if (strcmp(a, "-f") == 0 && i + 1 < argc) {
             if (bm_voicefile_load(argv[++i], &voice, name_buf, sizeof name_buf,

@@ -40,6 +40,12 @@ float bm_db_to_linear(float db);
 /* sqrt(x). Returns 0 for x <= 0. Accurate to within a few ulp. */
 float bm_sqrtf(float x);
 
+/* log2(x) for x > 0. Returns a large negative value for x <= 0 rather than
+ * trapping, because the callers are interpolating frequencies and a guard
+ * branch at every sample is worse than a defined nonsense answer at none.
+ * Measured absolute error below 2e-6 over [1e-6, 1e6]. */
+float bm_log2f(float x);
+
 /* |x|, without pulling in libm. */
 float bm_fabsf(float x);
 
