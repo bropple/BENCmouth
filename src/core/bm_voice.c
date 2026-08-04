@@ -33,9 +33,11 @@ static const bm_voice BM_PRESETS[] = {
      * preset that switches them on, never an edit to Retro. As more of them
      * land, this is the entry that changes. */
     { "BENCmouth",
-      118.0f, 4.0f, 0.30f, 1.0f,
+      118.0f, 4.0f, 0.30f,
+      0.0f, 0.0f,
+      1.0f,
       1.0f, 1.0f,
-      0.0f, 6.0f, 0.50f, 1.0f,
+      0.0f, 6.0f, 0.50f, 0.0f, 1.0f,
       0.60f, 0.85f, 1.0f, 0.80f },
 
     /* BENCmouth Retro - the original voice.
@@ -47,12 +49,15 @@ static const bm_voice BM_PRESETS[] = {
       118.0f,   /* f0_base       */
       4.0f,     /* f0_range      */
       0.30f,    /* f0_flutter    */
+      0.0f,     /* vibrato       - a 1982 machine did not have one */
+      0.0f,     /* vibrato_rate  */
       1.0f,     /* speed         */
       1.0f,     /* throat        */
       1.0f,     /* mouth         */
       0.0f,     /* breathiness   */
       6.0f,     /* tilt          */
       0.50f,    /* open_quotient */
+      0.0f,     /* whisper       */
       1.0f,     /* gain          */
       0.0f,     /* coarticulation - off, and staying off */
       0.0f,     /* prosody        - likewise */
@@ -64,9 +69,11 @@ static const bm_voice BM_PRESETS[] = {
      * so the cascade resonators are excited in lockstep and peaks stack up.
      * At unity this voice hit 0.96 where the others sit near 0.55. */
     { "BENCmouth Monotone",
-      120.0f, 0.0f, 0.0f, 1.0f,
+      120.0f, 0.0f, 0.0f,
+      0.0f, 0.0f,
+      1.0f,
       1.0f, 1.0f,
-      0.0f, 4.0f, 0.50f, 0.62f,
+      0.0f, 4.0f, 0.50f, 0.0f, 0.62f,
       0.0f, 0.0f, 0.0f, 0.0f },
 
     /* Larger speaker. The tuning here is deliberate: an earlier version
@@ -78,18 +85,108 @@ static const bm_voice BM_PRESETS[] = {
      * variants, so they carry the naturalness controls the default voice does.
      * Only the BENCmouth Retro family keeps them at zero. */
     { "Deep",
-      100.0f, 4.5f, 0.35f, 0.93f,
+      100.0f, 4.5f, 0.35f,
+      0.0f, 0.0f,
+      0.93f,
       0.78f, 0.84f,
-      0.0f, 9.0f, 0.58f, 1.0f,
+      0.0f, 9.0f, 0.58f, 0.0f, 1.0f,
       0.60f, 0.85f, 1.0f, 0.80f },
 
     /* Smaller speaker: shorter tract, higher pitch, brighter because less
      * spectral tilt. */
     { "Bright",
-      168.0f, 5.5f, 0.30f, 1.05f,
+      168.0f, 5.5f, 0.30f,
+      0.0f, 0.0f,
+      1.05f,
       1.10f, 1.16f,
-      0.0f, 3.0f, 0.46f, 1.0f,
-      0.60f, 0.90f, 1.0f, 0.80f }
+      0.0f, 3.0f, 0.46f, 0.0f, 1.0f,
+      0.60f, 0.90f, 1.0f, 0.80f },
+
+    /* ---- the classic set ---------------------------------------------
+     *
+     * Aimed at the voices that shipped with desktop machines in the eighties
+     * and early nineties - the compact all-in-one's speech demo, the deep
+     * announcer, the operator, the child, the whisper, the one that had come
+     * loose. They are tuned toward those *archetypes* from the published
+     * acoustics of the voice types involved, and not from anybody's parameter
+     * tables: no shipped synthesizer was disassembled, decompiled, or measured
+     * to produce them, which is the same rule the rest of this project follows.
+     *
+     * See CLASSIC-VOICES.md for what each is reaching for, and for the list of
+     * classic voices this engine cannot reach and why not.
+     */
+
+    /* The compact machine on the desk, 1984. The character is almost entirely
+     * in the source rather than the tract: very little spectral tilt and a
+     * short open phase, which together give the hard buzzy edge, plus low
+     * flutter so the pitch sits dead still. Naturalness controls stay off -
+     * this belongs to the Retro family, and the whole point of it is the
+     * things it does not do. */
+    { "Compact",
+      122.0f, 3.0f, 0.10f,
+      0.0f, 0.0f,
+      1.10f,
+      1.02f, 1.06f,
+      0.0f, 2.0f, 0.42f, 0.0f, 0.92f,
+      0.0f, 0.0f, 0.0f, 0.0f },
+
+    /* The deep one. Long tract, slow, soft-edged: heavy spectral tilt is what
+     * turns a low voice from a buzz into a rumble, and it does more of the work
+     * here than the pitch does. */
+    { "Announcer",
+      88.0f, 5.0f, 0.30f,
+      0.0f, 0.0f,
+      0.88f,
+      0.74f, 0.80f,
+      1.5f, 10.0f, 0.60f, 0.0f, 1.0f,
+      0.60f, 0.90f, 1.0f, 0.80f },
+
+    /* The operator. A female tract is roughly 15% shorter than a male one, and
+     * measurably breathier - Klatt & Klatt 1990 found the open quotient and the
+     * aspiration both higher, and that difference carries more of the
+     * impression than the pitch alone does. */
+    { "Operator",
+      200.0f, 6.0f, 0.28f,
+      0.0f, 0.0f,
+      1.0f,
+      1.14f, 1.18f,
+      4.0f, 6.0f, 0.58f, 0.0f, 0.95f,
+      0.60f, 0.90f, 1.0f, 0.80f },
+
+    /* The child. Both axes pushed further than any adult setting, because a
+     * child's tract really is that much shorter - and the pitch alone would
+     * otherwise land somewhere between "child" and "adult on helium". */
+    { "Cadet",
+      255.0f, 7.0f, 0.35f,
+      0.0f, 0.0f,
+      1.08f,
+      1.26f, 1.32f,
+      3.0f, 3.0f, 0.50f, 0.0f, 0.72f,
+      0.65f, 0.90f, 1.0f, 0.80f },
+
+    /* The whisper. Voicing fully traded for turbulence, so there is no
+     * fundamental at all and f0_base only decides what the pitch *would* be -
+     * it is left at a plausible value rather than zero so that turning the
+     * whisper back down lands somewhere sensible. */
+    { "Whisper",
+      130.0f, 3.0f, 0.20f,
+      0.0f, 0.0f,
+      0.95f,
+      1.0f, 1.04f,
+      0.0f, 4.0f, 0.55f, 1.0f, 1.0f,
+      0.60f, 0.85f, 1.0f, 0.80f },
+
+    /* The one that came loose. Flutter near its limit, a fast shallow vibrato
+     * on top, wide intonation and a harsh source. Flutter and vibrato together
+     * are the point: aperiodic drift alone reads as a bad recording, periodic
+     * modulation alone reads as singing, and it takes both to sound unwell. */
+    { "Rattled",
+      130.0f, 9.0f, 0.85f,
+      1.6f, 8.5f,
+      1.15f,
+      0.95f, 1.10f,
+      0.0f, 1.5f, 0.40f, 0.0f, 0.85f,
+      0.70f, 1.0f, 1.0f, 0.80f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
@@ -227,6 +324,14 @@ void bm_voice_random(bm_voice *voice, uint32_t seed)
     voice->f0_flutter    = rnd_range(&st, 0.12f, 0.50f);
     voice->speed         = rnd_range(&st, 0.85f, 1.20f);
 
+    /* Not drawn. Vibrato and whisper are effects with a purpose - a sung note,
+     * a whispered line - and sprinkling them across random draws would mean
+     * most of the voice space was singing or breathing at you for no reason.
+     * The dial is there to be turned deliberately. */
+    voice->vibrato       = 0.0f;
+    voice->vibrato_rate  = 0.0f;
+    voice->whisper       = 0.0f;
+
     voice->throat        = rnd_range(&st, 0.74f, 1.22f);
     voice->mouth         = rnd_range(&st, 0.80f, 1.26f);
 
@@ -264,12 +369,15 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
     if      (key_equals("f0_base",        key, key_len)) voice->f0_base = value;
     else if (key_equals("f0_range",       key, key_len)) voice->f0_range = value;
     else if (key_equals("f0_flutter",     key, key_len)) voice->f0_flutter = value;
+    else if (key_equals("vibrato",        key, key_len)) voice->vibrato = value;
+    else if (key_equals("vibrato_rate",   key, key_len)) voice->vibrato_rate = value;
     else if (key_equals("speed",          key, key_len)) voice->speed = value;
     else if (key_equals("throat",         key, key_len)) voice->throat = value;
     else if (key_equals("mouth",          key, key_len)) voice->mouth = value;
     else if (key_equals("breathiness",    key, key_len)) voice->breathiness = value;
     else if (key_equals("tilt",           key, key_len)) voice->tilt = value;
     else if (key_equals("open_quotient",  key, key_len)) voice->open_quotient = value;
+    else if (key_equals("whisper",        key, key_len)) voice->whisper = value;
     else if (key_equals("gain",           key, key_len)) voice->gain = value;
     else if (key_equals("coarticulation", key, key_len)) voice->coarticulation = value;
     else if (key_equals("prosody",        key, key_len)) voice->prosody = value;
@@ -293,6 +401,7 @@ void bm_config_default(bm_config *config)
     config->markup = 0;
     config->use_dict = 1;      /* brackets are ordinary text unless asked for */
     bm_voice_default(&config->voice);
+    bm_effects_default(&config->effects);
 }
 
 const char *bm_strerror(bm_result result)

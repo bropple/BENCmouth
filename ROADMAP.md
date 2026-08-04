@@ -123,6 +123,120 @@ that need an actual decision when we get there:
       raylib's built-in font if the file is missing, and the status line names whichever
       it actually loaded rather than asserting one.
 
+## Songs
+
+- [x] **`.bmsong`** (`src/host/bm_songfile.c`, `bm -S`, `songs/daisy.bmsong`). A score plus
+      the voice that should sing it, because a melody written for a 90 Hz voice with a
+      little vibrato sounds wrong out of a 200 Hz voice with none, and losing the voice on
+      save makes every reload a re-tuning session.
+
+      Same shape as a `.voice` file - a `key = value` header - with one addition: a line
+      reading exactly `score =` ends the header and everything after it is the score.
+      A key with no value rather than a marker of its own, so the whole file is one
+      lexical form and there is nothing extra to explain.
+
+      The decision worth recording: **comments are whole lines only.** The `.voice` loader
+      strips from the first `#` to end of line, and doing that here would silently eat
+      every accidental in the file - `[note A#4]` is a sharp.
+
+      The parser works on a memory buffer with the file reader as a thin wrapper, which
+      is what makes `tests/test_song.c` able to cover it without touching the filesystem.
+
+- [x] **Song mode in the GUI** (`src/gui/bm_song_ui.c`). A second tab: score editor,
+      word-to-phoneme translator with an INSERT button, the full notation reference behind
+      a FORMAT button, and LOAD/SAVE for `.bmsong`.
+
+      Each tab keeps its own voice. Song mode wants prosody off and a little vibrato and
+      speech wants the opposite, so one shared voice would mean every trip through the
+      song tab quietly retuned the text tab.
+
+      Needed one fix in `bm_ui.c` that was not obviously a bug until a one-line field
+      existed: 8 px of padding above and below a 24 px line means a box built to hold
+      exactly one line has less room inside it than the line needs, so it clipped its own
+      descenders and raised a scrollbar for text that fitted. The inset now shrinks below
+      the height of two lines.
+
+## Voices of other machines
+
+- [x] **The classic set** - `Compact`, `Announcer`, `Operator`, `Cadet`, `Whisper`,
+      `Rattled`. Tuned toward the archetypes of the voices desktop machines shipped with
+      in the eighties and early nineties, from the published acoustics of the voice types
+      involved. Nothing was disassembled or lifted from a shipped synthesizer.
+
+      Two of them needed new engine parameters, and both arrived at their off setting:
+
+      - **`whisper`** (0..1) trades voicing for turbulence. `breathiness` could not do it -
+        it adds aspiration alongside phonation and leaves the folds working, and a whisper
+        has no fundamental at all. The 16 dB trade level was measured, not chosen: it is
+        where whispered vowels land at the same RMS as `/s/ /sh/ /f/ /th/`, which is the
+        acoustic signature of whispering and why it sounds made of consonants.
+      - **`vibrato`** / **`vibrato_rate`**, for held notes far more than for the wobbling
+        voice that prompted them.
+
+      **What the engine cannot reach is written down** in CLASSIC-VOICES.md rather than
+      left as an absence: instrument-source voices need a pluggable excitation source
+      (the glottal model is fixed, and that is what lets there be no lip-radiation stage);
+      ring-modulated voices are ten lines and deliberately omitted, because a modulator is
+      an effect applied to speech rather than a property of a speaker; a detuned chorus is
+      already possible in the host by summing three engines; the fixed-melody novelty
+      voices are songs, not voices; and the concatenative voices are a different kind of
+      program entirely.
+
+## Effects
+
+- [x] **A post-synthesis effects stage** (`src/core/bm_effects.c`, `bm -e`).
+      Ring modulation, a resonant comb, a waveshaping drive and sample-rate
+      reduction, in that order.
+
+      **`bm_effects` is a separate struct from `bm_voice`, and that is the
+      design.** An earlier note in CLASSIC-VOICES.md said ring modulation was
+      cheap and deliberately omitted, because "an effect is not a property of a
+      speaker" and it would have been the first field in `bm_voice` that was not
+      a claim about a vocal tract. That objection was right and still is; giving
+      effects their own struct honours it. It also turned out to be the more
+      useful arrangement, because the two now compose - any effect on any voice,
+      rather than a preset table holding every combination.
+
+      Three things were measured rather than chosen, and all three were wrong
+      first time:
+
+      - **Drive compensation.** RMS jumped 2.6x by a drive of only 0.2 and then
+        *fell* as compression took over, so a straight-line trim was hopeless.
+        `1/(1 + 4.5*drive^(1/4))` holds the level flat to 3%. The fourth root is
+        two `sqrt` calls rather than a `pow()` the core does not have.
+      - **Comb normalisation.** Folding the `(1-fb)` resonance compensation into
+        the *mix* rather than into the wet signal left the output 78% dry at the
+        full setting - 2 dB of tooth-to-notch depth where there should have been
+        13. Now 25x on a rendered spectrum.
+      - **An output level after the chain.** Voice `gain` is applied before the
+        effects, correctly, because drive is a threshold effect. But that makes
+        the gain slider inert once drive is up. Input trim, chain, output level -
+        the topology of every overdrive pedal ever built.
+
+      `tests/test_effects.c` asserts the one that matters: an all-zero chain is
+      bit-for-bit the unprocessed signal, 0 of 30,140 samples differing. A whole
+      new stage landed in the signal path without moving Retro's reference.
+
+      `-DBM_WITH_EFFECTS=0` removes the stage, the code and the 8 KB comb delay
+      line - the only sizeable buffer in the library. 27,184 bytes of engine with
+      it, 18,976 without.
+
+- [x] **Three-column parameter layout in the GUI.** Seventeen voice sliders and
+      seven effect sliders in the same 216 px two columns used for the voice
+      alone, because the effects column is one row shorter. The effects dropdown
+      is the column heading rather than a separate control, which is the row that
+      would not have fitted. Needed adaptive metrics in `bm_slider`: the label
+      and readout now take a share of the row, capped at the old fixed widths, so
+      a full-width slider is laid out exactly as before and only a narrow one
+      gives ground.
+
+## Releases
+
+Tagging is **paused** until the release pipeline is finished. The runners already build
+everything, including a styled macOS `.dmg` - the gap is signing and notarization, which
+needs a paid Apple Developer ID and is the one part no amount of CI work substitutes for.
+Until then: build from source, or take a CI artifact.
+
 ## Later / speculative
 
 - [x] **Fixed-point sample loop** (`-DBM_FIXED_POINT=1`, `src/core/bm_fixed.h`). Q18 in

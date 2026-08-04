@@ -9,6 +9,7 @@
 
 #include "bencmouth.h"
 #include "bm_audio.h"
+#include "bm_songfile.h"
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
@@ -41,15 +42,18 @@ static void usage(void)
 "  -a           play through the speakers instead of writing a file\n"
 "  -o FILE      write WAV here (default out.wav; - for stdout)\n"
 "  -v NAME      use a voice preset\n"
+"  -e NAME      use an effects preset (none, metal, sentinel, enforcer, ...)\n"
 "  -f FILE      load a voice file\n"
 "  -R SEED      generate a random voice from SEED\n"
 "  -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast\n"
 "  -p PITCH     base pitch in Hz\n"
 "  -P           input is ARPABET phonemes, not text\n"
+"  -S FILE      sing a .bmsong: its score is the input, its voice the voice\n"
 "  -m           enable inline markup: [pitch N] [speed X] [pause N] [reset]\n"
+"               and, for singing, [note NAME] [hold MS]\n"
 "  -t           print phonemes and exit; render nothing\n"
 "  -w FILE      write the resolved voice to a voice file and exit\n"
-"  -l           list voice presets\n"
+"  -l           list voice and effects presets\n"
 "  -r RATE      sample rate (default 22050)\n"
 "  -h           this help\n"
 "\n"
@@ -63,6 +67,8 @@ static void usage(void)
 "  bm -t \"the quick brown fox\"\n"
 "  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n"
 "  bm -a \"straight out of the speakers\"\n"
+"  bm -v deep -e enforcer \"you have thirty seconds to comply\"\n"
+"  bm -S songs/daisy.bmsong -a\n"
 "  bm -R 4242 -w found.voice   # keep a random voice you liked\n",
         bm_audio_backend(), dict_line());
 }
@@ -74,6 +80,7 @@ int main(int argc, char **argv)
     bm_config         config;
     bm_wav_report     report;
     bm_voice          voice;
+    bm_effects        effects;
     char              name_buf[64];
     char              err[192];
 
@@ -82,11 +89,18 @@ int main(int argc, char **argv)
     int         as_phonemes = 0, text_only = 0, play = 0;
     int         i;
 
+    /* A song's score is the input, so it needs to outlive the parse. Static
+     * rather than automatic: 16 KB is a lot of stack on the smaller hosts this
+     * CLI is expected to build for. */
+    static char song_score[BM_SONG_SCORE_MAX];
+    bm_song     song;
+
     float  *audio = 0;
     size_t  cap = 0, len = 0;
 
     bm_config_default(&config);
     voice = config.voice;
+    effects = config.effects;
 
     for (i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -94,6 +108,15 @@ int main(int argc, char **argv)
         if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) { usage(); return 0; }
         else if (strcmp(a, "-l") == 0) {
             int k;
+            for (k = 0; k < bm_effects_preset_count(); k++) {
+                const bm_effects *x = bm_effects_preset_at(k);
+                printf("  -e %-12s ring %.2f @%5.0f Hz  comb %.2f @%5.0f Hz"
+                       "  drive %.2f  crush %.2f\n",
+                       x->name, (double)x->ring, (double)x->ring_hz,
+                       (double)x->comb, (double)x->comb_hz,
+                       (double)x->drive, (double)x->crush);
+            }
+            printf("\n");
             for (k = 0; k < bm_voice_preset_count(); k++) {
                 const bm_voice *v = bm_voice_preset_at(k);
                 printf("  %-20s f0 %5.1f +-%.1fst  throat %.2f  mouth %.2f"
@@ -124,18 +147,47 @@ int main(int argc, char **argv)
             }
             voice = *p;
         }
+        else if (strcmp(a, "-e") == 0 && i + 1 < argc) {
+            const bm_effects *x = bm_effects_preset(argv[++i]);
+            if (x == 0) {
+                fprintf(stderr, "bm: unknown effect \"%s\"; -l lists presets\n",
+                        argv[i]);
+                return 1;
+            }
+            effects = *x;
+        }
         else if (strcmp(a, "-R") == 0 && i + 1 < argc) {
             bm_voice_random(&voice, (uint32_t)strtoul(argv[++i], 0, 10));
         }
+        else if (strcmp(a, "-S") == 0 && i + 1 < argc) {
+            if (bm_song_load(argv[++i], &song, song_score, sizeof song_score,
+                             err, sizeof err) != 0) {
+                fprintf(stderr, "bm: %s\n", err);
+                return 1;
+            }
+            /* A song carries its own voice, and singing it in somebody else's
+             * is not what was asked for. Later -v or -f still wins, because
+             * options later on a command line beat earlier ones everywhere
+             * else here too. */
+            voice = song.voice;
+            effects = song.effects;
+            input = song_score;
+            as_phonemes = 1;
+            /* Markup is the whole mechanism a score is written in - [note] and
+             * [hold] are not decoration - so a song turns it on rather than
+             * failing obscurely on the first bracket. */
+            config.markup = 1;
+        }
         else if (strcmp(a, "-f") == 0 && i + 1 < argc) {
-            if (bm_voicefile_load(argv[++i], &voice, name_buf, sizeof name_buf,
+            if (bm_voicefile_load(argv[++i], &voice, &effects,
+                                  name_buf, sizeof name_buf,
                                   err, sizeof err) != 0) {
                 fprintf(stderr, "bm: %s\n", err);
                 return 1;
             }
         }
         else if (strcmp(a, "-w") == 0 && i + 1 < argc) {
-            if (bm_voicefile_save(argv[++i], &voice) != 0) {
+            if (bm_voicefile_save(argv[++i], &voice, &effects) != 0) {
                 fprintf(stderr, "bm: cannot write %s\n", argv[i]);
                 return 1;
             }
@@ -161,6 +213,7 @@ int main(int argc, char **argv)
     }
 
     config.voice = voice;
+    config.effects = effects;
     if (bm_engine_init(&storage, &config, &engine) != BM_OK) {
         fprintf(stderr, "bm: cannot initialize engine\n");
         return 1;

@@ -36,6 +36,22 @@ let threw = false;
 try { bm.voice('nonexistent'); } catch { threw = true; }
 check(threw, 'an unknown voice is an error, not a silent default');
 
+// Effects are a separate namespace from the voice, so they get their own check
+// that the module exported them and that the names resolve.
+bm.effects('enforcer');
+const driven = bm.say('you have thirty seconds to comply');
+check(driven.length > 0, 'effects presets resolve');
+check(driven.every(Number.isFinite), 'and produce finite samples');
+
+bm.fx('drive', 0.5);
+check(bm.say('hello').length > 0, 'effect parameters apply');
+
+threw = false;
+try { bm.effects('nonexistent'); } catch { threw = true; }
+check(threw, 'an unknown effects preset is an error too');
+
+bm.effects('none');
+
 bm.markup(true);
 const marked = bm.phonemes('one [pause 500] two');
 console.log(`  markup:   ${marked}`);

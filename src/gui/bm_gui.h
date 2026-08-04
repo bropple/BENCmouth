@@ -120,6 +120,16 @@ void  bm_label(const bm_ui *ui, const char *s, float x, float y);
 
 int   bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled);
 
+/* A row of tabs along the top of a panel. `*index` is the selected one;
+ * returns nonzero on the frame it changes.
+ *
+ * Drawn as a row of buttons over a rule, with the selected tab breaking the
+ * rule rather than being highlighted - that is what makes a tab read as the
+ * front of a stack instead of as a pressed button, and it is the only cue that
+ * survives a palette with no gradients or shadows to work with. */
+int   bm_tabs(const bm_ui *ui, Rectangle r, const char **labels, int count,
+              int *index);
+
 /* An information button: a lowercase i in a circle. */
 int   bm_info_button(const bm_ui *ui, Rectangle r);
 

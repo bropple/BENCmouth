@@ -217,6 +217,57 @@ int bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled)
     return enabled && over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
+int bm_tabs(const bm_ui *ui, Rectangle r, const char **labels, int count,
+            int *index)
+{
+    Vector2 m = GetMousePosition();
+    int     changed = 0, i;
+    float   x = r.x;
+    float   base = r.y + r.height - 1.0f;
+
+    if (count <= 0) return 0;
+
+    /* The rule under the whole row first; each selected tab erases its own
+     * stretch of it below. */
+    DrawRectangle((int)r.x, (int)base, (int)r.width, 1, BM_BORDER);
+
+    for (i = 0; i < count; i++) {
+        float     w = bm_text_measure(ui, BM_FONT_SMALL, labels[i], 1.0f) + 34.0f;
+        Rectangle t = { x, r.y, w, r.height };
+        int       on = (i == *index);
+        int       over = mouse_free(ui) && CheckCollisionPointRec(m, t);
+        Color     text = on ? BM_TEXT : (over ? BM_ACCENT : BM_DIM);
+        float     tw;
+
+        if (on) {
+            /* Three sides and a gap: the missing bottom edge is what joins the
+             * tab to the panel below it. */
+            DrawRectangleRec(t, BM_PANEL);
+            DrawRectangle((int)t.x, (int)t.y, (int)t.width, 1, BM_ACCENT);
+            DrawRectangle((int)t.x, (int)t.y, 1, (int)t.height, BM_ACCENT);
+            DrawRectangle((int)(t.x + t.width) - 1, (int)t.y, 1, (int)t.height,
+                          BM_ACCENT);
+            DrawRectangle((int)t.x + 1, (int)base, (int)t.width - 2, 1, BM_PANEL);
+        } else if (over) {
+            DrawRectangle((int)t.x, (int)t.y + 2, (int)t.width,
+                          (int)t.height - 3, BM_PANEL);
+        }
+
+        tw = bm_text_measure(ui, BM_FONT_SMALL, labels[i], 1.0f);
+        bm_text_spaced(ui, BM_FONT_SMALL, labels[i],
+                       t.x + (t.width - tw) * 0.5f,
+                       t.y + (t.height - BM_FONT_SMALL) * 0.5f, text);
+
+        if (over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && !on) {
+            *index = i;
+            changed = 1;
+        }
+        x += w;
+    }
+
+    return changed;
+}
+
 /* A lowercase i in a ring. Drawn rather than typeset: the mark is two
  * rectangles and a circle, and asking the font where to put a glyph inside a
  * ring never quite centres it at 16 px. */
@@ -266,10 +317,21 @@ int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
               float *value, float lo, float hi, const char *fmt)
 {
     Vector2 m = GetMousePosition();
-    Rectangle track = { r.x + 110, r.y + r.height * 0.5f - 3, r.width - 210, 6 };
+    /* Label and readout take a share of the row rather than a fixed 110 and
+     * 100 pixels, so the same widget works in a third-width column. The caps
+     * are the old fixed values, which means a wide slider is laid out exactly
+     * as it always was and only a narrow one gives ground. */
+    float labelw = r.width * 0.34f;
+    float valuew = r.width * 0.30f;
+    Rectangle track;
     float t = (hi > lo) ? (*value - lo) / (hi - lo) : 0.0f;
     int changed = 0;
     char buf[48];
+
+    if (labelw > 110.0f) labelw = 110.0f;
+    if (valuew > 100.0f) valuew = 100.0f;
+    track = (Rectangle){ r.x + labelw, r.y + r.height * 0.5f - 3,
+                         r.width - labelw - valuew, 6 };
 
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
@@ -572,6 +634,19 @@ static float scrollbar(Rectangle r, float content, float view, bm_edit *st,
     return r.width - 30.0f;
 }
 
+/* Inset from the box edge to the text.
+ *
+ * Eight pixels top and bottom is right for a paragraph and wrong for a
+ * one-line field: it is 16 px of chrome around a 24 px line, so a box built to
+ * hold exactly one line has less room inside it than the line needs, which
+ * clips the descenders and raises a scrollbar for text that fits. Below the
+ * height of two lines the padding shrinks to what a single line actually
+ * wants. */
+static float bm_textpad(float height, float line_h)
+{
+    return (height < 2.0f * line_h + 16.0f) ? 4.0f : 8.0f;
+}
+
 static void clamp_scroll(bm_edit *st, float content, float view)
 {
     float maxs = content - view;
@@ -589,7 +664,7 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
     Vector2 m       = GetMousePosition();
     int     size    = BM_FONT_BODY;
     float   lh      = (float)size + 4.0f;
-    float   pad     = 8.0f;
+    float   pad     = bm_textpad(r.height, lh);
     Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
     int     focused = (ui->focus == id);
     int     over    = mouse_free(ui) && CheckCollisionPointRec(m, r);
@@ -920,7 +995,7 @@ void bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c)
     Vector2 m       = GetMousePosition();
     int     size    = BM_FONT_SMALL;
     float   lh      = (float)size + 4.0f;
-    float   pad     = 8.0f;
+    float   pad     = bm_textpad(r.height, lh);
     Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
     int     over    = mouse_free(ui) && CheckCollisionPointRec(m, r);
     int     nlines, i;

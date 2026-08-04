@@ -22,6 +22,12 @@ static const float BM_FLUTTER_RATE[3] = { 3.1f, 6.9f, 11.3f };
  * because a 3 Hz wobble is subtle at 200 Hz and obvious at 80 Hz. */
 #define BM_FLUTTER_DEPTH_HZ 4.0f
 
+/* Rate used when a voice asks for vibrato without naming one. Measured singer
+ * vibrato clusters between 5 and 7 Hz almost regardless of voice type, and the
+ * ear is remarkably intolerant of rates outside it - slower reads as a wobble,
+ * faster as a tremble. */
+#define BM_VIBRATO_DEFAULT_HZ 5.5f
+
 void bm_glottis_init(bm_glottis *g, float sample_rate)
 {
     if (g == 0) return;
@@ -31,6 +37,8 @@ void bm_glottis_init(bm_glottis *g, float sample_rate)
     g->flutter = 0.0f;
     g->f0 = 0.0f;
     g->phase_inc = 0.0f;
+    g->vibrato = 0.0f;
+    g->vibrato_rate = BM_VIBRATO_DEFAULT_HZ;
     bm_glottis_reset(g);
 }
 
@@ -44,6 +52,19 @@ void bm_glottis_reset(bm_glottis *g)
     g->flutter_phase[0] = 0.0f;
     g->flutter_phase[1] = 0.0f;
     g->flutter_phase[2] = 0.0f;
+    /* Phase only. Depth and rate are the speaker's, not the utterance's, and
+     * survive a reset the same way open quotient does. */
+    g->vibrato_phase = 0.0f;
+}
+
+void bm_glottis_set_vibrato(bm_glottis *g, float semitones, float rate_hz)
+{
+    if (g == 0) return;
+    /* Two octaves is already well past anything musical; the bound exists so a
+     * typo in a voice file cannot drive the pitch to the Nyquist limit. */
+    g->vibrato = bm_clampf(semitones, 0.0f, 24.0f);
+    g->vibrato_rate = (rate_hz > 0.0f) ? bm_clampf(rate_hz, 0.1f, 40.0f)
+                                       : BM_VIBRATO_DEFAULT_HZ;
 }
 
 void bm_glottis_set(bm_glottis *g, float f0, float open_quotient,
@@ -100,6 +121,17 @@ float bm_glottis_tick(bm_glottis *g)
     }
 
     f0 = g->f0 + flut;
+
+    /* Applied as a ratio, after flutter. Semitones are a ratio by definition,
+     * and adding hertz instead would make the same setting sound like a tremor
+     * on a bass voice and like nothing at all on a soprano. */
+    if (g->vibrato > 0.0f) {
+        float v = bm_sinf(BM_TWO_PI * g->vibrato_phase);
+        g->vibrato_phase += g->vibrato_rate / g->sample_rate;
+        if (g->vibrato_phase >= 1.0f) g->vibrato_phase -= 1.0f;
+        f0 *= bm_exp2f(g->vibrato * v * (1.0f / 12.0f));
+    }
+
     if (f0 < 1.0f) f0 = 1.0f;
     g->phase_inc = f0 / g->sample_rate;
 

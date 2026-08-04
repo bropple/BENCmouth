@@ -31,6 +31,7 @@
 #define BM_SYNTH_H
 
 #include "bencmouth.h"
+#include "bm_effects.h"
 #include "bm_glottis.h"
 #include "bm_noise.h"
 #include "bm_fixed.h"
@@ -97,6 +98,12 @@ typedef struct bm_synth {
      * these are properties of a speaker, not of an instant. */
     float flutter;
     float gain;
+
+    /* Applied after `gain`, so the chain always sees a level the voice has
+     * already trimmed. It matters for `drive`, which is a threshold effect: if
+     * the drive stage saw the untrimmed signal, the same setting would fold
+     * hard on a loud voice and do nothing on a quiet one. */
+    bm_effects_state effects;
 } bm_synth;
 
 void bm_synth_init(bm_synth *s, float sample_rate);
@@ -110,6 +117,13 @@ void bm_synth_set_frame(bm_synth *s, const bm_frame *frame);
 
 /* Sets pitch flutter, 0..1. Persists across frames. */
 void bm_synth_set_flutter(bm_synth *s, float flutter);
+
+/* Sets periodic pitch modulation: peak deviation in semitones, and a rate in
+ * Hz where 0 selects the default. Persists across frames. */
+void bm_synth_set_vibrato(bm_synth *s, float semitones, float rate_hz);
+
+/* Sets the effects chain. Persists across frames and across resets. */
+void bm_synth_set_effects(bm_synth *s, const bm_effects *effects);
 
 /* Sets the output level multiplier. 1.0 is nominal; see bm_voice.gain for why
  * this is per voice rather than a constant. Persists across frames. */

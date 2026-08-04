@@ -104,7 +104,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make wasm` | build `bencmouth.wasm` (needs clang and lld) |
 | `make gui` | build the desktop GUI (needs raylib) |
 | `make dict` | compile CMUdict in and rebuild (see below) |
-| `make test` | run all eight test suites |
+| `make test` | run all ten test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
 | `make clean` | remove build products |
 
@@ -117,15 +117,17 @@ bm [options] "text to speak"
 
   -o FILE      write WAV here (default out.wav; - for stdout)
   -v NAME      use a voice preset
+  -e NAME      use an effects preset
   -f FILE      load a voice file
   -R SEED      generate a random voice from SEED
   -s SPEED     speech rate; 1.0 nominal, 2.0 twice as fast
   -p PITCH     base pitch in Hz
   -P           input is ARPABET phonemes, not text
+  -S FILE      sing a .bmsong
   -m           enable inline markup
   -t           print phonemes and exit; render nothing
   -w FILE      write the resolved voice to a voice file and exit
-  -l           list voice presets
+  -l           list voice and effects presets
   -r RATE      sample rate (default 22050)
   -h           help
 ```
@@ -136,6 +138,8 @@ bm -v retro -s 0.8 "I am sorry Dave" -o dave.wav
 bm -P "HH AH0 L OW1" -o hello.wav          # phonemes directly
 bm -t "the quick brown fox"                # see what the rules produced
 bm -f voices/gravel.voice "testing" -o t.wav
+bm -S songs/daisy.bmsong -a                # sing a song
+bm -v deep -e enforcer "you have thirty seconds to comply"
 ```
 
 ### Inline markup
@@ -167,6 +171,8 @@ note's duration lives; stretching the consonants turns the word into a groan.
 ```
 bm -m -P "[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0 ..." -o daisy.wav
 ```
+
+A whole song is a `.bmsong` file — see [Songs](#songs) below.
 
 Commands survive into the phoneme string rather than being resolved away, so `bm -m -t`
 shows exactly what the synthesizer will act on, and `-P` input honours them too:
@@ -212,7 +218,7 @@ bm "hello world" -o - > /tmp/x.wav && afplay /tmp/x.wav   # macOS
 
 ## Voices
 
-Five presets ship in the binary:
+Eleven presets ship in the binary:
 
 | Voice | Character |
 |---|---|
@@ -221,6 +227,27 @@ Five presets ship in the binary:
 | `BENCmouth Monotone` | no flutter, no intonation; maximum machine |
 | `Deep` | a larger speaker — longer vocal tract, not just lower pitch |
 | `Bright` | a smaller speaker |
+| `Compact` | the all-in-one machine on the desk, 1984 |
+| `Announcer` | deep and resonant |
+| `Operator` | the professional female voice of the era |
+| `Cadet` | a child |
+| `Whisper` | no voicing at all — turbulence through the formants |
+| `Rattled` | the one that came loose |
+
+The last six are the **classic set**, aimed at the voices desktop machines shipped with in
+the eighties and early nineties. They are tuned toward those archetypes from the published
+acoustics of the voice types involved — nothing was disassembled or lifted from a shipped
+synthesizer, which is the same rule the rest of this project follows.
+
+[CLASSIC-VOICES.md](CLASSIC-VOICES.md) has the tuning, the measured formant placements,
+and — more usefully — the list of classic voices this engine **cannot** reach, with the
+architectural reason for each. The short version: the formant voices are reachable, the
+instrument-source ones are not without a pluggable excitation source, and the recorded
+ones are a different kind of program entirely.
+
+```
+make bm && sh tools/classic-voices.sh    # render them all for comparison
+```
 
 Names match loosely, so `-v retro`, `-v "BENCmouth Retro"` and `-v bencmouth-retro` all
 resolve.
@@ -235,11 +262,14 @@ name           = Gravel
 preset         = retro      # start from a preset, then override
 
 f0_base        = 96
-f0_flutter     = 0.45
+f0_flutter     = 0.45       # aperiodic drift; kills the buzz, meant not to be heard
+vibrato        = 0          # semitones of *periodic* pitch modulation; meant to be
+vibrato_rate   = 0          # Hz; 0 selects the default, about 5.5
 throat         = 0.88       # governs F1 - the pharyngeal cavity
 mouth          = 0.94       # governs F3 and up - the oral cavity
 tilt           = 9
 open_quotient  = 0.58
+whisper        = 0          # 1 = no voicing at all, turbulence through the formants
 gain           = 1.0
 coarticulation = 0          # 0 = hits every target exactly, the retro sound
 prosody        = 0          # 0 = the pre-bm_prosody.c pitch contour
@@ -251,6 +281,24 @@ Unknown keys are **errors**, not warnings — a silently dropped setting produce
 that mysteriously sounds wrong, which is far worse to debug than a refusal to load.
 
 Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`.
+
+`whisper` and `vibrato` are worth calling out because each is easily confused with a
+neighbour:
+
+- **`whisper` is not `breathiness`.** Breathiness *adds* aspiration alongside phonation and
+  leaves the vocal folds working. Whispering is not breathy speech — the folds do not
+  vibrate at all, so there is no fundamental, and the formants are excited by glottal
+  turbulence instead. The voiced/voiceless distinction goes with it: a whispered *bat*
+  and *pat* really are near-identical, and that is the effect, not a defect in it.
+- **`vibrato` is not `f0_flutter`.** Flutter is three incommensurate oscillators summed so
+  the pattern never repeats; it exists to stop a sustained vowel sounding like a test tone
+  and you are not supposed to notice it. Vibrato is one oscillator you *are* supposed to
+  notice, and it is what a held note needs to read as sung rather than beeped. Depth is
+  in semitones because that is how the excursion is heard — a 3 Hz wobble is enormous at
+  80 Hz and inaudible at 400.
+
+Both default to 0 in every preset, so BENCmouth Retro is unchanged by their existence —
+which is the contract in the section below, working as intended.
 
 ### Finding new voices
 
@@ -288,6 +336,77 @@ could act on. Planned pitch for that sentence, in Hz:
 `f0_range` sets how far the contour swings, in semitones. `prosody` at 0 restores the
 older behaviour exactly: one linear decline across the whole utterance and a flat bump on
 stressed phonemes. BENCmouth Retro and Monotone sit at 0.
+
+---
+
+## Effects
+
+A stage after the synthesizer, and a **separate struct** from the voice. That
+separation is the design rather than an implementation detail:
+
+> A voice is a claim about a speaker — the length of their throat, how their vocal
+> folds close, how hard they push. An effect is something done to the sound
+> afterwards. Ring modulation is not a property of anyone's larynx.
+
+Keeping them apart is also what makes them compose. Any effect works on any voice, so
+a metallic ring on the deep voice and the same ring on the child are one flag apart,
+instead of being two more entries in a preset table that would have to hold every
+combination.
+
+```
+bm -l                                             # lists effects and voices
+bm -v deep -e enforcer "you have thirty seconds to comply"
+bm -v cadet -e metal "resistance is useless"
+```
+
+| Effect | What it is | What it is for |
+|---|---|---|
+| `ring` / `ring_hz` | multiply by a sine carrier | inharmonic sidebands — the metallic, inhuman edge |
+| `comb` / `comb_hz` | feedback comb, evenly spaced resonances | speaking through a metal tube, literally |
+| `drive` | cubic soft clip with pre-gain | harmonics that were not there — this is what *aggressive* is |
+| `crush` | hold every Nth sample | aliasing; the sound of a converter that could not keep up |
+| `level` | output gain | see below |
+
+The chain runs **ring → comb → drive → crush**, and the order is deliberate: ring
+modulation on the clean voice keeps its sidebands distinct, the comb adds the
+resonance, and the drive then saturates everything above it — which is what makes a
+robot sound angry rather than merely mechanical. Crush is last because it is the
+digital layer, applied to a finished sound.
+
+Six presets ship:
+
+| Preset | |
+|---|---|
+| `None` | the bypass — and an *exact* one, bit for bit |
+| `Metal` | ring modulation alone; the effect that most obviously is not a person |
+| `Overdrive` | the waveshaper alone |
+| `Crushed` | sample-rate reduction alone |
+| `Sentinel` | the metallic sentry — inhuman rather than angry |
+| `Enforcer` | the aggressive one; drive carries it |
+
+`voices/Sentry.voice` and `voices/Aggressor.voice` pair each of the last two with a
+voice, since what makes something sound like a particular character is usually both
+together. A `.voice` file can carry an `effects = NAME` line and any of the keys above.
+
+**Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:
+`drive` is a threshold effect, and a drive stage that saw an untrimmed signal would
+fold hard on a loud voice and do nothing on a quiet one. But that same ordering makes
+the gain slider almost inert once drive is up — turning it up just drives harder into
+a shaper that is already saturating. So: input trim, chain, output level, which is the
+topology of every overdrive pedal ever built. A `level` of 0 means unity, not silence,
+which is what keeps an all-zero `bm_effects` an exact bypass.
+
+Every preset is level-matched to within 1.7 dB of the dry signal, because a knob
+labelled with a timbre should not also be a volume control. Getting that right needed
+measurement rather than judgement — see [CLASSIC-VOICES.md](CLASSIC-VOICES.md) for the
+three things that were wrong on the first attempt.
+
+Compile with `-DBM_WITH_EFFECTS=0` to remove the stage entirely. Worth doing on a
+microcontroller: it drops the code *and* the comb delay line, which is 8 KB and the
+only sizeable buffer in the library. The engine measures 27,184 bytes with effects and
+18,976 without.
+
+---
 
 ### The dictionary
 
@@ -386,20 +505,29 @@ Tunables, all overridable with `-D`:
 ```
 include/bencmouth.h   the entire public API
 src/core/             no stdio, no stdlib, no malloc, no libm
-src/host/             platform glue - CLI, WAV writer, voice files
+src/host/             platform glue - CLI, WAV writer, voice and song files
+src/gui/              the desktop GUI; the only third-party dependency lives here
 tools/                generators and demos (see ARCHITECTURE.md)
-tests/                five suites, run with `make test`
+tests/                ten suites, run with `make test`
 voices/               shareable voice files
+songs/                shareable .bmsong scores
 ref/                  source material and its provenance - read ref/README.md
 render/               generated audio; gitignored
 ```
 
 `ARCHITECTURE.md` covers the signal path and the design decisions worth defending.
 `ROADMAP.md` covers what is done and what is not.
+`CLASSIC-VOICES.md` covers the classic-era presets, and which classic voices this engine
+cannot reach and why.
 
 ---
 
 ## Prebuilt binaries
+
+> **No new releases for now.** Tagging is paused while song mode and the classic voices
+> settle, and while the release pipeline gets the treatment it deserves — signing and
+> notarization on macOS in particular, which is the one thing the runners genuinely
+> cannot do without a paid Developer ID. Build from source, or take a CI artifact.
 
 **[Releases](https://github.com/bropple/BENCmouth/releases)** carry tagged builds for
 Linux, macOS, Windows and the browser, each with live audio and CMUdict compiled in.
@@ -432,7 +560,58 @@ it and you have covered both.
 
 Working: the synthesizer, the phoneme inventory, frame interpolation, the text front end,
 voices, phrase-level prosody, inline markup, the optional dictionary, live audio output,
-and the CLI.
+songs, and the CLI.
+
+---
+
+## Songs
+
+A score is phonemes with `[note]` and `[hold]` threaded through them — the same inline
+markup the CLI already had, used to write a melody rather than to colour a sentence. A
+`.bmsong` file is that score plus the voice that should sing it, because a melody written
+for a 90 Hz voice with a little vibrato sounds wrong out of a 200 Hz voice with none.
+
+```
+bm -S songs/daisy.bmsong -a
+bm -S songs/daisy.bmsong -o daisy.wav
+```
+
+The format is text and deliberately the same shape as a `.voice` file — a header of
+`key = value` lines. The one addition is that a score is many lines of free text, which
+`key = value` cannot carry, so a line reading exactly `score =` ends the header and
+everything after it is the score:
+
+```
+# BENCmouth song
+title          = Daisy Bell
+voice          = BENCmouth
+tempo          = 116
+vibrato        = 0.28
+prosody        = 0
+score =
+# Daisy, Daisy
+[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0
+```
+
+Points worth knowing:
+
+- **Comments are whole lines beginning with `#`.** A `#` anywhere else is literal, and it
+  has to be — `[note A#4]` is a sharp, and stripping from the first `#` to end of line
+  the way the `.voice` loader does would silently eat every accidental in the file.
+- **Every voice key is written on save**, not only the ones that differ from a preset, so
+  a song reopens as exactly the voice it was left as even if the preset it started from
+  later moves.
+- **Turn `prosody` down for singing.** It is speech planning — it declines the pitch
+  across a phrase and lengthens the final syllable — and against a written melody all of
+  that is interference.
+- **`tempo` is metadata.** Nothing in the engine reads it; note lengths are absolute
+  milliseconds. It is there so the editor can show what a quarter note is worth
+  (60000/tempo ms) and so you do not have to work it out again every time you reopen a
+  song.
+- An **unknown voice name is not fatal** — the score is the part that cannot be
+  reconstructed, so the file still opens and only the starting point is lost. An unknown
+  *setting* is fatal, for the reason voice files give: one that is quietly dropped
+  produces a song that mysteriously sounds wrong.
 
 ### In a browser
 
@@ -469,6 +648,17 @@ dictionary every word goes through the letter-to-sound rules, which get *robot* 
 switches between the two at runtime so you can hear the difference on any word, which
 is also how you find the ones worth adding to the exception list; it greys out in a
 build that has no dictionary to switch to. The status line says which build you have.
+
+The window has two tabs. **TEXT** is the speech side: type, and the phoneme readout under
+the field updates as you go. **SONG** is a score editor — a phoneme field with `[note]`
+and `[hold]` in it, a word-to-phoneme translator with an INSERT button so you do not have
+to know ARPABET by heart, a FORMAT button opening the full reference for the notation,
+and LOAD/SAVE for `.bmsong` files. SPEAK becomes SING, and SAVE WAV renders whichever tab
+is in front.
+
+Each tab keeps its own voice. Song mode wants prosody off and a little vibrato; speech
+wants the opposite, and one shared voice would mean every trip through the song tab
+quietly retuned the text tab. The sliders always edit whichever is in front.
 
 Type, and the phoneme readout under the field updates as you go. Both panels wrap and
 scroll — mouse wheel or the bar on the right — so a paragraph is as workable as a

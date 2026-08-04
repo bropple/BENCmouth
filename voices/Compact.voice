@@ -1,21 +1,21 @@
 # BENCmouth voice
-name           = BENCmouth Monotone
+name           = Compact
 
-f0_base        = 120
-f0_range       = 0
-f0_flutter     = 0
+f0_base        = 122
+f0_range       = 3
+f0_flutter     = 0.1
 vibrato        = 0
 vibrato_rate   = 0
-speed          = 1
+speed          = 1.1
 
-throat         = 1
-mouth          = 1
+throat         = 1.02
+mouth          = 1.06
 
 breathiness    = 0
-tilt           = 4
-open_quotient  = 0.5
+tilt           = 2
+open_quotient  = 0.42
 whisper        = 0
-gain           = 0.62
+gain           = 0.92
 
 # naturalness controls; 0 is the original BENCmouth behaviour
 coarticulation = 0

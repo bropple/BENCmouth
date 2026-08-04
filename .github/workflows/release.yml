@@ -48,12 +48,12 @@ jobs:
           D="bencmouth-$V-linux-x86_64"
           mkdir -p "$D"
           cp bm README.md LICENSE NOTICE "$D"/
-          cp -r voices "$D"/
+          cp -r voices songs "$D"/
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-linux-x86_64"
           mkdir -p "$G"
           cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
-          cp -r voices "$G"/
+          cp -r voices songs "$G"/
           tar czf "$G.tar.gz" "$G"
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
@@ -107,7 +107,7 @@ jobs:
           D="bencmouth-$V-macos-$A"
           mkdir -p "$D"
           cp bm README.md LICENSE NOTICE "$D"/
-          cp -r voices "$D"/
+          cp -r voices songs "$D"/
           tar czf "$D.tar.gz" "$D"
           # The GUI ships as a disk image, not a tarball. A .app is a directory
           # that Finder draws as one icon, and a tarball of one arrives looking
@@ -188,13 +188,13 @@ jobs:
           D="bencmouth-$V-windows-x86_64"
           mkdir -p "$D"
           cp bm.exe README.md LICENSE NOTICE "$D"/
-          cp -r voices "$D"/
+          cp -r voices songs "$D"/
           zip -qr "$D.zip" "$D"
           # The GUI, with the font it needs beside it.
           G="bencmouth-gui-$V-windows-x86_64"
           mkdir -p "$G"
           cp bencmouth-gui.exe bm.exe README.md LICENSE NOTICE "$G"/
-          cp -r voices "$G"/
+          cp -r voices songs "$G"/
           zip -qr "$G.zip" "$G"
           ls -l ./*.zip
       - uses: actions/upload-artifact@v4

@@ -22,6 +22,20 @@ enum {
  * burst_amp values shape the spectrum; this sets how loud the release is. */
 #define BM_BURST_AF_DB 36.0f
 
+/* How far below the voicing it replaces the whisper's aspiration sits.
+ *
+ * Not a taste setting - it was measured. Aspiration and voicing at the same dB
+ * are nowhere near the same loudness through this synthesizer: noise drives
+ * five cascaded resonators far harder than a glottal pulse train does, and a
+ * 6 dB trade put whispered vowels 10 dB *above* the unvoiced fricatives in the
+ * same sentence and peaked the whole utterance at 1.83.
+ *
+ * 16 dB is where whispered vowels land at the same RMS as /s/, /sh/, /f/ and
+ * /th/ - 0.0342 against 0.0348 on a rendered comparison. That equality is the
+ * acoustic signature of whispering, and it is why whispered speech sounds like
+ * it is made almost entirely of consonants: it is. */
+#define BM_WHISPER_TRADE_DB 16.0f
+
 /* Duration multipliers by CMUdict stress digit: 1 primary, 2 secondary,
  * 0 unstressed. Unstressed vowels reduce noticeably in English and leaving
  * them full length is one of the loudest tells that speech is synthetic. */
@@ -294,6 +308,28 @@ static void build_target(const bm_frame_gen *g, int index, int seg, float pos,
             if (b > out->ah) out->ah = b;
         }
         break;
+    }
+
+    /* Whisper, applied last so it catches every segment - including the voice
+     * bar a voiced stop keeps through its closure, which is exactly the cue
+     * that a whisper is supposed to lose.
+     *
+     * Done here rather than in the synthesizer because it is a substitution
+     * between two source amplitudes, and this is the layer that decides what
+     * those amplitudes are. The synthesizer would have to undo the phoneme
+     * table's work to reach the same result. */
+    if (g->voice.whisper > 0.0f) {
+        float w = bm_clampf(g->voice.whisper, 0.0f, 1.0f);
+
+        if (out->av > 0.0f) {
+            /* Glottal turbulence is quieter than phonation at the same effort,
+             * and a whisper that arrives at the same level as speech is the
+             * commonest way this effect sounds wrong. */
+            float noise_db = out->av - BM_WHISPER_TRADE_DB;
+            if (noise_db < 0.0f) noise_db = 0.0f;
+            if (noise_db > out->ah) out->ah += (noise_db - out->ah) * w;
+            out->av *= 1.0f - w;
+        }
     }
 }
 

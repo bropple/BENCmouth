@@ -16,6 +16,8 @@
 #include "bm_gui.h"
 #include "bm_embed.h"
 #include "bm_filedlg.h"
+#include "bm_song_ui.h"
+#include "bm_songfile.h"
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
@@ -23,8 +25,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Taller than it was. Song mode needs a panel with two columns in it, and the
+ * voice grew three sliders, which between them added about 80 px of layout
+ * that has to come from somewhere. */
 #define WIN_W       900
-#define WIN_H       700
+#define WIN_H       780
+#define WIN_MIN_W   800
+#define WIN_MIN_H   740
+
+/* The band the active tab's panel gets. Fixed rather than proportional: the
+ * controls below it are a fixed height each, so a proportional panel would
+ * push the status line off the bottom of a short window. */
+#define PANEL_H     210
 #define TEXT_CAP    2048
 #define SCOPE_LEN   2048
 #define SAMPLE_RATE 22050
@@ -105,12 +117,19 @@ static const param_row PARAMS[] = {
     { "f0_base",         "pitch",        60.0f, 260.0f, "%.0f Hz" },
     { "f0_range",        "range",         0.0f,  10.0f, "%.1f st" },
     { "f0_flutter",      "flutter",       0.0f,   1.0f, "%.2f"    },
+    { "vibrato",         "vibrato",       0.0f,   3.0f, "%.2f st" },
+    { "vibrato_rate",    "vib. rate",     0.0f,  12.0f, "%.1f Hz" },
     { "speed",           "speed",         0.5f,   2.0f, "%.2f"    },
-    { "throat",          "throat",        0.7f,   1.3f, "%.2f"    },
-    { "mouth",           "mouth",         0.7f,   1.3f, "%.2f"    },
+    /* The top of the range is 1.4 rather than 1.3 because Cadet needs it: a
+     * child's vocal tract really is about a third shorter than an adult's, and
+     * a slider that cannot reach the preset it ships with is a slider that
+     * silently rewrites the voice the moment it is touched. */
+    { "throat",          "throat",        0.7f,   1.4f, "%.2f"    },
+    { "mouth",           "mouth",         0.7f,   1.4f, "%.2f"    },
     { "tilt",            "tilt",          0.0f,  14.0f, "%.1f dB" },
     { "breathiness",     "breath",        0.0f,  12.0f, "%.1f dB" },
     { "open_quotient",   "open quot.",    0.3f,   0.7f, "%.2f"    },
+    { "whisper",         "whisper",       0.0f,   1.0f, "%.2f"    },
     { "gain",            "gain",          0.0f,   1.5f, "%.2f"    },
     { "coarticulation",  "coart.",        0.0f,   1.0f, "%.2f"    },
     { "prosody",         "prosody",       0.0f,   1.0f, "%.2f"    },
@@ -119,14 +138,33 @@ static const param_row PARAMS[] = {
 };
 #define NPARAMS ((int)(sizeof PARAMS / sizeof PARAMS[0]))
 
+/* The effects chain, in its own column. Same table shape, different struct -
+ * and that separation is the point: a voice describes a speaker, an effect is
+ * something done to the sound afterwards. See bm_effects in bencmouth.h. */
+static const param_row FX_PARAMS[] = {
+    { "ring",    "ring",       0.0f,   1.0f,  "%.2f"    },
+    { "ring_hz", "ring freq",  0.0f, 400.0f,  "%.0f Hz" },
+    { "comb",    "comb",       0.0f,   1.0f,  "%.2f"    },
+    { "comb_hz", "comb freq", 40.0f, 900.0f,  "%.0f Hz" },
+    { "drive",   "drive",      0.0f,   1.0f,  "%.2f"    },
+    { "crush",   "crush",      0.0f,   1.0f,  "%.2f"    },
+    /* Bottom of the range is 0.1, not 0. In the file format a level of 0 means
+     * unity - that is what keeps an all-zero bm_effects an exact bypass - so a
+     * slider that could reach 0 would show "0.00" for unity gain and let you
+     * set a value that means the opposite of what it reads. */
+    { "level",   "level",      0.1f,   4.0f,  "%.2f"    }
+};
+#define NFXPARAMS ((int)(sizeof FX_PARAMS / sizeof FX_PARAMS[0]))
+
 static float param_get(const bm_voice *v, const char *key)
 {
     /* The voice is a flat block of floats after the name pointer, in the same
      * order as bm_voice_set_param accepts. Reading it back positionally keeps
      * this table the only place the order is written down. */
     static const char *ORDER[] = {
-        "f0_base", "f0_range", "f0_flutter", "speed", "throat", "mouth",
-        "breathiness", "tilt", "open_quotient", "gain",
+        "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate",
+        "speed", "throat", "mouth",
+        "breathiness", "tilt", "open_quotient", "whisper", "gain",
         "coarticulation", "prosody", "formant_glide", "bandwidth_track"
     };
     const float *f = (const float *)(const void *)&v->f0_base;
@@ -137,14 +175,54 @@ static float param_get(const bm_voice *v, const char *key)
     return 0.0f;
 }
 
+/* The same trick for the effects chain, which is laid out the same way: a name
+ * pointer and then the floats, in the order bm_effects_set_param accepts. */
+static float fx_get(const bm_effects *e, const char *key)
+{
+    const float *f = (const float *)(const void *)&e->ring;
+    int i;
+
+    /* Shown as what it does rather than as what is stored. See the FX_PARAMS
+     * entry for why the stored value for unity is 0. */
+    if (strcmp(key, "level") == 0 && e->level <= 0.0f) return 1.0f;
+
+    for (i = 0; i < NFXPARAMS; i++) {
+        if (strcmp(FX_PARAMS[i].key, key) == 0) return f[i];
+    }
+    return 0.0f;
+}
+
+/* `--shot PREFIX` renders each tab for a few frames, writes PREFIX-TEXT.png and
+ * PREFIX-SONG.png, and exits.
+ *
+ * It is here rather than in a script because there is no other way to see this
+ * window without a display: under Xvfb the layout can be checked, and a layout
+ * bug that pushes the status line off the bottom of a short window is exactly
+ * the kind of thing that otherwise ships. It is also what produces the
+ * screenshots in the README.
+ *
+ *   xvfb-run -a ./bencmouth-gui --shot layout
+ *
+ * The files land in the working directory whatever the prefix says - raylib's
+ * TakeScreenshot takes the basename and writes beside the process, which is
+ * worth knowing before hunting for a screenshot in the directory you named. */
+static const char *parse_shot(int argc, char **argv)
+{
+    int i;
+    for (i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--shot") == 0) return argv[i + 1];
+    }
+    return 0;
+}
+
 /* Optional "WxH" on the command line. Useful for a cramped desktop, and it is
  * what produced the screenshot in the README at a sensible resolution. */
 static void parse_size(int argc, char **argv, int *w, int *h)
 {
     int i, a, b;
     for (i = 1; i < argc; i++) {
-        if (sscanf(argv[i], "%dx%d", &a, &b) == 2 && a >= 800 && b >= 680 &&
-            a <= 8192 && b <= 8192) {
+        if (sscanf(argv[i], "%dx%d", &a, &b) == 2 &&
+            a >= WIN_MIN_W && b >= WIN_MIN_H && a <= 8192 && b <= 8192) {
             *w = a;
             *h = b;
         }
@@ -164,11 +242,28 @@ int main(int argc, char **argv)
     char  scope[SCOPE_LEN];
     float scope_copy[SCOPE_LEN];
 
-    const char *voice_names[16];
+    const char *voice_names[32];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
+    const char *fx_names[16];
+    int   fx_count = 0, fx_index = 0, fx_open = 0;
+    bm_effects effects;
     int   i, dirty = 1;
     int   have_dict = 0, use_dict = 1;
     int   info_open = 0;
+
+    /* Two tabs, and each keeps its own voice. Song mode wants prosody off and
+     * a little vibrato; speech wants the opposite, and one shared voice would
+     * mean every trip through the song tab quietly retuned the text tab. The
+     * sliders always edit whichever is in front. */
+    static const char *TABS[] = { "TEXT", "SONG" };
+    int        tab = 0;
+    bm_voice   stashed_voice;
+    bm_effects stashed_effects;
+    bm_song_ui song;
+    static char song_path[1024] = "";
+
+    const char *shot = 0;
+    int         shot_frames = 0;
     Texture2D logo = { 0, 0, 0, 0, 0 };
     bm_edit info_st;
     char  voice_name_buf[64] = "";
@@ -184,9 +279,15 @@ int main(int argc, char **argv)
     use_dict  = have_dict;
     config.markup = 1;          /* the GUI is a place to experiment */
     voice = config.voice;
+    effects = config.effects;
 
-    for (i = 0; i < bm_voice_preset_count() && i < 16; i++) {
+    for (i = 0; i < bm_voice_preset_count() &&
+                i < (int)(sizeof voice_names / sizeof voice_names[0]); i++) {
         voice_names[voice_count++] = bm_voice_preset_at(i)->name;
+    }
+    for (i = 0; i < bm_effects_preset_count() &&
+                i < (int)(sizeof fx_names / sizeof fx_names[0]); i++) {
+        fx_names[fx_count++] = bm_effects_preset_at(i)->name;
     }
 
     SetTraceLogLevel(LOG_WARNING);
@@ -196,15 +297,20 @@ int main(int argc, char **argv)
         parse_size(argc, argv, &w, &h);
         InitWindow(w, h, "BENCmouth");
     }
+    shot = parse_shot(argc, argv);
+    if (shot != 0) shot_frames = 8;   /* let the font and logo textures land */
     /* ESC closes the information window and nothing else. raylib exits on it
      * by default, which in a program built around a text field means one
      * stray keystroke throws away what you were typing. */
     SetExitKey(KEY_NULL);
-    SetWindowMinSize(800, 680);
+    SetWindowMinSize(WIN_MIN_W, WIN_MIN_H);
     SetTargetFPS(60);
     InitAudioDevice();
 
     bm_ui_init(&ui);
+    bm_song_ui_init(&song);
+    stashed_voice = voice;
+    stashed_effects = effects;
     memset(&text_st, 0, sizeof text_st);
     memset(&phon_st, 0, sizeof phon_st);
     memset(&info_st, 0, sizeof info_st);
@@ -296,12 +402,14 @@ int main(int argc, char **argv)
          * the one thing it reports is worse than no readout at all. */
         /* Modal. Published before any widget runs, so nothing underneath the
          * scrim reacts to a click meant for the dialog. */
-        if (info_open) {
+        if (info_open || song.ref_open) {
             ui.blocking = 1;
             ui.block = (Rectangle){ 0, 0, W, (float)GetScreenHeight() };
             voice_open = 0;
             ui.menu_open = 0;
         }
+        /* Only one modal at a time, and the one just asked for wins. */
+        if (info_open) song.ref_open = 0;
 
         if (g_finished) {
             g_finished = 0;
@@ -344,33 +452,179 @@ int main(int argc, char **argv)
         }
         bm_divider(BM_PAD, 58, W - 2 * BM_PAD);
 
-        /* ---- text and phonemes ---- */
-        y = 72;
-        bm_label(&ui, "TEXT TO SPEAK", BM_PAD, y);
-        y += 18;
-        if (bm_textbox(&ui, 1, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 114 },
-                       text, TEXT_CAP, &text_st)) {
-            dirty = 1;
+        /* ---- tabs ---- */
+        y = 66;
+        if (bm_tabs(&ui, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 26 },
+                    TABS, 2, &tab)) {
+            /* Swap the voices over. The one in front is always `voice`, which
+             * is the only thing the sliders and the engine ever see. */
+            if (tab == 1) {
+                stashed_voice = voice;
+                stashed_effects = effects;
+                voice = song.song.voice;
+                effects = song.song.effects;
+            } else {
+                song.song.voice = voice;
+                song.song.effects = effects;
+                voice = stashed_voice;
+                effects = stashed_effects;
+            }
+            bm_engine_set_voice(g_engine, &voice);
+            bm_engine_set_effects(g_engine, &effects);
+            ui.focus = 0;
+            voice_open = 0;
         }
+        y += 30;
+
+        if (tab == 0) {
+            /* ---- text and phonemes ---- */
+            bm_label(&ui, "TEXT TO SPEAK", BM_PAD, y);
+            if (bm_textbox(&ui, 1,
+                           (Rectangle){ BM_PAD, y + 18, W - 2 * BM_PAD,
+                                        PANEL_H - 18 - 66 },
+                           text, TEXT_CAP, &text_st)) {
+                dirty = 1;
+            }
+            bm_textview(&ui, (Rectangle){ BM_PAD, y + PANEL_H - 58,
+                                          W - 2 * BM_PAD, 58 },
+                        phonemes, &phon_st, BM_DIM);
+        } else {
+            int act = bm_song_panel(&ui, &song,
+                                    (Rectangle){ BM_PAD, y, W - 2 * BM_PAD,
+                                                 (float)PANEL_H },
+                                    use_dict);
+
+            if (act == BM_SONG_ACT_LOAD) {
+                char path[1024];
+                char start[1024];
+                int  dlg;
+
+                snprintf(start, sizeof start, "%ssongs", GetApplicationDirectory());
+                if (!DirectoryExists(start)) {
+                    snprintf(start, sizeof start, "%s../Resources/songs",
+                             GetApplicationDirectory());
+                }
+                if (!DirectoryExists(start)) snprintf(start, sizeof start, "songs");
+                if (!DirectoryExists(start)) snprintf(start, sizeof start, ".");
+
+                dlg = bm_open_dialog(GetWindowHandle(), "Load song", start,
+                                     "BENCmouth song", "bmsong",
+                                     path, sizeof path);
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(status, sizeof status,
+                             "no file dialog available - install zenity or kdialog");
+                    status_color = BM_ALERT;
+                } else if (dlg == BM_DLG_OK) {
+                    char err[192];
+                    /* Into a scratch song, so a file that fails halfway
+                     * through cannot leave the open one half-replaced. */
+                    static bm_song  loaded;
+                    static char     loaded_score[BM_SONG_SCORE_MAX];
+
+                    if (bm_song_load(path, &loaded, loaded_score,
+                                     sizeof loaded_score, err, sizeof err) == 0) {
+                        song.song = loaded;
+                        /* bm_song refers to its own name buffer, so the copy
+                         * above left voice.name pointing into `loaded`. */
+                        song.song.voice.name = song.song.voice_name;
+                        memcpy(song.score, loaded_score, sizeof song.score);
+                        snprintf(song.title, sizeof song.title, "%s",
+                                 song.song.title);
+                        song.score_st.caret = song.score_st.sel = 0;
+                        song.score_st.scroll = 0.0f;
+                        song.title_st.caret = song.title_st.sel = 0;
+                        snprintf(song_path, sizeof song_path, "%s", path);
+
+                        voice = song.song.voice;
+                        effects = song.song.effects;
+                        bm_engine_set_voice(g_engine, &voice);
+                        bm_engine_set_effects(g_engine, &effects);
+                        snprintf(status, sizeof status, "loaded %.100s  [%.40s]",
+                                 GetFileName(path), song.song.voice_name);
+                        status_color = BM_ACCENT;
+                    } else {
+                        snprintf(status, sizeof status, "%.150s", err);
+                        status_color = BM_ALERT;
+                    }
+                }
+            } else if (act == BM_SONG_ACT_SAVE) {
+                char path[1024];
+                int  dlg;
+                char suggest[128];
+
+                /* Suggest what it was opened or last written as, so saving a
+                 * song twice does not mean retyping its name - falling back to
+                 * the title only when there is no such name yet. */
+                if (song_path[0] != '\0') {
+                    snprintf(suggest, sizeof suggest, "%.110s",
+                             GetFileName(song_path));
+                } else {
+                    snprintf(suggest, sizeof suggest, "%.100s.bmsong",
+                             song.title[0] ? song.title : "untitled");
+                }
+                dlg = bm_save_dialog(GetWindowHandle(), "Save song", suggest,
+                                     "BENCmouth song", "bmsong",
+                                     path, sizeof path);
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(path, sizeof path, "%s", suggest);
+                    dlg = BM_DLG_OK;
+                }
+
+                if (dlg != BM_DLG_OK) {
+                    snprintf(status, sizeof status, "save cancelled");
+                    status_color = BM_DIM;
+                } else {
+                    /* Capture what is on screen now: the sliders edit `voice`,
+                     * and the title has its own box. */
+                    song.song.voice = voice;
+                    song.song.effects = effects;
+                    snprintf(song.song.title, sizeof song.song.title, "%s",
+                             song.title);
+                    if (bm_song_save(path, &song.song, song.score) == 0) {
+                        snprintf(song_path, sizeof song_path, "%s", path);
+                        snprintf(status, sizeof status, "wrote %.150s",
+                                 GetFileName(path));
+                        status_color = BM_ACCENT;
+                    } else {
+                        snprintf(status, sizeof status, "could not write %.150s",
+                                 path);
+                        status_color = BM_ALERT;
+                    }
+                }
+            }
+        }
+
         /* Two popups at once would fight over which of them owns the mouse. */
-        if (ui.menu_open) voice_open = 0;
-        y += 122;
-        bm_textview(&ui, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 58 },
-                    phonemes, &phon_st, BM_DIM);
-        y += 66;
+        if (ui.menu_open) { voice_open = 0; fx_open = 0; }
+        if (fx_open) voice_open = 0;
+        y += PANEL_H + 8;
 
         /* ---- transport ---- */
         {
             Rectangle b = { BM_PAD, y, 96, 30 };
-            if (bm_button(&ui, b, "SPEAK", 1)) {
+            if (bm_button(&ui, b, tab == 0 ? "SPEAK" : "SING", 1)) {
+                bm_result rc;
+
                 bm_engine_set_voice(g_engine, &voice);
-                if (bm_speak_text(g_engine, text, 0) == BM_OK) {
+                bm_engine_set_effects(g_engine, &effects);
+                /* A score goes in as phonemes. bm_speak_phonemes honours
+                 * markup for free, which is the whole reason commands survive
+                 * into the phoneme string instead of being resolved away in
+                 * the front end. */
+                rc = (tab == 0) ? bm_speak_text(g_engine, text, 0)
+                                : bm_speak_phonemes(g_engine, song.score, 0);
+                if (rc == BM_OK) {
                     g_peak = 0.0f; g_limited = 0;
                     g_finished = 0; g_speaking = 1;
-                    snprintf(status, sizeof status, "speaking");
+                    snprintf(status, sizeof status,
+                             tab == 0 ? "speaking" : "singing");
                     status_color = BM_ACCENT;
                 } else {
-                    snprintf(status, sizeof status, "nothing to say");
+                    /* A score can be wrong in ways text cannot - an unknown
+                     * phoneme, an unterminated bracket - so say which. */
+                    snprintf(status, sizeof status, "%s: %s",
+                             tab == 0 ? "nothing to say" : "cannot sing that",
+                             bm_strerror(rc));
                     status_color = BM_ALERT;
                 }
             }
@@ -384,15 +638,20 @@ int main(int argc, char **argv)
             b.x += 104; b.width = 116;
             if (bm_button(&ui, b, "SAVE WAV", 1)) {
                 char path[1024];
-                int  dlg = bm_save_dialog(GetWindowHandle(), "Save WAV",
-                                          "bencmouth.wav", "WAV audio", "wav",
-                                          path, sizeof path);
+                char suggest[128];
+                int  dlg;
+
+                snprintf(suggest, sizeof suggest, "%.100s.wav",
+                         (tab == 1 && song.title[0]) ? song.title : "bencmouth");
+                dlg = bm_save_dialog(GetWindowHandle(), "Save WAV",
+                                     suggest, "WAV audio", "wav",
+                                     path, sizeof path);
 
                 /* No dialog available - a bare X session with neither zenity
                  * nor kdialog. Writing to the working directory and saying so
                  * is better than refusing over a missing helper program. */
                 if (dlg == BM_DLG_UNAVAILABLE) {
-                    snprintf(path, sizeof path, "bencmouth.wav");
+                    snprintf(path, sizeof path, "%s", suggest);
                     dlg = BM_DLG_OK;
                 }
 
@@ -407,9 +666,15 @@ int main(int argc, char **argv)
                     size_t cap = 0, len = 0;
 
                     c2.voice = voice;
+                    c2.effects = effects;
                     c2.use_dict = use_dict;
+                    /* A second engine rather than the live one, so exporting
+                     * does not interrupt playback - and it renders whichever
+                     * tab is in front. */
                     if (bm_engine_init(&s2, &c2, &e2) == BM_OK &&
-                        bm_speak_text(e2, text, 0) == BM_OK) {
+                        (tab == 0 ? bm_speak_text(e2, text, 0)
+                                  : bm_speak_phonemes(e2, song.score, 0))
+                            == BM_OK) {
                         while (bm_is_speaking(e2)) {
                             size_t got;
                             if (len + 4096 > cap) {
@@ -496,13 +761,16 @@ int main(int argc, char **argv)
                      * current voice rather than over defaults, which is what
                      * `bm -f` does - a file that sets only two keys is an edit,
                      * not a whole voice. */
-                    bm_voice next = voice;
+                    bm_voice   next = voice;
+                    bm_effects next_fx = effects;
                     char err[192];
 
-                    if (bm_voicefile_load(path, &next, voice_name_buf,
+                    if (bm_voicefile_load(path, &next, &next_fx, voice_name_buf,
                                           sizeof voice_name_buf,
                                           err, sizeof err) == 0) {
                         voice = next;
+                        effects = next_fx;
+                        bm_engine_set_effects(g_engine, &effects);
                         voice.name = voice_name_buf[0] != '\0'
                                          ? voice_name_buf : "loaded";
                         bm_engine_set_voice(g_engine, &voice);
@@ -532,7 +800,7 @@ int main(int argc, char **argv)
                 if (dlg != BM_DLG_OK) {
                     snprintf(status, sizeof status, "save cancelled");
                     status_color = BM_DIM;
-                } else if (bm_voicefile_save(path, &voice) == 0) {
+                } else if (bm_voicefile_save(path, &voice, &effects) == 0) {
                     snprintf(status, sizeof status, "wrote %.150s", GetFileName(path));
                     status_color = BM_ACCENT;
                 } else {
@@ -571,11 +839,18 @@ int main(int argc, char **argv)
         }
         y += 38;
 
-        /* ---- parameters, in two columns ----
-         * Fourteen stacked would be 300 px of slider and would push the scope
-         * off the bottom of any sensible window. */
+        /* ---- parameters, in three columns ----
+         *
+         * Seventeen voice parameters and seven effect parameters stacked in one
+         * list would be 580 px of slider. Two columns fitted the voice but left
+         * nowhere for the effects; three fits both in the same 216 px the voice
+         * alone used to take, because the effects column is one shorter.
+         *
+         * The split is not arbitrary: columns one and two are the speaker,
+         * column three is what is done to them afterwards, which is the same
+         * line bm_voice and bm_effects are drawn along. */
         {
-            float colw = (W - 3 * BM_PAD) * 0.5f;
+            float colw = (W - 4 * BM_PAD) / 3.0f;
             int   half = (NPARAMS + 1) / 2;
 
             for (i = 0; i < NPARAMS; i++) {
@@ -592,6 +867,38 @@ int main(int argc, char **argv)
                      * is the whole point of tuning by ear. */
                     bm_engine_set_voice(g_engine, &voice);
                     voice.name = "edited";
+                }
+            }
+
+            /* ---- the effects column ---- */
+            {
+                float fx_x = BM_PAD + 2.0f * (colw + BM_PAD);
+
+                /* The dropdown is the column heading. A separate heading plus a
+                 * control somewhere else would cost a row this layout does not
+                 * have, and "EFFECTS: <name>" is what a heading here would say
+                 * anyway. */
+                if (voice_open) fx_open = 0;
+                bm_label(&ui, "EFFECTS", fx_x, y + 5);
+                if (bm_dropdown(&ui, (Rectangle){ fx_x + 76, y - 1,
+                                                  colw - 76, 24 },
+                                fx_names, fx_count, &fx_index, &fx_open)) {
+                    effects = *bm_effects_preset_at(fx_index);
+                    bm_engine_set_effects(g_engine, &effects);
+                    snprintf(status, sizeof status, "effects: %s", effects.name);
+                    status_color = BM_DIM;
+                }
+
+                for (i = 0; i < NFXPARAMS; i++) {
+                    Rectangle row = { fx_x, y + (float)(i + 1) * 24, colw, 22 };
+                    float v = fx_get(&effects, FX_PARAMS[i].key);
+                    if (bm_slider(&ui, row, FX_PARAMS[i].label, &v,
+                                  FX_PARAMS[i].lo, FX_PARAMS[i].hi,
+                                  FX_PARAMS[i].fmt)) {
+                        bm_effects_set_param(&effects, FX_PARAMS[i].key, 0, v);
+                        bm_engine_set_effects(g_engine, &effects);
+                        effects.name = "edited";
+                    }
                 }
             }
             y += (float)half * 24;
@@ -697,11 +1004,28 @@ int main(int argc, char **argv)
             }
         }
 
+        if (song.ref_open) {
+            bm_song_reference(&ui, &song, W, (float)GetScreenHeight());
+        }
+
         /* Last, so a dropdown list or a context menu is above the layout it
          * covers rather than under it. */
         bm_ui_overlay(&ui);
 
         EndDrawing();
+
+        if (shot != 0 && --shot_frames <= 0) {
+            char file[512];
+            snprintf(file, sizeof file, "%.400s-%s.png", shot, TABS[tab]);
+            TakeScreenshot(file);
+            if (tab == 0) {
+                tab = 1;
+                voice = song.song.voice;
+                shot_frames = 4;
+            } else {
+                break;
+            }
+        }
     }
 
     g_speaking = 0;

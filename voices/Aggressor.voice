@@ -1,0 +1,57 @@
+# BENCmouth voice
+# A machine that has decided about you.
+#
+# The first version of this was built on the Announcer preset, and was reported
+# as "aggressive, but muffled so much it's nearly unrecognizable". Measuring
+# where the energy actually went found the cause, and it was not the effects:
+#
+#   band             <500 Hz   500-2k Hz
+#   BENCmouth         91.7%      8.1%     <- a legible voice
+#   Announcer @ 82    98.6%      1.1%     <- the old base, seven times less
+#
+# Announcer is a rumble by design - tilt 10 and a long tract - and dropping its
+# pitch to 82 made it more so. Nothing above 500 Hz survived to carry the words,
+# and the drive was the only stage putting any brightness back at all.
+#
+# So the fix is in the voice and not in the chain: a near-neutral tract and
+# almost no spectral tilt, which restores the 500-2 kHz band where
+# intelligibility lives, at a pitch still low enough to be menacing. This is
+# 92.1% / 7.0% through Enforcer, against the legible reference's 91.7% / 8.1%.
+#
+#   ./bm -f voices/Aggressor.voice -a "you have thirty seconds to comply"
+
+name           = Aggressor
+
+f0_base        = 95
+f0_range       = 4.5
+f0_flutter     = 0.22
+vibrato        = 0
+vibrato_rate   = 0
+speed          = 0.88
+
+# A long tract is what buried the old one. This is barely below neutral: the
+# menace comes from the pitch and the drive, not from the cavity.
+throat         = 0.92
+mouth          = 1
+
+breathiness    = 0
+# Almost none. Tilt is a lowpass on the source, and it was the single largest
+# contributor to the muffling.
+tilt           = 2
+open_quotient  = 0.46
+whisper        = 0
+gain           = 1
+
+# naturalness controls; 0 is the original BENCmouth behaviour
+coarticulation = 0.55
+prosody        = 0.7
+formant_glide  = 1
+bandwidth_track= 0.8
+
+# effects; applied after the voice, see CLASSIC-VOICES.md
+ring           = 0.22
+ring_hz        = 47
+comb           = 0.42
+comb_hz        = 240
+drive          = 0.88
+crush          = 0

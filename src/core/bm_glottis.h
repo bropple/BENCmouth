@@ -31,6 +31,14 @@ typedef struct bm_glottis {
     float flutter;        /* 0..1 */
     float f0;             /* requested, before flutter */
     float flutter_phase[3];
+
+    /* Vibrato rides alongside flutter and shares nothing with it: flutter is
+     * aperiodic and meant to be inaudible as such, vibrato is periodic and
+     * meant to be heard. Depth is in semitones, so it is applied as a ratio
+     * rather than as an offset in hertz. */
+    float vibrato;        /* semitones of peak deviation; 0 = off */
+    float vibrato_rate;   /* Hz */
+    float vibrato_phase;
 } bm_glottis;
 
 void bm_glottis_init(bm_glottis *g, float sample_rate);
@@ -40,6 +48,12 @@ void bm_glottis_reset(bm_glottis *g);
  * (0 = no tilt, larger = softer and less buzzy). `flutter` is 0..1. */
 void bm_glottis_set(bm_glottis *g, float f0, float open_quotient,
                     float tilt_db, float flutter);
+
+/* Sets periodic pitch modulation. `semitones` is the peak deviation and 0
+ * disables it; `rate_hz` at or below 0 selects the default. Separate from
+ * bm_glottis_set because it comes from the voice, not from the frame - calling
+ * it once per frame with the same two numbers would be the only caller. */
+void bm_glottis_set_vibrato(bm_glottis *g, float semitones, float rate_hz);
 
 /* One sample of the flow derivative, peak closure excursion -1. */
 float bm_glottis_tick(bm_glottis *g);

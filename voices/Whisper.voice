@@ -1,20 +1,20 @@
 # BENCmouth voice
-name           = Deep
+name           = Whisper
 
-f0_base        = 100
-f0_range       = 4.5
-f0_flutter     = 0.35
+f0_base        = 130
+f0_range       = 3
+f0_flutter     = 0.2
 vibrato        = 0
 vibrato_rate   = 0
-speed          = 0.93
+speed          = 0.95
 
-throat         = 0.78
-mouth          = 0.84
+throat         = 1
+mouth          = 1.04
 
 breathiness    = 0
-tilt           = 9
-open_quotient  = 0.58
-whisper        = 0
+tilt           = 4
+open_quotient  = 0.55
+whisper        = 1
 gain           = 1
 
 # naturalness controls; 0 is the original BENCmouth behaviour

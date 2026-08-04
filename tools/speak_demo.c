@@ -154,13 +154,19 @@ static int render_default_set(void)
 
 int main(int argc, char **argv)
 {
-    bm_voice voice;
+    bm_voice   voice;
+    /* Accepted and round-tripped, but not applied - this demo renders through
+     * the frame generator and synthesizer directly rather than through the
+     * engine, and the effects stage lives with the engine's output. Present so
+     * that -f on a voice file carrying an effects block does not fail. */
+    bm_effects effects;
     char     name_buf[64];
     char     err[160];
     int      i;
     const char *phonemes = 0, *path = "render/speak.wav";
 
     bm_voice_default(&voice);
+    bm_effects_default(&effects);
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-l") == 0) {
@@ -177,14 +183,15 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) {
             /* Dump the current voice, so a preset or a tuned voice can be
              * captured to a file and kept. */
-            if (bm_voicefile_save(argv[++i], &voice) != 0) {
+            if (bm_voicefile_save(argv[++i], &voice, &effects) != 0) {
                 fprintf(stderr, "cannot write %s\n", argv[i]);
                 return 1;
             }
             printf("wrote %s\n", argv[i]);
             return 0;
         } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
-            if (bm_voicefile_load(argv[++i], &voice, name_buf, sizeof name_buf,
+            if (bm_voicefile_load(argv[++i], &voice, &effects,
+                                  name_buf, sizeof name_buf,
                                   err, sizeof err) != 0) {
                 fprintf(stderr, "%s: %s\n", argv[i], err);
                 return 1;

@@ -93,6 +93,19 @@ typedef struct bm_voice {
     float f0_range;      /* semitones of intonation excursion; 0 = monotone robot */
     float f0_flutter;    /* 0..1, quasi-random F0 drift; a little kills the buzz */
 
+    /* Vibrato: a *periodic* pitch modulation, which is a different thing from
+     * flutter and is why it is a separate pair of numbers rather than a mode.
+     * Flutter is three incommensurate oscillators summed so the pattern never
+     * repeats - it exists to stop a sustained vowel sounding like a test tone.
+     * Vibrato is one oscillator you are meant to hear, and hearing it is the
+     * point: it is what a held note needs to read as sung rather than beeped.
+     *
+     * Depth is in semitones because that is how the excursion is heard - a
+     * 3 Hz wobble is huge at 80 Hz and inaudible at 400. Rate at 0 means the
+     * default below, so a voice file can ask for vibrato with one key. */
+    float vibrato;       /* semitones of peak deviation; 0 = off */
+    float vibrato_rate;  /* Hz; 0 selects the default, about 5.5 */
+
     float speed;         /* phoneme duration multiplier; 1.0 = nominal */
 
     /* Vocal tract shape, as multipliers on formant frequencies.
@@ -113,6 +126,19 @@ typedef struct bm_voice {
     float breathiness;   /* dB of aspiration mixed into voiced segments */
     float tilt;          /* dB of spectral downtilt; higher = softer, less buzzy */
     float open_quotient; /* 0..1 fraction of the period the glottis is open */
+
+    /* How much voicing is traded for turbulence, 0..1.
+     *
+     * Distinct from `breathiness`, which *adds* aspiration alongside phonation
+     * and leaves the vocal folds working. Whispering is not breathy speech: the
+     * folds do not vibrate at all, so there is no fundamental, and the formants
+     * are excited by glottal turbulence instead. At 1 the voiced branch is
+     * silent and the cascade is driven by noise alone.
+     *
+     * The voiced/voiceless distinction goes with it - a whispered "bat" and
+     * "pat" really are near-identical, and that is the effect being modelled,
+     * not a defect in it. */
+    float whisper;
 
     /* Output level, linear. 1.0 is nominal.
      *
@@ -228,6 +254,105 @@ void bm_voice_random(bm_voice *voice, uint32_t seed);
 float bm_voice_formant_scale(const bm_voice *voice, int index);
 
 /* ------------------------------------------------------------------ *
+ * Effects
+ *
+ * A stage after the synthesizer, not part of it. This is a separate struct
+ * rather than more fields on bm_voice, and the separation is the design:
+ *
+ *   A voice is a claim about a speaker - the length of their throat, how their
+ *   vocal folds close, how hard they push. An effect is something done to the
+ *   sound afterwards. Ring modulation is not a property of anyone's larynx.
+ *
+ * Keeping them apart also makes them compose. Any effect works on any voice, so
+ * a metallic ring on the deep voice and the same ring on the child are one
+ * dropdown apart instead of being two more entries in a preset table that would
+ * otherwise have to hold every combination.
+ *
+ * The chain runs ring -> comb -> drive -> crush, and that order is deliberate:
+ * ring modulation on the clean voice keeps its sidebands distinct, the comb
+ * adds the resonance, and the drive then saturates everything above it - which
+ * is what makes a robot sound angry rather than merely mechanical. Crush is
+ * last because it is the digital layer, applied to a finished sound.
+ *
+ * Compile with -DBM_WITH_EFFECTS=0 to remove the stage entirely. That is worth
+ * doing on a microcontroller: it drops the code *and* the comb delay line,
+ * which is the only sizeable buffer in the whole library. The API stays, and
+ * does nothing, so an embedded build gives up the feature and not the
+ * interface.
+ * ------------------------------------------------------------------ */
+
+#ifndef BM_WITH_EFFECTS
+#define BM_WITH_EFFECTS 1
+#endif
+
+/* Comb delay line length, in samples. Must be a power of two - the read index
+ * wraps by masking. This sets the lowest comb frequency available: at 22050 Hz
+ * a 2048-sample line reaches down to about 11 Hz, which is far below anything
+ * useful, so the practical limit is the parameter range and not this. */
+#ifndef BM_COMB_LEN
+#define BM_COMB_LEN 2048
+#endif
+
+typedef struct bm_effects {
+    const char *name;
+
+    /* Ring modulation: the signal multiplied by a sine carrier, which replaces
+     * every component with a pair of sidebands either side of the carrier. The
+     * result is inharmonic, which is exactly why it does not sound like a
+     * person - the ear has no fundamental to lock onto. */
+    float ring;          /* 0..1 wet mix */
+    float ring_hz;       /* carrier frequency */
+
+    /* A resonant comb: the signal added to a delayed copy of itself with
+     * feedback, giving a series of evenly spaced peaks. This is what "speaking
+     * through a metal tube" is, physically and here. */
+    float comb;          /* 0..1 wet mix; also sets the feedback */
+    float comb_hz;       /* spacing between resonances */
+
+    /* Waveshaping. A cubic soft clip with pre-gain, so quiet parts pass and
+     * loud parts fold - which generates harmonics that were not there and is
+     * the single largest contributor to a voice sounding aggressive rather than
+     * merely synthetic. Output level is compensated, so this changes the
+     * timbre and not the loudness. */
+    float drive;         /* 0..1 */
+
+    /* Sample-rate reduction: hold every Nth sample. The aliasing it produces
+     * is the point - it is the sound of a converter that could not keep up,
+     * and it is most of what "old digital" means to the ear. */
+    float crush;         /* 0..1 */
+
+    /* Output level, linear, applied after everything.
+     *
+     * This is not a duplicate of bm_voice.gain, and the difference is the whole
+     * reason it exists. Voice gain is applied *before* the chain, which is
+     * correct - `drive` is a threshold effect, and a drive stage that saw an
+     * untrimmed signal would fold hard on a loud voice and do nothing on a
+     * quiet one. But that same ordering makes the gain slider almost inert once
+     * drive is up: turning it up just drives harder into a shaper that is
+     * already saturating.
+     *
+     * So: input trim, chain, output level, which is the topology of every
+     * overdrive pedal ever built, arrived at for the same reason.
+     *
+     * 0 means unity rather than silence, so a bm_effects with every field zero
+     * is still an exact bypass. */
+    float level;
+} bm_effects;
+
+/* All zero: a true bypass, sample for sample. */
+void bm_effects_default(bm_effects *effects);
+
+/* Named effect presets, looked up the same loose way voices are. */
+const bm_effects *bm_effects_preset(const char *name);
+int               bm_effects_preset_count(void);
+const bm_effects *bm_effects_preset_at(int index);
+
+/* One `key = value` setting, as bm_voice_set_param does for voices. Returns
+ * BM_ERR_ARG for an unknown key. */
+bm_result bm_effects_set_param(bm_effects *effects, const char *key,
+                               size_t key_len, float value);
+
+/* ------------------------------------------------------------------ *
  * Synthesis parameter frame
  *
  * One frame is the complete instantaneous state of the synthesizer, updated
@@ -297,6 +422,10 @@ typedef struct bm_config {
     uint32_t frame_rate;         /* parameter updates/sec; 100 is standard */
     bm_voice voice;
 
+    /* Bypassed by default, and exactly bypassed - with every field zero the
+     * output is sample-for-sample what it was before the stage existed. */
+    bm_effects effects;
+
     /* Enables inline markup in bm_speak_text(). Off by default, and that
      * default matters: with markup off, "[pitch 80]" is ordinary text and gets
      * spoken as the words "pitch eighty". Turning it on changes brackets from
@@ -324,6 +453,11 @@ void bm_engine_reset(bm_engine *engine);
 /* Swaps the voice mid-stream. Takes effect at the next phoneme boundary,
  * so it will not click. */
 bm_result bm_engine_set_voice(bm_engine *engine, const bm_voice *voice);
+
+/* Swaps the effects chain mid-stream. Takes effect on the next sample; the
+ * comb's delay line and the carrier phase are kept, so a change while speaking
+ * is a change of setting and not a restart. */
+bm_result bm_engine_set_effects(bm_engine *engine, const bm_effects *effects);
 
 /* Turns the dictionary on or off on a live engine. Takes effect on the next
  * bm_speak_text(); an utterance already queued is unaffected. Harmless in a

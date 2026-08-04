@@ -51,6 +51,22 @@ const BENCmouth = (() => {
       return this;
     }
 
+    // The effects chain, which is deliberately not part of the voice: any
+    // effect composes with any speaker. See bm_effects in bencmouth.h.
+    effects(name) {
+      if (!this.x.bm_wasm_set_effects(this._cstr(name))) {
+        throw new Error(`unknown effects preset: ${name}`);
+      }
+      return this;
+    }
+
+    fx(key, value) {
+      if (!this.x.bm_wasm_set_fx_param(this._cstr(key), value)) {
+        throw new Error(`unknown effect parameter: ${key}`);
+      }
+      return this;
+    }
+
     markup(on) { this.x.bm_wasm_set_markup(on ? 1 : 0); return this; }
 
     // Borrows the text buffer for a NUL-terminated string argument. Safe only

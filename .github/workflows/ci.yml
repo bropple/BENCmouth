@@ -45,6 +45,31 @@ jobs:
           ./bm -l
           ls -l ci.wav
 
+      # The shipped songs and voices have to still parse. Both are hand-written
+      # text, so a change to the voice keys, the effect keys or the markup
+      # commands can invalidate one without touching a line of C - and nothing
+      # else in the suite would notice.
+      - name: The shipped songs sing
+        run: |
+          for s in songs/*.bmsong; do
+            echo "== $s"
+            ./bm -S "$s" -o /dev/null
+          done
+
+      - name: The shipped voices load
+        run: |
+          for v in voices/*.voice; do
+            echo "== $v"
+            ./bm -f "$v" "check" -o /dev/null
+          done
+
+      - name: Every effects preset renders
+        run: |
+          ./bm -l
+          for e in none metal overdrive crushed sentinel enforcer; do
+            ./bm -v deep -e "$e" "compliance is mandatory" -o /dev/null
+          done
+
       # Built last so it is what survives: the CLI with live audio and the
       # dictionary compiled in, which is the build someone would actually want.
       # A runner has no sound card, so this proves the backend links, not that
@@ -310,6 +335,7 @@ jobs:
           test -f BENCmouth.app/Contents/Resources/BENCmouth.icns
           test -f BENCmouth.app/Contents/MacOS/BENCmouth
           test -d BENCmouth.app/Contents/Resources/voices
+          test -d BENCmouth.app/Contents/Resources/songs
           plutil -lint BENCmouth.app/Contents/Info.plist
           # Finder decides an app is an app from these two facts alone.
           test "$(plutil -extract CFBundleExecutable raw \

@@ -4,6 +4,8 @@ name           = BENCmouth Retro
 f0_base        = 118
 f0_range       = 4
 f0_flutter     = 0.3
+vibrato        = 0
+vibrato_rate   = 0
 speed          = 1
 
 throat         = 1
@@ -12,6 +14,7 @@ mouth          = 1
 breathiness    = 0
 tilt           = 6
 open_quotient  = 0.5
+whisper        = 0
 gain           = 1
 
 # naturalness controls; 0 is the original BENCmouth behaviour

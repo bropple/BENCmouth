@@ -182,6 +182,8 @@ WASM_EXPORTS := \
   -Wl,--export=bm_wasm_output_capacity \
   -Wl,--export=bm_wasm_set_voice \
   -Wl,--export=bm_wasm_set_param \
+  -Wl,--export=bm_wasm_set_effects \
+  -Wl,--export=bm_wasm_set_fx_param \
   -Wl,--export=bm_wasm_set_markup \
   -Wl,--export=bm_wasm_speak \
   -Wl,--export=bm_wasm_speak_phonemes \
@@ -216,7 +218,8 @@ EMBED     := src/gui/bm_embed.c
 EMBED_IN  := assets/fonts/TerminusTTF.ttf assets/brand/BENCO_Logo_Terminal.png \
              assets/icon/hex-64.png LICENSE NOTICE assets/fonts/OFL.txt
 
-GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c $(EMBED)
+GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c \
+            src/gui/bm_song_ui.c $(EMBED)
 
 # Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
 # it does not also open a console behind the window. Both apply to the GUI only -

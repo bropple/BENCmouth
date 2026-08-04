@@ -1,19 +1,19 @@
 # BENCmouth voice
-name           = Bright
+name           = Announcer
 
-f0_base        = 168
-f0_range       = 5.5
+f0_base        = 88
+f0_range       = 5
 f0_flutter     = 0.3
 vibrato        = 0
 vibrato_rate   = 0
-speed          = 1.05
+speed          = 0.88
 
-throat         = 1.1
-mouth          = 1.16
+throat         = 0.74
+mouth          = 0.8
 
-breathiness    = 0
-tilt           = 3
-open_quotient  = 0.46
+breathiness    = 1.5
+tilt           = 10
+open_quotient  = 0.6
 whisper        = 0
 gain           = 1
 

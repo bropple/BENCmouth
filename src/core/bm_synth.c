@@ -49,6 +49,7 @@ void bm_synth_init(bm_synth *s, float sample_rate)
 
     bm_glottis_init(&s->glottis, s->sample_rate);
     bm_noise_init(&s->noise, s->sample_rate, 0u);
+    bm_effects_state_init(&s->effects, s->sample_rate);
 
     /* Park every resonator somewhere harmless so a tick before the first
      * set_frame produces silence rather than uninitialized coefficients. */
@@ -87,6 +88,7 @@ void bm_synth_reset(bm_synth *s)
 
     bm_glottis_reset(&s->glottis);
     bm_noise_reset(&s->noise);
+    bm_effects_state_reset(&s->effects);
 
     for (i = 0; i < BM_NFORMANTS; i++) {
         bm_resonator_reset(&s->cascade[i]);
@@ -133,6 +135,22 @@ void bm_synth_set_flutter(bm_synth *s, float flutter)
 {
     if (s == 0) return;
     s->flutter = bm_clampf(flutter, 0.0f, 1.0f);
+}
+
+void bm_synth_set_effects(bm_synth *s, const bm_effects *effects)
+{
+    if (s == 0 || effects == 0) return;
+    bm_effects_state_set(&s->effects, effects);
+}
+
+void bm_synth_set_vibrato(bm_synth *s, float semitones, float rate_hz)
+{
+    if (s == 0) return;
+    /* Straight through to the source. It is kept on the synth's interface
+     * rather than exposing the glottis, because the glottis is an
+     * implementation detail of this file's topology and the engine above has
+     * no business knowing there is one. */
+    bm_glottis_set_vibrato(&s->glottis, semitones, rate_hz);
 }
 
 void bm_synth_set_gain(bm_synth *s, float gain)
@@ -220,5 +238,9 @@ float bm_synth_tick(bm_synth *s)
         }
     }
 
-    return BM_SIG_TO_F(out) * s->gain;
+    /* Effects last, after the voice's own trim - see bm_synth.effects. With
+     * nothing switched on bm_effects_tick returns its argument, so this line
+     * is exactly `* s->gain` for every voice that asked for no effects, which
+     * is what keeps the Retro reference byte-identical. */
+    return bm_effects_tick(&s->effects, BM_SIG_TO_F(out) * s->gain);
 }

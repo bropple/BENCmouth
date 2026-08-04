@@ -126,6 +126,29 @@ int bm_wasm_set_param(const char *key, float value)
     return bm_engine_set_voice(g_engine, &v) == BM_OK;
 }
 
+/* The effects chain, by preset name and by parameter, mirroring the two calls
+ * above. Separate from the voice ones because bm_effects is a separate struct -
+ * see bencmouth.h for why an effect is not a property of a speaker. */
+int bm_wasm_set_effects(const char *name)
+{
+    const bm_effects *x;
+    if (!g_ready || name == 0) return 0;
+    x = bm_effects_preset(name);
+    if (x == 0) return 0;
+    g_config.effects = *x;
+    return bm_engine_set_effects(g_engine, x) == BM_OK;
+}
+
+int bm_wasm_set_fx_param(const char *key, float value)
+{
+    bm_effects x;
+    if (!g_ready || key == 0) return 0;
+    x = g_config.effects;
+    if (bm_effects_set_param(&x, key, 0, value) != BM_OK) return 0;
+    g_config.effects = x;
+    return bm_engine_set_effects(g_engine, &x) == BM_OK;
+}
+
 int bm_wasm_set_markup(int on)
 {
     g_config.markup = on ? 1 : 0;

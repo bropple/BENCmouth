@@ -1,0 +1,24 @@
+# BENCmouth voice
+name           = Rattled
+
+f0_base        = 130
+f0_range       = 9
+f0_flutter     = 0.85
+vibrato        = 1.6
+vibrato_rate   = 8.5
+speed          = 1.15
+
+throat         = 0.95
+mouth          = 1.1
+
+breathiness    = 0
+tilt           = 1.5
+open_quotient  = 0.4
+whisper        = 0
+gain           = 0.85
+
+# naturalness controls; 0 is the original BENCmouth behaviour
+coarticulation = 0.7
+prosody        = 1
+formant_glide  = 1
+bandwidth_track= 0.8

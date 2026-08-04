@@ -95,7 +95,9 @@ bm_result bm_engine_init(bm_engine_storage *storage, const bm_config *config,
     recompute_rates(e);
     bm_synth_init(&e->synth, (float)cfg.sample_rate);
     bm_synth_set_flutter(&e->synth, cfg.voice.f0_flutter);
+    bm_synth_set_vibrato(&e->synth, cfg.voice.vibrato, cfg.voice.vibrato_rate);
     bm_synth_set_gain(&e->synth, cfg.voice.gain);
+    bm_synth_set_effects(&e->synth, &cfg.effects);
     bm_frame_gen_init(&e->gen, (float)cfg.frame_rate, &cfg.voice);
 
     e->samples_left = 0;
@@ -123,6 +125,7 @@ bm_result bm_engine_set_voice(bm_engine *engine, const bm_voice *voice)
 
     engine->config.voice = *voice;
     bm_synth_set_flutter(&engine->synth, voice->f0_flutter);
+    bm_synth_set_vibrato(&engine->synth, voice->vibrato, voice->vibrato_rate);
     bm_synth_set_gain(&engine->synth, voice->gain);
 
     /* The frame generator holds its own copy, so hand it the new one. Anything
@@ -152,6 +155,19 @@ bm_result bm_speak_phonemes(bm_engine *engine, const char *phonemes, size_t len)
     if (rc != BM_OK) return rc;
 
     begin_utterance(engine);
+    return BM_OK;
+}
+
+bm_result bm_engine_set_effects(bm_engine *engine, const bm_effects *effects)
+{
+    if (engine == 0 || effects == 0) return BM_ERR_ARG;
+
+    engine->config.effects = *effects;
+    /* No reset: the delay line and the carrier phase carry on. Clearing them
+     * would make every slider movement a click, and the whole point of the
+     * pull interface is that a control moved mid-sentence is audible in that
+     * sentence. */
+    bm_synth_set_effects(&engine->synth, effects);
     return BM_OK;
 }
 

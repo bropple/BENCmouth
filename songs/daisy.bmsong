@@ -1,0 +1,55 @@
+# BENCmouth song
+#
+# "Daisy Bell", Harry Dacre, 1892 - public domain, and the piece an IBM 704
+# sang in 1961 in the first computer speech synthesis demonstration there was.
+# It has been what a talking computer sings ever since.
+#
+# Written by hand: [note] sets the pitch absolutely and [hold] the length of
+# the vowels after it, so a line of score is a melody with words threaded
+# through it. Sing it with:
+#
+#     make bm && ./bm -S songs/daisy.bmsong -a
+
+title          = Daisy Bell
+voice          = BENCmouth
+tempo          = 116
+
+f0_base        = 118
+f0_range       = 4
+f0_flutter     = 0.18
+# A little vibrato, because a held note without any is a test tone. Well under
+# what a singer would use - this is a computer, and it should still sound like
+# one.
+vibrato        = 0.28
+vibrato_rate   = 5.5
+speed          = 1
+throat         = 1
+mouth          = 1
+breathiness    = 0
+tilt           = 6
+open_quotient  = 0.5
+whisper        = 0
+gain           = 1
+coarticulation = 0.6
+# Prosody off. The planner is built for speech - it declines the pitch across a
+# phrase and puts accents on stressed syllables - and against an absolute
+# melody all of that is interference. [note] overrides it anyway; turning it
+# off means the durations are not fighting either.
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.8
+
+score =
+# Daisy, Daisy, give me your answer do
+[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0
+[note F3][hold 520] D EY1 [note C3][hold 260] Z IY0
+[note D3][hold 260] G IH1 V [note E3][hold 260] M IY1
+[note F3][hold 260] Y AO1 R [note D3][hold 390] AE1 N
+[note E3][hold 260] S ER0 [note C3][hold 620] D UW1
+[pause 320]
+# I'm half crazy all for the love of you
+[note G3][hold 520] AY1 M [note E3][hold 260] HH AE1 F
+[note C3][hold 390] K R EY1 [note G3][hold 260] Z IY0
+[note A3][hold 260] AO1 L [note G3][hold 260] F AO1 R
+[note F3][hold 260] DH AH0 [note D3][hold 390] L AH1 V
+[note E3][hold 260] AH1 V [note C3][hold 720] Y UW1

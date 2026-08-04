@@ -1,24 +1,24 @@
 # BENCmouth voice
-name           = BENCmouth
+name           = Operator
 
-f0_base        = 118
-f0_range       = 4
-f0_flutter     = 0.3
+f0_base        = 200
+f0_range       = 6
+f0_flutter     = 0.28
 vibrato        = 0
 vibrato_rate   = 0
 speed          = 1
 
-throat         = 1
-mouth          = 1
+throat         = 1.14
+mouth          = 1.18
 
-breathiness    = 0
+breathiness    = 4
 tilt           = 6
-open_quotient  = 0.5
+open_quotient  = 0.58
 whisper        = 0
-gain           = 1
+gain           = 0.95
 
 # naturalness controls; 0 is the original BENCmouth behaviour
 coarticulation = 0.6
-prosody        = 0.85
+prosody        = 0.9
 formant_glide  = 1
 bandwidth_track= 0.8

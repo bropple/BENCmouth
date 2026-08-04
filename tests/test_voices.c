@@ -18,6 +18,7 @@
 
 #include "bm_fixed.h"
 #include "bm_frames.h"
+#include "bm_glottis.h"
 #include "bm_synth.h"
 
 #include <math.h>
@@ -112,6 +113,7 @@ static size_t render(const bm_voice *v, const char *phonemes,
 
     bm_synth_init(&synth, FS);
     bm_synth_set_flutter(&synth, v->f0_flutter);
+    bm_synth_set_vibrato(&synth, v->vibrato, v->vibrato_rate);
     bm_synth_set_gain(&synth, v->gain);
 
     spf = (size_t)(FS / FRAME_HZ);
@@ -271,10 +273,12 @@ static void test_params(void)
  * save/load cycle. */
 static void test_every_field_has_a_key(void)
 {
+    /* In struct order: the round-trip below indexes the voice positionally, so
+     * this list is also an assertion about the layout. */
     static const char *KEYS[] = {
-        "f0_base", "f0_range", "f0_flutter", "speed",
+        "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate", "speed",
         "throat", "mouth",
-        "breathiness", "tilt", "open_quotient", "gain",
+        "breathiness", "tilt", "open_quotient", "whisper", "gain",
         "coarticulation", "prosody", "formant_glide", "bandwidth_track"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
@@ -385,6 +389,177 @@ static void test_formant_glide(void)
           "Retro has formant_glide off");
 }
 
+/* Best normalized autocorrelation over the plausible pitch range: the standard
+ * voiced/unvoiced measure. Near 1 for a sustained vowel, near 0 for noise.
+ * This is what actually distinguishes whispering from quiet speech - level
+ * does not, and neither does spectrum, since a whisper has the same formants.
+ *
+ * The lag is searched rather than assumed. Pitch declines across an utterance
+ * even with prosody off, so correlating at exactly FS/f0_base measures a
+ * fundamental the signal has already moved away from and reports a voiced
+ * vowel as half unvoiced. The window is one short slice from the middle for the
+ * same reason: over a whole utterance the period changes underneath the
+ * measurement. */
+static double periodicity(const float *x, size_t n)
+{
+    const size_t WIN = 4096;                  /* ~186 ms at 22050 */
+    /* 70..200 Hz. The top of the range is deliberately not 300: a formant is a
+     * narrow resonance, so noise driven through one stays correlated for as
+     * long as it rings - about 5 ms for a 60 Hz bandwidth - and a lag search
+     * that reaches down to 3 ms finds that ringing and calls it a fundamental.
+     * A whisper scored 0.42 that way, which is a measurement of the vocal tract
+     * rather than of the source. */
+    size_t lo = (size_t)(FS / 200.0);
+    size_t hi = (size_t)(FS / 70.0);
+    size_t start, lag;
+    double best = 0.0;
+
+    if (n < WIN + hi) return 0.0;
+    start = (n - WIN - hi) / 2;
+
+    for (lag = lo; lag <= hi; lag++) {
+        double num = 0.0, ea = 0.0, eb = 0.0;
+        size_t i;
+
+        for (i = 0; i < WIN; i++) {
+            double a = (double)x[start + i];
+            double b = (double)x[start + i + lag];
+            num += a * b;
+            ea  += a * a;
+            eb  += b * b;
+        }
+        if (ea > 0.0 && eb > 0.0) {
+            double r = num / sqrt(ea * eb);
+            if (r > best) best = r;
+        }
+    }
+    return best;
+}
+
+static void test_whisper(void)
+{
+    static float voiced[200000], whispered[200000];
+    bm_voice v, w;
+    size_t   nv, nw;
+    double   pv, pw;
+
+    printf("whisper\n");
+
+    bm_voice_default(&v);
+    v.f0_flutter = 0.0f;      /* flutter smears the correlation; not the point */
+    v.prosody    = 0.0f;
+    w = v;
+    w.whisper = 1.0f;
+
+    /* [note] pins the pitch absolutely - no declination, no accent. Without it
+     * the fundamental slides ~18% across the utterance and the correlation
+     * measures the slide rather than the voicing. */
+    nv = render(&v, "[note B2] AA1 AA1 AA1", voiced,    sizeof voiced    / sizeof voiced[0]);
+    nw = render(&w, "[note B2] AA1 AA1 AA1", whispered, sizeof whispered / sizeof whispered[0]);
+
+    check(nv == nw && nv > 0, "whisper does not change timing");
+    if (nv != nw || nv == 0) return;
+
+    pv = periodicity(voiced,    nv);
+    pw = periodicity(whispered, nw);
+    printf("    periodicity: voiced %.3f, whispered %.3f\n", pv, pw);
+
+    /* The claim being tested is not "it sounds different" but "the fundamental
+     * is gone", which is the whole definition of a whisper.
+     *
+     * The unvoiced floor is around 0.33 rather than 0, and that is the
+     * estimator rather than the signal: taking the largest of ~170 lags on a
+     * narrowband signal is biased upward, because each lag is a noisy estimate
+     * and the maximum of many noisy estimates is not zero. What matters is the
+     * gap - 0.99 against 0.33 - so the threshold sits between them with room on
+     * both sides rather than at an idealized zero the measurement cannot
+     * reach. */
+    check(pv > 0.85, "a voiced vowel is periodic at its fundamental");
+    check(pw < 0.50, "a whispered vowel is not");
+
+    /* And it must still be a vowel - noise shaped by the formants, not silence
+     * and not a hiss. An unshaped result would fail this by being far quieter. */
+    {
+        size_t i;
+        double rms = 0.0;
+        for (i = 0; i < nw; i++) rms += (double)whispered[i] * (double)whispered[i];
+        rms = sqrt(rms / (double)nw);
+        printf("    whispered RMS: %.4f\n", rms);
+        check(rms > 0.01, "the whisper is still audible");
+    }
+
+    check(bm_voice_preset("retro")->whisper == 0.0f, "Retro does not whisper");
+}
+
+/* Intervals between glottal closures, which is the pitch period sample by
+ * sample - the only direct way to see what vibrato did. */
+static void test_vibrato(void)
+{
+    bm_glottis g;
+    int    i, n = (int)FS;              /* one second, ~5.5 vibrato cycles */
+    int    last_start = -1, shortest = 1 << 30, longest = 0;
+    float  prev = 0.0f;
+    double ratio, expected;
+    const float DEPTH = 2.0f;           /* semitones peak, so 4 peak-to-peak */
+
+    printf("vibrato\n");
+
+    bm_glottis_init(&g, FS);
+    /* No tilt: the tilt filter is a lowpass and would blur the closure, and the
+     * closure is what is being timed. No flutter, for the same reason. */
+    bm_glottis_set(&g, 200.0f, 0.5f, 0.0f, 0.0f);
+    bm_glottis_set_vibrato(&g, DEPTH, 5.5f);
+
+    for (i = 0; i < n; i++) {
+        float y = bm_glottis_tick(&g);
+        if (prev == 0.0f && y > 0.0f) {         /* a new pulse begins */
+            if (last_start >= 0) {
+                int period = i - last_start;
+                if (period < shortest) shortest = period;
+                if (period > longest)  longest  = period;
+            }
+            last_start = i;
+        }
+        prev = y;
+    }
+
+    check(longest > 0 && shortest < (1 << 30), "pulses were found");
+    if (longest == 0) return;
+
+    ratio    = (double)longest / (double)shortest;
+    expected = pow(2.0, 2.0 * (double)DEPTH / 12.0);   /* peak to peak */
+    printf("    period %d..%d samples, ratio %.4f (expected %.4f)\n",
+           shortest, longest, ratio, expected);
+
+    /* Loose: the period is quantized to whole samples and the extremes are only
+     * sampled where a pulse happens to land, so the measured swing is always a
+     * little short of the true one. */
+    check(ratio > expected * 0.9 && ratio < expected * 1.1,
+          "vibrato swings the pitch by the depth it was given");
+
+    /* Off means off, exactly. */
+    bm_glottis_init(&g, FS);
+    bm_glottis_set(&g, 200.0f, 0.5f, 0.0f, 0.0f);
+    bm_glottis_set_vibrato(&g, 0.0f, 5.5f);
+    last_start = -1; shortest = 1 << 30; longest = 0; prev = 0.0f;
+    for (i = 0; i < n; i++) {
+        float y = bm_glottis_tick(&g);
+        if (prev == 0.0f && y > 0.0f) {
+            if (last_start >= 0) {
+                int period = i - last_start;
+                if (period < shortest) shortest = period;
+                if (period > longest)  longest  = period;
+            }
+            last_start = i;
+        }
+        prev = y;
+    }
+    printf("    with vibrato off: period %d..%d samples\n", shortest, longest);
+    check(longest - shortest <= 1, "no vibrato means a steady period");
+
+    check(bm_voice_preset("retro")->vibrato == 0.0f, "Retro has no vibrato");
+}
+
 /* Last-frame bandwidth for a phoneme, at a given tracking strength. */
 static void bandwidths_for(const char *ph, float track, float *f1, float *b1)
 {
@@ -468,6 +643,8 @@ int main(void)
     printf("\nBENCmouth voice tests\n\n");
     test_formant_glide();
     test_bandwidth_tracking();
+    test_whisper();
+    test_vibrato();
     test_random_voices();
     test_presets();
     test_params();

@@ -1,0 +1,38 @@
+# BENCmouth voice
+# The patrolling one. Monotone on purpose - no flutter, no intonation - with
+# ring modulation for the inharmonic edge and a low comb for the sense of a
+# voice coming out of a chest cavity. Less driven than Aggressor: this is
+# meant to sound inhuman rather than angry.
+#
+#   ./bm -f voices/Sentry.voice -a "by your command"
+name           = Sentry
+
+f0_base        = 112
+f0_range       = 0
+f0_flutter     = 0
+vibrato        = 0
+vibrato_rate   = 0
+speed          = 1
+
+throat         = 1
+mouth          = 1
+
+breathiness    = 0
+tilt           = 4
+open_quotient  = 0.5
+whisper        = 0
+gain           = 0.62
+
+# naturalness controls; 0 is the original BENCmouth behaviour
+coarticulation = 0
+prosody        = 0
+formant_glide  = 0
+bandwidth_track= 0
+
+# effects; applied after the voice, see CLASSIC-VOICES.md
+ring           = 0.62
+ring_hz        = 108
+comb           = 0.55
+comb_hz        = 150
+drive          = 0.3
+crush          = 0.22

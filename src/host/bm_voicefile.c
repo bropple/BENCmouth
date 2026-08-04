@@ -33,7 +33,7 @@ static char *trim(char *s)
     return s;
 }
 
-int bm_voicefile_load(const char *path, bm_voice *voice,
+int bm_voicefile_load(const char *path, bm_voice *voice, bm_effects *effects,
                       char *name_buf, size_t name_cap,
                       char *err, size_t err_cap)
 {
@@ -41,7 +41,7 @@ int bm_voicefile_load(const char *path, bm_voice *voice,
     char  line[MAX_LINE];
     int   lineno = 0;
 
-    if (path == 0 || voice == 0) return -1;
+    if (path == 0 || voice == 0 || effects == 0) return -1;
 
     f = fopen(path, "r");
     if (f == 0) {
@@ -80,6 +80,19 @@ int bm_voicefile_load(const char *path, bm_voice *voice,
             continue;
         }
 
+        if (strcmp(key, "effects") == 0) {
+            const bm_effects *fx = bm_effects_preset(value);
+            if (fx == 0) {
+                if (err != 0) snprintf(err, err_cap,
+                                       "line %d: unknown effects preset \"%s\"",
+                                       lineno, value);
+                fclose(f);
+                return -1;
+            }
+            *effects = *fx;
+            continue;
+        }
+
         if (strcmp(key, "preset") == 0) {
             const bm_voice *p = bm_voice_preset(value);
             if (p == 0) {
@@ -102,7 +115,10 @@ int bm_voicefile_load(const char *path, bm_voice *voice,
                 fclose(f);
                 return -1;
             }
-            if (bm_voice_set_param(voice, key, 0, (float)v) != BM_OK) {
+            /* Voice first, then effects. The two key sets are disjoint, so
+             * the order only decides which lookup pays for a miss. */
+            if (bm_voice_set_param(voice, key, 0, (float)v) != BM_OK &&
+                bm_effects_set_param(effects, key, 0, (float)v) != BM_OK) {
                 if (err != 0) snprintf(err, err_cap, "line %d: unknown setting \"%s\"",
                                        lineno, key);
                 fclose(f);
@@ -115,11 +131,14 @@ int bm_voicefile_load(const char *path, bm_voice *voice,
     return 0;
 }
 
-int bm_voicefile_save(const char *path, const bm_voice *voice)
+int bm_voicefile_save(const char *path, const bm_voice *voice,
+                      const bm_effects *effects)
 {
     FILE *f;
     int   to_stdout;
 
+    /* `effects` may be null - a caller that has none should not have to
+     * manufacture an empty one to write a voice file. */
     if (path == 0 || voice == 0) return -1;
 
     to_stdout = (path[0] == '-' && path[1] == '\0');
@@ -131,18 +150,37 @@ int bm_voicefile_save(const char *path, const bm_voice *voice)
     fprintf(f, "f0_base        = %.6g\n", (double)voice->f0_base);
     fprintf(f, "f0_range       = %.6g\n", (double)voice->f0_range);
     fprintf(f, "f0_flutter     = %.6g\n", (double)voice->f0_flutter);
+    fprintf(f, "vibrato        = %.6g\n", (double)voice->vibrato);
+    fprintf(f, "vibrato_rate   = %.6g\n", (double)voice->vibrato_rate);
     fprintf(f, "speed          = %.6g\n\n", (double)voice->speed);
     fprintf(f, "throat         = %.6g\n", (double)voice->throat);
     fprintf(f, "mouth          = %.6g\n\n", (double)voice->mouth);
     fprintf(f, "breathiness    = %.6g\n", (double)voice->breathiness);
     fprintf(f, "tilt           = %.6g\n", (double)voice->tilt);
     fprintf(f, "open_quotient  = %.6g\n", (double)voice->open_quotient);
+    fprintf(f, "whisper        = %.6g\n", (double)voice->whisper);
     fprintf(f, "gain           = %.6g\n\n", (double)voice->gain);
     fprintf(f, "# naturalness controls; 0 is the original BENCmouth behaviour\n");
     fprintf(f, "coarticulation = %.6g\n", (double)voice->coarticulation);
     fprintf(f, "prosody        = %.6g\n", (double)voice->prosody);
     fprintf(f, "formant_glide  = %.6g\n", (double)voice->formant_glide);
     fprintf(f, "bandwidth_track= %.6g\n", (double)voice->bandwidth_track);
+
+    /* Only when there is something to say. A file full of zeroed effect keys
+     * would suggest the voice has an effects chain that happens to be off,
+     * when in fact it has none - and it is one more block to read past in
+     * every voice file that will never use one. */
+    if (effects != 0 &&
+        (effects->ring > 0.0f || effects->comb > 0.0f ||
+         effects->drive > 0.0f || effects->crush > 0.0f)) {
+        fprintf(f, "\n# effects; applied after the voice, see CLASSIC-VOICES.md\n");
+        fprintf(f, "ring           = %.6g\n", (double)effects->ring);
+        fprintf(f, "ring_hz        = %.6g\n", (double)effects->ring_hz);
+        fprintf(f, "comb           = %.6g\n", (double)effects->comb);
+        fprintf(f, "comb_hz        = %.6g\n", (double)effects->comb_hz);
+        fprintf(f, "drive          = %.6g\n", (double)effects->drive);
+        fprintf(f, "crush          = %.6g\n", (double)effects->crush);
+    }
 
     if (to_stdout) { fflush(f); return 0; }
     return (fclose(f) == 0) ? 0 : -1;
