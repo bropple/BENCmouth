@@ -20,20 +20,20 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
     /* The bypass. Present as a named entry so a dropdown has something to
      * return to, and so "no effects" is a choice rather than the absence of
      * one. */
-    { "None",      0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
+    { "None",      0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
 
     /* Ring modulation alone, at a carrier low enough that the sidebands stay
      * inside the formants rather than scattering above them. This is the one
      * to listen to first: it is the effect that most obviously is not a
      * person. */
-    { "Metal",     0.85f, 62.0f,  0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
+    { "Metal",     0.85f, 62.0f, 0.0f,  0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
 
     /* Drive alone, so the waveshaper can be heard without anything else
      * happening. Loud in character and not in level - the trim compensates. */
-    { "Overdrive", 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f,  0.0f },
+    { "Overdrive", 0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f,  0.0f },
 
     /* Sample-rate reduction alone. The aliasing is the sound. */
-    { "Crushed",   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.62f, 0.0f },
+    { "Crushed",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.62f, 0.0f },
 
     /* The metallic sentry. Ring modulation for the inharmonic edge, a comb
      * tuned low for the sense of a voice coming out of a chest cavity, and
@@ -44,14 +44,14 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * where the dry and wet paths partly cancel, and stacking a comb on top of
      * it put the whole thing 3.7 dB down - far enough that selecting it in a
      * dropdown read as a fault. 1.5 brings it back to within 0.2 dB. */
-    { "Sentinel",  0.62f, 108.0f, 0.55f, 150.0f, 0.0f, 0.0f,   0.30f, 0.22f, 1.5f },
+    { "Sentinel",  0.62f, 108.0f, 0.0f, 0.55f, 150.0f, 0.0f, 0.0f,   0.30f, 0.22f, 1.5f },
 
     /* The aggressive one. Drive carries it - harmonics that were not in the
      * voice are what the ear reads as force - with a tight comb for the metal
      * and only a trace of ring, because too much of it turns menace into
      * novelty. Crush left off: it makes a thing sound old, and this is not
      * supposed to sound old. */
-    { "Enforcer",  0.22f, 47.0f,  0.42f, 240.0f, 0.0f, 0.0f,   0.88f, 0.0f,  0.0f },
+    { "Enforcer",  0.22f, 47.0f, 0.0f,  0.42f, 240.0f, 0.0f, 0.0f,   0.88f, 0.0f,  0.0f },
 
     /* Three of it. A modulated delay is a pitch shift, so three taps swept a
      * third of a cycle apart really are three detuned copies - which a fixed
@@ -59,7 +59,7 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * above about 1 Hz a chorus stops sounding like several voices and starts
      * sounding like one voice being wobbled, which is a different effect and
      * already available as vibrato. */
-    { "Trinode",   0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  1.4f },
+    { "Trinode",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  1.4f },
 
     /* ---- chains that arrived with a voice -------------------------------
      *
@@ -75,33 +75,33 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
     /* A small resonant body. One comb, spaced wide enough that its teeth land
      * between the formants rather than on them, so it colours without
      * swallowing the vowels. */
-    { "Chamber",   0.0f, 0.0f,   0.30f, 190.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
+    { "Chamber",   0.0f, 0.0f, 0.0f,   0.30f, 190.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
 
     /* A voice arriving over a bad link. The crush is the sample rate of the
      * channel, the high comb is the pipe it came down, and the ring at 33 Hz is
      * below pitch - too low to be heard as a tone, so it reads as the thing
      * being modulated rather than as a modulator. */
-    { "Downlink",  0.18f, 33.0f, 0.60f, 520.0f, 0.0f, 0.0f,  0.20f, 0.45f, 1.2f },
+    { "Downlink",  0.18f, 33.0f, 0.0f, 0.60f, 520.0f, 0.0f, 0.0f,  0.20f, 0.45f, 1.2f },
 
     /* Ring modulation almost to the exclusion of the dry signal, at a carrier
      * just under a typical fundamental. Harder than Metal and deliberately
      * plainer - no comb, so nothing gives it a body to be inside. */
-    { "Alloy",     0.90f, 74.0f, 0.0f, 0.0f,    0.0f, 0.0f,  0.15f, 0.0f,  1.3f },
+    { "Alloy",     0.90f, 74.0f, 0.0f, 0.0f, 0.0f,    0.0f, 0.0f,  0.15f, 0.0f,  1.3f },
 
     /* Amplified and slightly broken. The comb is tuned high, where a small horn
      * resonates, and the crush and drive between them do what a cheap speaker
      * driven too hard does to a voice. */
-    { "Bullhorn",  0.0f, 0.0f,   0.50f, 700.0f, 0.0f, 0.0f,  0.60f, 0.38f, 1.05f },
+    { "Bullhorn",  0.0f, 0.0f, 0.0f,   0.50f, 700.0f, 0.0f, 0.0f,  0.60f, 0.38f, 1.05f },
 
     /* A low comb and nothing else: the wooden case an instrument sits in, which
      * is a resonance and not a distortion. The gentlest entry in this table. */
-    { "Cabinet",   0.0f, 0.0f,   0.35f, 105.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
+    { "Cabinet",   0.0f, 0.0f, 0.0f,   0.35f, 105.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
 
     /* The harsh one. Ring at 92 Hz against a fundamental near 104 puts the
      * sidebands close enough to the pitch to beat against it rather than
      * scatter - a buzz rather than a shimmer - and the comb and drive stacked on
      * top are what make it sound loud before the level control touches it. */
-    { "Klaxon",    0.95f, 92.0f, 0.45f, 168.0f, 0.0f, 0.0f,  0.35f, 0.20f, 1.15f }
+    { "Klaxon",    0.95f, 92.0f, 0.0f, 0.45f, 168.0f, 0.0f, 0.0f,  0.35f, 0.20f, 1.15f }
 };
 
 #define BM_EFFECT_COUNT \
@@ -185,6 +185,7 @@ bm_result bm_effects_set_param(bm_effects *effects, const char *key,
 
     if      (key_equals("ring",    key, key_len)) effects->ring = value;
     else if (key_equals("ring_hz", key, key_len)) effects->ring_hz = value;
+    else if (key_equals("ring_drift", key, key_len)) effects->ring_drift = value;
     else if (key_equals("comb",    key, key_len)) effects->comb = value;
     else if (key_equals("comb_hz", key, key_len)) effects->comb_hz = value;
     else if (key_equals("chorus",  key, key_len)) effects->chorus = value;
@@ -232,6 +233,26 @@ bm_result bm_effects_set_param(bm_effects *effects, const char *key,
 /* 1/sqrt(BM_CHORUS_TAPS) - see the comment where it is used. */
 #define BM_CHORUS_NORM 0.5774f
 
+/* Carrier drift.
+ *
+ * Rate first, because it is the part that matters and the part that is easy to
+ * get wrong. Above about half a hertz a moving carrier stops being a drift and
+ * becomes a wobble - a rhythm of its own, competing with the syllables - and
+ * the ear locks onto that instead, which is the same failure in a different
+ * costume. This is one cycle every eight seconds, slower than any sentence is
+ * long, so within a single utterance the carrier does not repeat itself at all.
+ *
+ * The odd value rather than 0.125 is deliberate: at exactly an eighth of a
+ * hertz the drift would come back into step with anything else periodic in the
+ * signal, and the one thing this must never do is settle.
+ *
+ * Depth of 0.35 at full setting, so a 62 Hz carrier travels between 40 and 84.
+ * That is wide enough to carry it through the simple ratios against a typical
+ * fundamental - at 120 Hz, past both the half and the two-thirds - and each
+ * crossing is a different sideband pattern rather than a louder one. */
+#define BM_RING_DRIFT_HZ    0.119f
+#define BM_RING_DRIFT_DEPTH 0.35f
+
 void bm_effects_state_init(bm_effects_state *s, float sample_rate)
 {
     if (s == 0) return;
@@ -243,6 +264,8 @@ void bm_effects_state_init(bm_effects_state *s, float sample_rate)
     s->drive_trim = 1.0f;
     s->crush_step = 1u;
     s->out_level = 1.0f;
+    s->ring_drift = 0.0f;
+    s->ring_lfo_inc = 0.0f;
 #if BM_WITH_EFFECTS
     s->comb_delay = 1u;
     s->comb_fb = 0.0f;
@@ -261,6 +284,11 @@ void bm_effects_state_reset(bm_effects_state *s)
     if (s == 0) return;
 
     s->ring_phase = 0.0f;
+    /* A quarter turn in, so an utterance starts with the carrier moving at its
+     * fastest rather than sitting at a turning point. Starting at zero would
+     * give every utterance the same near-stationary first second, which is the
+     * part of it anyone judges. */
+    s->ring_lfo = 0.25f;
     s->crush_count = 0u;
     s->crush_held = 0.0f;
 
@@ -288,6 +316,7 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
     s->p.crush   = bm_clampf(s->p.crush, 0.0f, 1.0f);
     s->p.chorus  = bm_clampf(s->p.chorus, 0.0f, 1.0f);
     s->p.ring_hz = bm_clampf(s->p.ring_hz, 0.0f, s->sample_rate * 0.45f);
+    s->p.ring_drift = bm_clampf(s->p.ring_drift, 0.0f, 1.0f);
     s->p.comb_hz = bm_clampf(s->p.comb_hz, 0.0f, s->sample_rate * 0.45f);
     s->p.chorus_hz = bm_clampf(s->p.chorus_hz, 0.0f, 12.0f);
 
@@ -373,6 +402,13 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
     s->crush_step = 1u + (unsigned)(s->p.crush * (float)(BM_CRUSH_MAX_HOLD - 1u)
                                     + 0.5f);
 
+    /* Resolved here rather than per sample, and left at zero when the drift is
+     * off so the carrier costs exactly what it always did - one add and one
+     * compare - for everybody not using this. */
+    s->ring_drift   = s->p.ring_drift * BM_RING_DRIFT_DEPTH;
+    s->ring_lfo_inc = (s->p.ring_drift > 0.0f)
+                    ? BM_RING_DRIFT_HZ / s->sample_rate : 0.0f;
+
     /* Zero means unity, so that an all-zero bm_effects stays a bypass. The
      * ceiling stops a typo in a voice file from producing something that
      * deafens someone, the same way bm_synth_set_gain does. */
@@ -411,9 +447,21 @@ float bm_effects_tick(bm_effects_state *s, float x)
 
     /* ---- ring modulation ---- */
     if (s->p.ring > 0.0f && s->p.ring_hz > 0.0f) {
-        float c = bm_sinf(BM_TWO_PI * s->ring_phase);
+        float c  = bm_sinf(BM_TWO_PI * s->ring_phase);
+        float hz = s->p.ring_hz;
 
-        s->ring_phase += s->p.ring_hz / s->sample_rate;
+        /* The carrier wanders, when asked to. Modulating the *frequency* and
+         * accumulating phase from it, rather than modulating the phase
+         * directly: phase modulation would move the carrier and then put it
+         * back where it started, and a carrier that returns to its old value
+         * every cycle is one the ear can still learn. */
+        if (s->ring_lfo_inc > 0.0f) {
+            hz += hz * s->ring_drift * bm_sinf(BM_TWO_PI * s->ring_lfo);
+            s->ring_lfo += s->ring_lfo_inc;
+            if (s->ring_lfo >= 1.0f) s->ring_lfo -= 1.0f;
+        }
+
+        s->ring_phase += hz / s->sample_rate;
         if (s->ring_phase >= 1.0f) s->ring_phase -= 1.0f;
 
         y = (y + (y * c - y) * s->p.ring) * s->ring_trim;

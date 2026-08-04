@@ -419,6 +419,7 @@ bm -v cadet -e metal "resistance is useless"
 | Effect | What it is | What it is for |
 |---|---|---|
 | `ring` / `ring_hz` | multiply by a sine carrier | inharmonic sidebands — the metallic, inhuman edge |
+| `ring_drift` | the carrier wanders, slowly | keeps the ring from going stale on a voice that never varies — see below |
 | `comb` / `comb_hz` | feedback comb, evenly spaced resonances | speaking through a metal tube, literally |
 | `chorus` / `chorus_hz` | three delay taps swept by an LFO | three detuned copies — a *moving* delay is a pitch shift, a fixed one is not |
 | `drive` | cubic soft clip with pre-gain | harmonics that were not there — this is what *aggressive* is |
@@ -454,6 +455,20 @@ Thirteen presets ship:
 The last six arrived as part of a voice — see the pairings in the voice table above — and
 are listed here as well because a chain is not specific to the voice it was built for.
 A `.voice` file can carry an `effects = NAME` line and any of the keys above.
+
+**Why `ring_drift` exists.** Reported as "over a long sentence the Metal effect kind of
+peters out" on `BENCmouth Monotone`. Measured over 5–20 second utterances of four
+different shapes, it does not: sideband-to-harmonic energy, RMS and spectral centroid are
+all flat end to end. The signal is not weakening — but on that voice *nothing else is
+changing either*. Pitch is pinned at exactly 120 Hz, there is no flutter and no
+intonation, and the carrier is fixed, so the output is strictly periodic and never
+presents the ear with anything it has not already had. That is the stimulus attention
+withdraws from.
+
+So the fix is not more ring, it is a carrier that will not hold still: one cycle every
+eight seconds, wider than any simple ratio against the fundamental, so the sideband
+pattern is somewhere new every time you notice it. `0` is off and is exactly the old
+behaviour, which is what keeps every shipped chain sounding as it did.
 
 **Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:
 `drive` is a threshold effect, and a drive stage that saw an untrimmed signal would

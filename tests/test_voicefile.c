@@ -41,7 +41,7 @@ static const char *VOICE_KEYS[] = {
 };
 
 static const char *FX_KEYS[] = {
-    "ring", "ring_hz", "comb", "comb_hz", "chorus", "chorus_hz",
+    "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus", "chorus_hz",
     "drive", "crush", "level"
 };
 

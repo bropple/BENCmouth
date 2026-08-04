@@ -26,6 +26,9 @@ typedef struct bm_effects_state {
     int   active;
 
     float ring_phase;
+    float ring_lfo;         /* carrier drift LFO, 0..1 */
+    float ring_lfo_inc;     /* its advance per sample */
+    float ring_drift;       /* fraction of ring_hz to wander either side */
 
 #if BM_WITH_EFFECTS
     float    comb_buf[BM_COMB_LEN];

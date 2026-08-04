@@ -413,6 +413,40 @@ that need an actual decision when we get there:
       float running total stops noticing them once it has grown, which is the classic
       way a mean over a large set comes out quietly wrong.
 
+- [x] **`ring_drift`, for the effect that stops being noticed.** Reported as the Metal
+      chain petering out over a long sentence on `BENCmouth Monotone`. Measured across
+      5-20 second utterances of four shapes - one long sentence, several sentences, a
+      comma-heavy one, and twenty sustained vowels - by three independent measures:
+
+      | | first third | last third |
+      |---|---|---|
+      | sideband / harmonic energy | 6.3-7.0 | 6.1-7.0 |
+      | RMS | 0.063-0.148 | 0.064-0.155 |
+      | spectral centroid | 1518 Hz | 1600 Hz |
+
+      Nothing weakens. What the ratio also says, though, is that nothing *changes*: on
+      that voice pitch is pinned at exactly 120 Hz with no flutter and no intonation, and
+      the carrier is fixed, so the product is strictly periodic. An unvarying stimulus is
+      the one attention withdraws from, and the fix for that is not more effect but a
+      carrier that will not hold still.
+
+      One cycle every eight seconds - slower than any sentence, so it never repeats
+      within an utterance - at 0.119 Hz rather than a round eighth, because the one thing
+      it must not do is come back into step with anything. Depth of 0.35 at full setting
+      takes a 62 Hz carrier from 40 to 84, across both the half and two-thirds ratios
+      against a 120 Hz fundamental, so each crossing is a different pattern rather than a
+      louder one.
+
+      Frequency modulation rather than phase modulation, deliberately: modulating phase
+      would move the carrier and then return it, and a carrier that comes back is one the
+      ear can still learn. The LFO starts a quarter turn in so an utterance opens with
+      the carrier moving fastest rather than sitting at a turning point.
+
+      `0` everywhere, so every shipped chain is unchanged and the zeroed-struct bypass is
+      still exact. `tests/test_effects.c` drives the stage with a constant - a ring
+      modulator fed 1.0 hands back its own carrier - and counts zero crossings: 62.00 Hz
+      throughout with drift off, and 82 / 44 / 66 Hz at three seconds apart with it on.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

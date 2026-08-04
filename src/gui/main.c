@@ -28,11 +28,12 @@
 
 /* Taller than it was. Song mode needs a panel with two columns in it, and the
  * voice grew three sliders, which between them added about 80 px of layout
- * that has to come from somewhere. */
+ * that has to come from somewhere. A further row when the effects column
+ * became the tallest of the three. */
 #define WIN_W       900
-#define WIN_H       780
+#define WIN_H       804
 #define WIN_MIN_W   800
-#define WIN_MIN_H   740
+#define WIN_MIN_H   764
 
 /* The band the active tab's panel gets. Fixed rather than proportional: the
  * controls below it are a fixed height each, so a proportional panel would
@@ -198,6 +199,9 @@ static const param_row PARAMS[] = {
 static const param_row FX_PARAMS[] = {
     { "ring",    "ring",       0.0f,   1.0f,  "%.2f"    },
     { "ring_hz", "ring freq",  0.0f, 400.0f,  "%.0f Hz" },
+    /* Off by default everywhere, so this row reads 0.00 until someone asks
+     * for it - see bm_effects.ring_drift for what it is and why. */
+    { "ring_drift","ring drift",0.0f,  1.0f,  "%.2f"    },
     { "comb",    "comb",       0.0f,   1.0f,  "%.2f"    },
     { "comb_hz", "comb freq", 40.0f, 900.0f,  "%.0f Hz" },
     { "chorus",  "chorus",     0.0f,   1.0f,  "%.2f"    },
@@ -1043,7 +1047,15 @@ int main(int argc, char **argv)
                     }
                 }
             }
-            y += (float)half * 24;
+            /* Whichever column is taller, not always the voice one. The
+             * effects column is the dropdown plus its rows, and it overtook
+             * the voice columns when ring drift arrived - advancing by the
+             * voice height alone put the last effect slider through the
+             * waveform. */
+            {
+                int fx_rows = NFXPARAMS + 1;
+                y += (float)(half > fx_rows ? half : fx_rows) * 24;
+            }
         }
 
         /* ---- scope and meter ---- */

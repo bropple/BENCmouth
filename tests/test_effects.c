@@ -334,10 +334,103 @@ static void test_chorus_detunes(void)
     }
 }
 
+/* Carrier frequency over a window, by counting rising zero crossings.
+ *
+ * Adequate because the thing being measured is a sine and nothing else: the
+ * ring stage fed a constant hands back its own carrier, scaled. Anything
+ * cleverer would be measuring the measurement. */
+static double carrier_hz(const float *x, size_t n)
+{
+    size_t i;
+    long   crossings = 0;
+
+    for (i = 1; i < n; i++) {
+        if (x[i - 1] <= 0.0f && x[i] > 0.0f) crossings++;
+    }
+    return (double)crossings * (double)FS / (double)n;
+}
+
+/* The drift moves the carrier, and moving it is the whole point.
+ *
+ * A ring modulator fed a constant outputs its carrier, so this drives the
+ * stage with 1.0 and reads the frequency straight off. Off, it must be the
+ * requested frequency for as long as anyone listens; on, it must be somewhere
+ * else two seconds later. */
+static void test_ring_drift(void)
+{
+    /* Nine seconds, as an integer count because a static array needs a
+     * constant expression and FS is a float. Long enough to hold three
+     * samples of an eight-second drift cycle. */
+#define DRIFT_SECONDS 9
+#define DRIFT_N       (22050 * DRIFT_SECONDS)
+    static float buf[DRIFT_N];
+    bm_effects_state st;
+    bm_effects       fx;
+    size_t i, n = sizeof buf / sizeof buf[0];
+    size_t win = (size_t)FS;              /* one second */
+    double a, b, c;
+
+    printf("ring drift\n");
+
+    bm_effects_default(&fx);
+    fx.ring    = 1.0f;
+    fx.ring_hz = 62.0f;
+
+    /* ---- off ---- */
+    bm_effects_state_init(&st, FS);
+    bm_effects_state_set(&st, &fx);
+    for (i = 0; i < n; i++) buf[i] = bm_effects_tick(&st, 1.0f);
+
+    a = carrier_hz(buf, win);
+    b = carrier_hz(buf + n - win, win);
+    printf("    drift 0:  first second %.2f Hz, last %.2f Hz\n", a, b);
+    check(fabs(a - 62.0) < 1.0 && fabs(b - 62.0) < 1.0,
+          "with drift off the carrier is where it was asked to be");
+    check(fabs(a - b) < 0.5, "and it is still there eight seconds later");
+
+    /* ---- on ---- */
+    fx.ring_drift = 1.0f;
+    bm_effects_state_init(&st, FS);
+    bm_effects_state_set(&st, &fx);
+    for (i = 0; i < n; i++) buf[i] = bm_effects_tick(&st, 1.0f);
+
+    a = carrier_hz(buf, win);
+    b = carrier_hz(buf + (size_t)(FS * 3.0f), win);
+    c = carrier_hz(buf + (size_t)(FS * 6.0f), win);
+    printf("    drift 1:  %.2f Hz at 0 s, %.2f at 3 s, %.2f at 6 s\n", a, b, c);
+
+    /* Three seconds apart, on a cycle of about eight, so no two of these can
+     * be the same point on it. Five hertz is well outside what the crossing
+     * count could produce by rounding. */
+    check(fabs(a - b) > 5.0 && fabs(b - c) > 5.0 && fabs(a - c) > 5.0,
+          "with drift on the carrier is somewhere new at each check");
+
+    /* It wanders rather than running away: whatever the LFO is doing, the
+     * carrier stays inside the band the depth allows. */
+    check(a > 62.0 * 0.6 && a < 62.0 * 1.4 &&
+          b > 62.0 * 0.6 && b < 62.0 * 1.4 &&
+          c > 62.0 * 0.6 && c < 62.0 * 1.4,
+          "and stays within the depth it was given");
+
+    /* And it is still a bypass when the whole struct is zero, drift included -
+     * the one property the entire stage is built around. */
+    bm_effects_default(&fx);
+    bm_effects_state_init(&st, FS);
+    bm_effects_state_set(&st, &fx);
+    {
+        int exact = 1;
+        for (i = 0; i < 2048; i++) {
+            float x = (float)sin((double)i * 0.017) * 0.5f;
+            if (bm_effects_tick(&st, x) != x) exact = 0;
+        }
+        check(exact, "a zeroed bm_effects is still an exact bypass");
+    }
+}
+
 static void test_presets_and_params(void)
 {
     static const char *KEYS[] = {
-        "ring", "ring_hz", "comb", "comb_hz", "chorus", "chorus_hz",
+        "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus", "chorus_hz",
         "drive", "crush", "level"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
@@ -448,6 +541,7 @@ int main(void)
 #else
     test_bypass_is_exact();
     test_ring_makes_sidebands();
+    test_ring_drift();
     test_drive_adds_harmonics_not_level();
     test_crush_holds_samples();
     test_comb_resonates();

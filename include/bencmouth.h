@@ -380,6 +380,20 @@ typedef struct bm_effects {
     float ring;          /* 0..1 wet mix */
     float ring_hz;       /* carrier frequency */
 
+    /* How far the carrier wanders, 0..1, as a fraction of ring_hz either side
+     * of it. 0 holds it exactly where ring_hz says, which is what it always
+     * did.
+     *
+     * This exists because a ring modulator on a voice with no flutter, no
+     * vibrato and no intonation produces a signal in which literally nothing
+     * changes - carrier and fundamental both fixed, so the whole thing is
+     * strictly periodic - and a stimulus that never changes is the one the ear
+     * stops attending to. The effect measures exactly as strong at the end of
+     * an utterance as at the start; it does not sound it. Moving the carrier
+     * keeps the sideband pattern arriving somewhere new, which is the same
+     * reason a chorus has an LFO and a real voice has flutter. */
+    float ring_drift;
+
     /* A resonant comb: the signal added to a delayed copy of itself with
      * feedback, giving a series of evenly spaced peaks. This is what "speaking
      * through a metal tube" is, physically and here. */
