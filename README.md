@@ -105,6 +105,7 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make bm` | the CLI only |
 | `make audio` | compile live playback in and rebuild |
 | `make wasm` | build `bencmouth.wasm` (needs clang and lld) |
+| `make gui` | build the desktop GUI (needs raylib) |
 | `make dict` | compile CMUdict in and rebuild (see below) |
 | `make test` | run all eight test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
@@ -441,7 +442,27 @@ const pcm = bm.say('hello world');         // or just the Float32Array
 
 `bm.voice(name)` and `bm.param(key, value)` reach the presets and the `.voice` file keys.
 
-Not yet: a GUI. See ROADMAP.md.
+### The GUI
+
+```
+make gui          # or: RAYLIB=/some/prefix make gui
+./bencmouth-gui
+```
+
+![the BENCmouth GUI](render/gui-screenshot.png)
+
+Type, and the phoneme readout under the field updates as you go. Every slider is bound to
+a `.voice` file key, so what you tune and what SAVE writes cannot drift apart. Audio
+streams from `bm_read()` into the audio callback, so moving a slider mid-sentence is
+audible immediately.
+
+raylib is the only third-party dependency in the project and it is confined to
+`src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
+
+It looks for Terminess at a few standard paths and falls back to raylib's built-in font;
+the status line tells you which it found.
+
+Not yet: bundling the font. See ROADMAP.md.
 
 For a target without an FPU, `-DBM_FIXED_POINT=1` runs the sample loop in Q18 integer
 arithmetic — 52.9 dB SNR against the float reference, measured on a rendered sentence.

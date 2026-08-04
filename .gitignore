@@ -7,6 +7,7 @@ bm_test
 vowel_demo
 speak_demo
 mkdict
+bencmouth-gui
 *.wasm
 *.exe
 
@@ -17,6 +18,7 @@ src/core/bm_dict_data.c
 # Generated audio. Rendered output is reproducible from the source that made
 # it, so it does not belong in history - regenerate with `make demo && ./vowel_demo`.
 render/
+!render/gui-screenshot.png
 
 # Reference material is checked in deliberately (see ref/README.md), but the
 # dictionary is 3.5 MB. If that becomes a nuisance, the compiled form produced

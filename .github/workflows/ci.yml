@@ -106,6 +106,41 @@ jobs:
       - name: Run the module under Node
         run: node src/wasm/test_wasm.mjs bencmouth.wasm
 
+  gui:
+    name: GUI (raylib)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: X11 and GL headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev \
+            libxi-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev
+
+      # Built from source rather than taken from apt: the packaged version
+      # varies by runner image, and a GUI that only compiles against one of
+      # them is not much of a guarantee.
+      - name: Build raylib
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -DCMAKE_INSTALL_PREFIX=/tmp/rl \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j2
+          cmake --install /tmp/raylib/build
+
+      # Compile and link only. A runner has no display, so this proves the GUI
+      # builds - not that it draws. It was run headless under Xvfb during
+      # development, which is where the screenshot in the README came from.
+      - name: Build the GUI
+        run: RAYLIB=/tmp/rl make gui
+
+      - name: The rest of the project still builds without raylib
+        run: |
+          make clean
+          make
+          make test
+
   strict:
     name: ubuntu strict warnings
     runs-on: ubuntu-latest

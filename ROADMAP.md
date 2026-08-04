@@ -104,6 +104,24 @@ that need an actual decision when we get there:
       and 90. Also fixes a quieter problem: `throat` and `mouth` move formants without
       touching the table, so a large speaker was getting a small speaker's bandwidths.
 
+## GUI
+
+- [x] **Desktop GUI** (`make gui`, `src/gui/`). raylib, hand-drawn widgets, BENCO palette,
+      the layout from GUI-PLAN.md. Text field with a live phoneme readout, voice dropdown,
+      fourteen parameter sliders bound to the `.voice` keys, waveform, peak meter with the
+      limiter threshold marked, WAV export, and a random-voice button.
+
+      Audio streams from `bm_read()` straight into raylib's audio callback, so a slider
+      moved mid-sentence is audible immediately - which is the entire point of tuning by
+      ear, and the reason the pull interface was shaped that way.
+
+      The dependency is confined to `src/gui/`: `make`, `make test` and
+      `make check-freestanding` all work with raylib absent.
+
+- [ ] Terminess is looked for at a few paths and falls back to raylib's built-in font.
+      Bundling it means shipping the OFL text alongside, which is a packaging decision
+      rather than a code one.
+
 ## Later / speculative
 
 - [x] **Fixed-point sample loop** (`-DBM_FIXED_POINT=1`, `src/core/bm_fixed.h`). Q18 in

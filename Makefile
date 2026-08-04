@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict audio wasm clean-objs clean test check-freestanding
+.PHONY: all lib bm demo speak dict audio wasm gui clean-objs clean test check-freestanding
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -65,7 +65,7 @@ test: $(LIB)
 clean:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
 	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
-	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT)
+	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT) $(GUI)
 
 $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
@@ -169,6 +169,45 @@ $(WASM_OUT): $(CORE_SRC) src/wasm/bm_wasm.c
 	  -Wl,--no-entry -Wl,--initial-memory=1048576 $(WASM_EXPORTS) \
 	  -o $@ $(CORE_SRC) src/wasm/bm_wasm.c
 	@echo "  $(WASM_OUT): $$(wc -c < $(WASM_OUT)) bytes"
+
+# ---------------------------------------------------------------------------
+# GUI.
+#
+# The only part of this project with a third-party dependency, and it is
+# confined here: `make`, `make test` and `make check-freestanding` all keep
+# working with raylib absent from the machine entirely.
+#
+#   RAYLIB=/some/prefix make gui     if raylib is not on the default paths
+# ---------------------------------------------------------------------------
+
+GUI      := bencmouth-gui
+GUI_SRC  := src/gui/main.c src/gui/bm_ui.c
+
+ifdef RAYLIB
+  RL_CFLAGS := -I$(RAYLIB)/include
+  RL_LIBS   := -L$(RAYLIB)/lib -lraylib
+else
+  RL_CFLAGS := $(shell pkg-config --cflags raylib 2>/dev/null)
+  RL_LIBS   := $(shell pkg-config --libs raylib 2>/dev/null || echo -lraylib)
+endif
+
+ifeq ($(UNAME),Darwin)
+  RL_SYS := -framework Cocoa -framework IOKit -framework CoreVideo \
+            -framework CoreAudio -framework OpenGL
+else ifneq (,$(findstring MINGW,$(UNAME)))
+  RL_SYS := -lopengl32 -lgdi32 -lwinmm
+else ifneq (,$(findstring MSYS,$(UNAME)))
+  RL_SYS := -lopengl32 -lgdi32 -lwinmm
+else
+  RL_SYS := -lGL -lm -lpthread -ldl -lrt -lX11
+endif
+
+gui: $(GUI)
+
+$(GUI): $(GUI_SRC) $(HOST_NOMAIN) $(LIB)
+	@mkdir -p render
+	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui $(RL_CFLAGS) \
+	  -o $@ $(GUI_SRC) $(HOST_NOMAIN) $(LIB) $(RL_LIBS) $(RL_SYS) -lm
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)
