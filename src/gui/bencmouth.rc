@@ -1,0 +1,12 @@
+/*
+ * BENCmouth GUI - Windows resources
+ *
+ * The icon lives here and only here. The CLI is a console program that nobody
+ * double-clicks, so giving bm.exe a 370 KB icon would be 370 KB spent on
+ * something no one sees.
+ *
+ * Resource ID 1: Windows uses the lowest-numbered icon in the file as the
+ * application icon, in Explorer and in the title bar.
+ */
+
+1 ICON "assets/icon/bencmouth.ico"

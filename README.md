@@ -410,8 +410,12 @@ render/               generated audio; gitignored
 ## Prebuilt binaries
 
 **[Releases](https://github.com/bropple/BENCmouth/releases)** carry tagged builds for
-Linux, macOS, Windows and the browser, each with live audio and CMUdict compiled in. The
-Linux archive includes the GUI and its font.
+Linux, macOS, Windows and the browser, each with live audio and CMUdict compiled in.
+
+There are two archives per desktop platform. `bencmouth-VERSION-PLATFORM` is the CLI
+alone — a console program, so on Windows double-clicking it prints usage and closes,
+which is what console programs do. `bencmouth-gui-VERSION-PLATFORM` is the windowed
+application, with the font it needs beside it; that is the one to double-click.
 
 Every push also builds on all three platforms and attaches the result to its
 [workflow run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — useful

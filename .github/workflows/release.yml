@@ -47,12 +47,16 @@ jobs:
           V="${GITHUB_REF_NAME:-dev}"
           D="bencmouth-$V-linux-x86_64"
           mkdir -p "$D"
-          cp bm bencmouth-gui README.md LICENSE NOTICE ROADMAP.md "$D"/
+          cp bm README.md LICENSE NOTICE "$D"/
           cp -r voices "$D"/
-          mkdir -p "$D/assets/fonts"
-          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$D/assets/fonts"/
           tar czf "$D.tar.gz" "$D"
-          ls -l "$D.tar.gz"
+          G="bencmouth-gui-$V-linux-x86_64"
+          mkdir -p "$G/assets/fonts" "$G/render"
+          cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
+          cp -r voices "$G"/
+          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
+          tar czf "$G.tar.gz" "$G"
+          ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
         with: { name: pkg-linux, path: '*.tar.gz', if-no-files-found: error }
 
@@ -60,20 +64,30 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: raylib
+        run: brew install raylib pkg-config
       - name: Build
         run: |
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
+          make gui
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"
-          D="bencmouth-$V-macos-$(uname -m)"
+          A="$(uname -m)"
+          D="bencmouth-$V-macos-$A"
           mkdir -p "$D"
           cp bm README.md LICENSE NOTICE "$D"/
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
-          ls -l "$D.tar.gz"
+          G="bencmouth-gui-$V-macos-$A"
+          mkdir -p "$G/assets/fonts" "$G/render"
+          cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
+          cp -r voices "$G"/
+          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
+          tar czf "$G.tar.gz" "$G"
+          ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
         with: { name: pkg-macos, path: '*.tar.gz', if-no-files-found: error }
 
@@ -88,21 +102,36 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          install: mingw-w64-ucrt-x86_64-gcc make zip
-      - name: Build
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-raylib
+            mingw-w64-ucrt-x86_64-pkg-config
+            make zip
+      - name: Build the CLI
         run: |
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
+      - name: Build the GUI
+        run: make gui
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"
+          # The CLI on its own: a console program, no icon, nothing to
+          # double-click. Kept separate so it stays small.
           D="bencmouth-$V-windows-x86_64"
           mkdir -p "$D"
           cp bm.exe README.md LICENSE NOTICE "$D"/
           cp -r voices "$D"/
-          zip -r "$D.zip" "$D"
-          ls -l "$D.zip"
+          zip -qr "$D.zip" "$D"
+          # The GUI, with the font it needs beside it.
+          G="bencmouth-gui-$V-windows-x86_64"
+          mkdir -p "$G/assets/fonts" "$G/render"
+          cp bencmouth-gui.exe bm.exe README.md LICENSE NOTICE "$G"/
+          cp -r voices "$G"/
+          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
+          zip -qr "$G.zip" "$G"
+          ls -l ./*.zip
       - uses: actions/upload-artifact@v4
         with: { name: pkg-windows, path: '*.zip', if-no-files-found: error }
 

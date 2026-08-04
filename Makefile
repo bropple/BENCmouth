@@ -65,7 +65,7 @@ test: $(LIB)
 clean:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
 	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
-	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT) $(GUI)
+	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT) $(GUI) src/gui/*.res.o
 
 $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
@@ -183,6 +183,21 @@ $(WASM_OUT): $(CORE_SRC) src/wasm/bm_wasm.c
 GUI      := bencmouth-gui
 GUI_SRC  := src/gui/main.c src/gui/bm_ui.c
 
+# Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
+# it does not also open a console behind the window. Both apply to the GUI only -
+# bm.exe is a console program by design and carries no icon.
+ifneq (,$(findstring MINGW,$(UNAME))$(findstring MSYS,$(UNAME)))
+  WINDRES  ?= windres
+  GUI_RES  := src/gui/bencmouth.res.o
+  GUI_LINK := -mwindows
+else
+  GUI_RES  :=
+  GUI_LINK :=
+endif
+
+src/gui/bencmouth.res.o: src/gui/bencmouth.rc assets/icon/bencmouth.ico
+	$(WINDRES) -I. $< -O coff -o $@
+
 ifdef RAYLIB
   RL_CFLAGS := -I$(RAYLIB)/include
   RL_LIBS   := -L$(RAYLIB)/lib -lraylib
@@ -204,10 +219,11 @@ endif
 
 gui: $(GUI)
 
-$(GUI): $(GUI_SRC) $(HOST_NOMAIN) $(LIB)
+$(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
 	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui $(RL_CFLAGS) \
-	  -o $@ $(GUI_SRC) $(HOST_NOMAIN) $(LIB) $(RL_LIBS) $(RL_SYS) -lm
+	  -o $@ $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB) \
+	  $(RL_LIBS) $(RL_SYS) $(GUI_LINK) -lm
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

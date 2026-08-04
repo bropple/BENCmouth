@@ -146,7 +146,7 @@ jobs:
           if-no-files-found: error
 
   gui:
-    name: GUI (raylib)
+    name: GUI (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -191,6 +191,64 @@ jobs:
           make clean
           make
           make test
+
+  gui-windows:
+    name: GUI (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-raylib
+            mingw-w64-ucrt-x86_64-pkg-config
+            make
+
+      - name: Build the GUI
+        run: make gui
+
+      # The icon comes from a .rc, so if windres never ran the link succeeds
+      # silently and you get an iconless binary. Checking the size grew by
+      # roughly the .ico is the cheap way to notice.
+      - name: The icon is really in there
+        run: |
+          ls -l bencmouth-gui.exe
+          size=$(stat -c %s bencmouth-gui.exe)
+          echo "binary is $size bytes"
+          test "$size" -gt 700000 || { echo "too small - icon resource missing?"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-gui-windows
+          path: |
+            bencmouth-gui.exe
+            assets/fonts/TerminusTTF.ttf
+            assets/fonts/OFL.txt
+          if-no-files-found: error
+
+  gui-macos:
+    name: GUI (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: raylib
+        run: brew install raylib pkg-config
+      - name: Build the GUI
+        run: make gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-gui-macos
+          path: |
+            bencmouth-gui
+            assets/fonts/TerminusTTF.ttf
+            assets/fonts/OFL.txt
+          if-no-files-found: error
 
   strict:
     name: ubuntu strict warnings
