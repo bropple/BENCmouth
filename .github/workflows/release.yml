@@ -63,14 +63,32 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # From source and static. Homebrew's raylib is a dylib under
+      # /opt/homebrew, and a release binary linked against it aborts at launch
+      # on any machine that does not happen to have it - which is every machine
+      # that has just downloaded a release.
       - name: raylib
-        run: brew install raylib pkg-config
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -DCMAKE_INSTALL_PREFIX=/tmp/rl \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j3
+          cmake --install /tmp/raylib/build
       - name: Build
         run: |
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
-          make gui-dict
+          RAYLIB=/tmp/rl make gui-dict
+      - name: The GUI is self-contained
+        run: |
+          otool -L bencmouth-gui
+          if otool -L bencmouth-gui | tail -n +2 | \
+             grep -vE '^[[:space:]]+(/usr/lib/|/System/)'; then
+            echo "links a library that will not be present on a stock macOS"
+            exit 1
+          fi
+          echo "self-contained"
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"
@@ -82,7 +100,10 @@ jobs:
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-macos-$A"
           mkdir -p "$G"
-          cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
+          # A .app, because that is the only way a macOS program gets an icon:
+          # GLFW cannot set one on a bare executable.
+          BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui "$G/BENCmouth.app"
+          cp bm README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
           tar czf "$G.tar.gz" "$G"
           ls -l ./*.tar.gz

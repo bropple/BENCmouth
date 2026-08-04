@@ -271,20 +271,49 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: raylib
-        run: brew install raylib pkg-config
-      # No RAYLIB= here: macOS links brew's raylib through pkg-config. An
-      # earlier edit set this to /tmp/rl, a path that exists only on the Linux
-      # and Windows runners, because the replace matched every job at once.
+      # From source and static, not `brew install raylib`. Homebrew's raylib is
+      # a dylib under /opt/homebrew, and a binary linked against it aborts at
+      # launch on any machine without that exact library - which is every
+      # machine that has just downloaded a release.
+      - name: Build raylib from source
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -DCMAKE_INSTALL_PREFIX=/tmp/rl \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j3
+          cmake --install /tmp/raylib/build
+          ls -l /tmp/rl/lib
       - name: What the build decided
-        run: make gui-info
+        run: RAYLIB=/tmp/rl make gui-info
       - name: Build the GUI
-        run: make gui-dict
+        run: RAYLIB=/tmp/rl make gui-dict
+
+      # The check that would have caught shipping a Homebrew-linked binary.
+      # Anything outside /usr/lib and /System is not on a stock Mac.
+      - name: No non-system dynamic libraries
+        run: |
+          otool -L bencmouth-gui
+          if otool -L bencmouth-gui | tail -n +2 | \
+             grep -vE '^[[:space:]]+(/usr/lib/|/System/)'; then
+            echo "links a library that will not be present on a stock macOS"
+            exit 1
+          fi
+          echo "self-contained"
+      # Built here as well as at release time, so a broken bundle shows up on a
+      # push rather than on a tag.
+      - name: The .app bundle builds
+        run: |
+          BM_VERSION=0.0.0 ./tools/macos-app.sh bencmouth-gui BENCmouth.app
+          test -f BENCmouth.app/Contents/Resources/BENCmouth.icns
+          test -f BENCmouth.app/Contents/MacOS/BENCmouth
+          plutil -lint BENCmouth.app/Contents/Info.plist
+
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-macos
-          # Just the binary: the font, icon and licences are inside it.
-          path: bencmouth-gui
+          # The bundle: the font and licences are inside the binary, but the
+          # icon can only come from the wrapper.
+          path: BENCmouth.app
           if-no-files-found: error
 
   strict:

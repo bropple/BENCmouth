@@ -493,6 +493,20 @@ a missing helper program.
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 
+On macOS the GUI ships as `BENCmouth.app`. That is not packaging taste — it is the only
+way a macOS program gets an icon. Windows reads the icon from a resource inside the
+executable and X11 takes it from a property the binary sets at startup, but GLFW's Cocoa
+backend ignores `glfwSetWindowIcon` entirely, because a bare Mach-O executable has no
+Finder or Dock identity to hang one on. The bundle is a wrapper: `Contents/MacOS` holds
+a single file, because everything else is already inside it.
+
+macOS binaries here are unsigned, so Gatekeeper will refuse them on first launch. Either
+right-click the app and choose Open, or clear the quarantine flag the browser attached:
+
+```
+xattr -dr com.apple.quarantine BENCmouth.app     # or ./bm
+```
+
 The GUI executable is self-contained: the font, the window icon, the BENCO wordmark and
 the licence texts are all compiled into it. A file beside an executable is a file that
 can go missing — unzip without the assets folder, make a shortcut, launch from a

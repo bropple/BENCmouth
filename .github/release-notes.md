@@ -22,6 +22,17 @@ because nobody double-clicks a console program. The GUI is a separate download.
 ./bm -m -P "[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0"   # it sings
 ```
 
+On macOS the GUI is `BENCmouth.app`. A bare Mach-O executable cannot have an icon —
+GLFW's Cocoa backend ignores the request — so the bundle is what gives it one. It is a
+thin wrapper: `Contents/MacOS` holds one file.
+
+macOS builds are unsigned, so Gatekeeper blocks them on first launch. Right-click the
+app and choose Open, or clear the flag the browser attached:
+
+```
+xattr -dr com.apple.quarantine BENCmouth.app     # or ./bm
+```
+
 **The GUI is a single self-contained executable.** The font, the window icon, the
 wordmark and the licence texts are compiled into it, so it can be put anywhere and
 started from anywhere and still look right. There is no assets folder to keep beside

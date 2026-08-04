@@ -266,7 +266,15 @@ GLFW_LIB := $(strip $(call glfw_exists,glfw3)$(call glfw_exists,glfw))
 
 ifdef RAYLIB
   RL_CFLAGS := -I$(RAYLIB)/include
-  RL_LIBS   := -L$(RAYLIB)/lib -lraylib
+  # Name the archive outright when it is there, rather than leaving it to -l.
+  # On macOS the linker prefers a .dylib over a .a sitting in the same
+  # directory, and the resulting binary then needs a raylib the person who
+  # downloaded it has no reason to have installed - it aborts at launch with a
+  # dyld error naming a Homebrew path. `make gui` on a developer's machine can
+  # link dynamically all it likes; a build that names a prefix is asking for
+  # that prefix's static library.
+  RL_STATIC := $(wildcard $(RAYLIB)/lib/libraylib.a)
+  RL_LIBS   := $(if $(RL_STATIC),$(RL_STATIC),-L$(RAYLIB)/lib -lraylib)
 else
   RL_CFLAGS := $(shell pkg-config --cflags raylib 2>/dev/null)
   # --static emits Libs.private, where raylib declares GLFW and friends.
