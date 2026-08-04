@@ -19,7 +19,7 @@ provenance.
 holds about 15 KB of state in caller-supplied storage, which means it drops into a
 microcontroller, an audio callback, or a WASM module unchanged.
 
-![the BENCmouth GUI](render/gui-screenshot.png)
+![the BENCmouth GUI](assets/gui.png)
 
 **[Download a build](https://github.com/bropple/BENCmouth/releases/latest)** for Linux,
 macOS, Windows or the browser — or `make` it, which takes about two seconds.
