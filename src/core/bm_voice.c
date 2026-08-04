@@ -203,10 +203,7 @@ static const bm_voice BM_PRESETS[] = {
     /* ---- second wave ---------------------------------------------------
      *
      * The novelty end of the same era's rosters. These two need only voice
-     * parameters; the ones that also need an effects chain are `.voice` files
-     * in voices/, because an effect is not part of a bm_voice and a preset
-     * table that held every voice-plus-effect pairing would be mostly
-     * duplication. See CLASSIC-VOICES.md.
+     * parameters. See CLASSIC-VOICES.md.
      */
 
     /* The manic one. Fast, high, and unstable in two ways at once: flutter
@@ -259,10 +256,167 @@ static const bm_voice BM_PRESETS[] = {
       1.06f,
       1.20f, 1.26f,
       6.0f, 4.0f, 0.62f, 0.0f, 0.85f,
-      0.60f, 0.95f, 1.0f, 0.80f, 0.0f }
+      0.60f, 0.95f, 1.0f, 0.80f, 0.0f },
+
+    /* ---- the ones that need a chain ------------------------------------
+     *
+     * These ten lived only as `.voice` files for a while, on the reasoning
+     * that an effect is not part of a bm_voice and a table holding every
+     * voice-plus-chain pairing would be mostly duplication. That was true and
+     * it was still the wrong call: the dropdown in the GUI lists presets, so a
+     * voice that is only a file is a voice most people never find. Zarvek was
+     * reported missing, which is exactly the symptom.
+     *
+     * So they are presets, and BM_PRESET_CHAINS below names the chain each one
+     * is meant to be heard through. The files stay - they carry the working-out
+     * for each voice, and they are the format people write their own in - and
+     * tests/test_voicefile.c compares the two so they cannot drift.
+     */
+
+    /* A machine that has decided about you. Near-neutral tract and almost no
+     * tilt on purpose: the first version was built on Announcer and came back
+     * as "aggressive, but muffled so much it's nearly unrecognizable", because
+     * Announcer at 82 Hz puts 98.6% of its energy below 500 Hz and leaves
+     * nothing above it to carry the words. The menace is the pitch and the
+     * drive, not the cavity. */
+    { "Aggressor",
+      95.0f, 4.5f, 0.22f,
+      0.0f, 0.0f, 0.0f,
+      0.88f,
+      0.92f, 1.0f,
+      0.0f, 2.0f, 0.46f, 0.0f, 1.0f,
+      0.55f, 0.70f, 1.0f, 0.80f, 0.0f },
+
+    /* A bell made to speak. `source = 2` replaces the folds with the measured
+     * partial series of a church bell; the tract is untouched, so it still says
+     * the words. Tilt stays low - the partials are the sound, and tilting them
+     * off throws away the thing that makes it a bell. */
+    { "Carillon",
+      168.0f, 3.0f, 0.0f,
+      0.0f, 0.0f, 2.0f,
+      0.82f,
+      1.0f, 1.04f,
+      0.0f, 1.5f, 0.50f, 0.0f, 0.85f,
+      0.30f, 0.0f, 1.0f, 0.50f, 1.0f },
+
+    /* Underwater, or through a helmet. Heavy flutter and a wide fast vibrato
+     * for the wobble, breath for the air supply, and the chain does the rest. */
+    { "Diver",
+      138.0f, 5.0f, 0.45f,
+      1.90f, 9.0f, 0.0f,
+      0.96f,
+      1.02f, 1.08f,
+      3.0f, 5.0f, 0.56f, 0.0f, 0.90f,
+      0.70f, 0.80f, 1.0f, 0.80f, 0.0f },
+
+    /* The polite machine. Completely flattened, which is the half people miss:
+     * intonation is a human signal, and a synthetic voice that inflects has
+     * given itself away. Same idea as Zarvek, done quietly. */
+    { "Emissary",
+      112.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
+      0.94f,
+      0.96f, 1.04f,
+      0.0f, 3.0f, 0.44f, 0.0f, 0.80f,
+      0.0f, 0.0f, 0.0f, 0.0f, 1.0f },
+
+    /* Somebody shouting over machinery. The voice underneath is ordinary and
+     * slightly clipped in delivery; everything that makes it carry is the
+     * horn it is coming out of. */
+    { "Foreman",
+      108.0f, 4.0f, 0.28f,
+      0.0f, 0.0f, 0.0f,
+      0.95f,
+      0.94f, 1.0f,
+      0.0f, 3.0f, 0.48f, 0.0f, 1.0f,
+      0.55f, 0.75f, 1.0f, 0.80f, 0.0f },
+
+    /* A rougher, lower Retro, and the only one of these that wants no chain at
+     * all. Heavy flutter and a high open quotient are what make a voice sound
+     * worn; the naturalness controls stay off, so it is still recognisably the
+     * original engine underneath. */
+    { "Gravel",
+      96.0f, 4.0f, 0.45f,
+      0.0f, 0.0f, 0.0f,
+      1.0f,
+      0.88f, 0.94f,
+      0.0f, 9.0f, 0.58f, 0.0f, 1.0f,
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+
+    /* Reed organ. `source = 1` is a pipe rather than folds, and the slow speed
+     * and slight vibrato are what turn a buzzing tract into an instrument
+     * being played. Flattened, because an organ has no intonation. */
+    { "Harmonium",
+      116.0f, 2.0f, 0.0f,
+      0.22f, 4.5f, 1.0f,
+      0.80f,
+      0.94f, 1.0f,
+      0.0f, 2.0f, 0.50f, 0.0f, 1.15f,
+      0.35f, 0.0f, 1.0f, 0.60f, 1.0f },
+
+    /* Something standing at a door. Every naturalness control off and a plain
+     * neutral tract - the character is entirely in the chain, which is the
+     * point of keeping the two separable. Quiet by design: the Sentinel chain
+     * carries a level of 1.5 to bring it back up. */
+    { "Sentry",
+      112.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f,
+      1.0f, 1.0f,
+      0.0f, 4.0f, 0.50f, 0.0f, 0.62f,
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+
+    /* Three of it, slightly out with each other. The voice underneath is
+     * deliberately plain - three copies of something already strange is soup -
+     * and mostly flat rather than entirely: three voices that all inflect
+     * identically sound like one voice with an effect on, and three that never
+     * inflect at all sound like a committee. */
+    { "Trinode",
+      124.0f, 3.0f, 0.12f,
+      0.0f, 0.0f, 0.0f,
+      0.94f,
+      0.98f, 1.04f,
+      0.0f, 3.0f, 0.50f, 0.0f, 1.0f,
+      0.40f, 0.30f, 1.0f, 0.70f, 0.70f },
+
+    /* The one asked for by name, and then given a near-miss of it on purpose.
+     * Flattened and low, with the Klaxon chain over it - the ring carrier sits
+     * just under the fundamental, so the sidebands beat against the pitch
+     * instead of scattering above it. */
+    { "Zarvek",
+      104.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
+      0.90f,
+      0.90f, 1.06f,
+      0.0f, 1.0f, 0.40f, 0.0f, 0.85f,
+      0.0f, 0.0f, 0.0f, 0.0f, 1.0f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
+
+/* Which chain a voice is meant to be heard through.
+ *
+ * Keyed by name rather than laid out parallel to BM_PRESETS, because a parallel
+ * array is a thing that silently goes wrong the first time somebody inserts a
+ * preset in the middle. Only the voices that need one appear; everything else
+ * is dry, which is the honest default for a speech synthesizer.
+ *
+ * The value is the name of an entry in bm_effects.c rather than a bm_effects
+ * literal, so the chain exists once and can be selected on its own. */
+static const struct { const char *voice, *chain; } BM_PRESET_CHAINS[] = {
+    { "Aggressor", "Enforcer" },
+    { "Carillon",  "Chamber"  },
+    { "Diver",     "Downlink" },
+    { "Emissary",  "Alloy"    },
+    { "Foreman",   "Bullhorn" },
+    { "Harmonium", "Cabinet"  },
+    { "Sentry",    "Sentinel" },
+    { "Trinode",   "Trinode"  },
+    { "Zarvek",    "Klaxon"   }
+};
+
+#define BM_CHAIN_COUNT \
+    ((int)(sizeof BM_PRESET_CHAINS / sizeof BM_PRESET_CHAINS[0]))
 
 /* ------------------------------------------------------------------ */
 
@@ -334,6 +488,20 @@ const bm_voice *bm_voice_preset(const char *name)
 int bm_voice_preset_count(void)
 {
     return BM_PRESET_COUNT;
+}
+
+const char *bm_voice_chain(const bm_voice *voice)
+{
+    int i;
+
+    if (voice == 0 || voice->name == 0) return 0;
+
+    for (i = 0; i < BM_CHAIN_COUNT; i++) {
+        if (name_matches(BM_PRESET_CHAINS[i].voice, voice->name)) {
+            return BM_PRESET_CHAINS[i].chain;
+        }
+    }
+    return 0;
 }
 
 const bm_voice *bm_voice_preset_at(int index)

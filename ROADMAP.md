@@ -330,6 +330,54 @@ that need an actual decision when we get there:
       the parameter tables already followed - close enough to say what it is reaching
       for, far enough not to be a copy. `Frederick` is the deliberate exception.
 
+- [x] **Every voice is in the dropdown.** Ten voices existed only as `.voice` files -
+      the ones that need an effects chain - on the reasoning that an effect is not a
+      property of a speaker and a preset table holding pairs would duplicate one of
+      them. Right about the structs, wrong about the shipping: the dropdown lists
+      presets, so a voice that is only a file is a voice nobody finds. `Zarvek` was
+      reported missing, which is what that looks like from outside.
+
+      They are presets now, with `bm_voice_chain()` naming the chain each belongs
+      with - a pairing beside the voice table rather than a field inside `bm_voice`,
+      so a chain still composes onto anybody. `-v` brings the chain, a later `-e`
+      overrides it, and in the GUI selecting a voice moves the effects column too.
+      The six chains that arrived attached to a voice are now effects presets in
+      their own right: `Chamber`, `Downlink`, `Alloy`, `Bullhorn`, `Cabinet`, `Klaxon`.
+
+      The files stay, and `tests/test_voicefile.c` compares each against its preset so
+      the two copies cannot drift. Writing it found three that already had:
+
+      - `BENCmouth Monotone.voice` had no `flatten = 1`. The file was not monotone; the
+        preset of the same name was. It had shipped that way since flatten landed.
+      - `Sentry.voice` had no `level`, so it played 3.7 dB below the `Sentinel` chain it
+        is meant to use.
+      - `preset = retro` renamed the voice that used it. A preset is a whole `bm_voice`,
+        name included, and every file puts `name` first - so `Gravel` had announced
+        itself as `BENCmouth Retro` for its entire existence.
+
+      Also: the CI step that renders every effects preset had a hardcoded list of six
+      and there were thirteen. It enumerates from `bm -l` now, and a companion step
+      renders every preset voice.
+
+- [x] **Typable sliders with fine steppers.** The readout beside each slider is a text
+      field - click, type, Enter or click-away to commit, Escape to revert - and two
+      small arrows step it by whatever precision the format string displays: 0.01 on a
+      plain parameter, 1 Hz on a frequency, auto-repeating when held. Deriving the step
+      from `fmt` rather than from the range is what keeps the arrow and the number
+      honest with each other; a step finer than the display would move a value and
+      appear to do nothing.
+
+      The step snaps to the displayed grid before incrementing, so repeated clicks give
+      round numbers instead of carrying whatever fraction a drag left behind. Dragging
+      now grabs on press and follows the mouse until release, which it had to once the
+      readout became a control: a drag that ran off the end of the track used to stop
+      dead where the number began instead of pinning to maximum.
+
+      One thing that needed the two states kept apart: text boxes are laid out above the
+      sliders and so run first, and clicking one takes `focus` before the slider that
+      had it is called. `num_id` outliving the focus change is what lets the slider
+      notice it was interrupted and commit rather than discard.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

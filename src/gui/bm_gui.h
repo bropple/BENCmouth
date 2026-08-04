@@ -90,6 +90,44 @@ typedef struct bm_ui {
     int   menu_open;
     int   menu_owner;
     int   menu_action;
+
+    /* A slider readout being typed into. Shares `focus` with the text boxes,
+     * which is what makes clicking from one to the other put the caret where
+     * you clicked and nowhere else - two independent notions of focus would
+     * let a slider and a text box both be lit at once, and both consume the
+     * same keystroke.
+     *
+     * The buffer lives here rather than beside each slider because only one
+     * field is ever being edited, and a caller that had to declare storage per
+     * slider would end up passing an array nobody wants to think about. */
+    char  num_buf[24];
+    int   num_len;
+    float num_blink;
+    int   num_bad;         /* the typed text does not parse - shown, not fixed */
+
+    /* Which slider owns the buffer, tracked separately from `focus` even though
+     * the two agree while editing. They have to be separable for one case: the
+     * text boxes are laid out above the sliders and so run first, and clicking
+     * one takes `focus` before the slider that had it is ever called. Seeing
+     * only `focus` the slider would conclude it was never editing and drop what
+     * had been typed into it. `num_id` outliving the focus change is what lets
+     * it notice it has been interrupted, and commit. */
+    int   num_id;
+
+    /* Which slider a drag belongs to, so it keeps following the mouse after the
+     * pointer has left the row. Grabbing on press and releasing on release,
+     * rather than testing the rectangle every frame, is also what stops a drag
+     * that runs off the right-hand end of one track from stopping dead where
+     * the readout begins - it pins to the maximum, which is what dragging past
+     * the end of a slider is supposed to do. */
+    int   drag_id;
+
+    /* Which stepper arrow is held, and for how long, so it can auto-repeat.
+     * A stepper you have to click thirty times is a stepper nobody uses. */
+    int   step_id;
+    int   step_dir;
+    float step_held;
+    float step_next;
 } bm_ui;
 
 /* Per-text-box state. Kept by the caller so a widget can stay a function:
@@ -107,6 +145,12 @@ typedef struct bm_edit {
 
 void bm_ui_init(bm_ui *ui);
 void bm_ui_free(bm_ui *ui);
+
+/* Drops the caret and any drag in progress. Call when the thing being edited is
+ * replaced wholesale - switching tabs swaps the voice out from under the
+ * sliders, and a half-typed number left over from before the switch would
+ * otherwise commit itself into the voice that arrived. */
+void bm_ui_defocus(bm_ui *ui);
 
 /* Text is drawn by size, and the size picks the font.
  *
@@ -145,7 +189,22 @@ int   bm_info_button(const bm_ui *ui, Rectangle r);
  * is the fill, so it reads at a glance rather than only from the label. */
 int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
                 int enabled);
-int   bm_slider(const bm_ui *ui, Rectangle r, const char *label,
+/* A labelled slider whose readout is also an input.
+ *
+ * Dragging the track is the coarse control and is what it always was. The
+ * number to the right of it is a text field: click it and type, Enter or a
+ * click elsewhere commits, Escape puts it back. The two small arrows beside it
+ * step by whatever precision `fmt` displays - a "%.2f" slider steps by 0.01,
+ * a "%.0f Hz" one by 1 Hz - so the fine end of the range is reachable without
+ * fighting a 100 px track for a value that changes a formant by a hair.
+ *
+ * `id` is any nonzero number unique among the widgets on screen, as for
+ * bm_textbox and drawn from the same numbering: focus is one thing, so a
+ * slider and a text box must not share an id.
+ *
+ * Returns nonzero on any frame the value changed, whichever of the three ways
+ * changed it. */
+int   bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
                 float *value, float lo, float hi, const char *fmt);
 /* Scrolls when the list is taller than the space beneath it: the mouse wheel
  * moves it and a bar on the right says where you are. Opening it scrolls the

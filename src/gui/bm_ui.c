@@ -7,6 +7,7 @@
 #include "bm_embed.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 Color BM_BG     = { 0x0c, 0x14, 0x08, 255 };
@@ -127,6 +128,14 @@ void bm_ui_init(bm_ui *ui)
      * small untruth that makes you distrust the rest of a display. */
     ui->font_name = !ui->loaded ? "built-in font"
                   : (path != 0 ? GetFileNameWithoutExt(path) : "Terminus (embedded)");
+}
+
+void bm_ui_defocus(bm_ui *ui)
+{
+    ui->focus   = 0;
+    ui->num_id  = 0;
+    ui->drag_id = 0;
+    ui->step_id = 0;
 }
 
 void bm_ui_free(bm_ui *ui)
@@ -313,7 +322,96 @@ int bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
     return hit;
 }
 
-int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
+/* How many decimals a printf format shows, which is the precision the readout
+ * is quoting and therefore the smallest step worth offering. Anything else
+ * would print a number the arrow did not appear to change.
+ *
+ * Scans for the first "%.N" - the formats here are one conversion each, with
+ * the unit as trailing literal text. A format without a precision means 6, the
+ * C default, which is not a useful step, so it falls back to 2. */
+static int fmt_decimals(const char *fmt)
+{
+    const char *p;
+
+    for (p = fmt; *p != '\0'; p++) {
+        if (p[0] == '%' && p[1] == '.' && p[2] >= '0' && p[2] <= '9') {
+            return p[2] - '0';
+        }
+    }
+    return 2;
+}
+
+static float decimal_step(int decimals)
+{
+    float s = 1.0f;
+    int   i;
+    for (i = 0; i < decimals; i++) s *= 0.1f;
+    return s;
+}
+
+/* Snap to the displayed grid before stepping, so repeated clicks give round
+ * numbers rather than carrying the arbitrary fraction a drag left behind.
+ * Without this, one click on a 0.01 stepper takes 0.5273 to 0.5373, and the
+ * readout reads 0.54 both before and after. */
+static float step_value(float v, float step, int dir, float lo, float hi)
+{
+    double snapped = (double)v / (double)step;
+    double whole   = (snapped < 0.0) ? -(double)(long)(0.5 - snapped)
+                                     :  (double)(long)(snapped + 0.5);
+    float  out     = (float)((whole + dir) * (double)step);
+
+    /* A step landing within a thousandth of an endpoint is meant to be the
+     * endpoint: a slider that stops at 0.9999999 shows 1.00 and then refuses to
+     * behave like 1. */
+    if (out < lo + step * 0.001f) out = lo;
+    if (out > hi - step * 0.001f) out = hi;
+    return out;
+}
+
+/* Draws a small solid triangle pointing up or down, inside `r`. */
+static void step_arrow(Rectangle r, int up, Color c)
+{
+    float cx = r.x + r.width * 0.5f;
+    float w  = 3.5f;
+    float y0 = r.y + 2.0f, y1 = r.y + r.height - 2.0f;
+
+    if (up) {
+        DrawTriangle((Vector2){ cx, y0 }, (Vector2){ cx - w, y1 },
+                     (Vector2){ cx + w, y1 }, c);
+    } else {
+        DrawTriangle((Vector2){ cx - w, y0 }, (Vector2){ cx, y1 },
+                     (Vector2){ cx + w, y0 }, c);
+    }
+}
+
+/* Parses what has been typed and, if it is a number, writes it clamped. Returns
+ * nonzero if the value actually moved - a commit that lands on the value
+ * already there is not a change, and reporting it as one would make the engine
+ * reload the voice for nothing. */
+static int commit_number(bm_ui *ui, float *value, float lo, float hi)
+{
+    float v;
+
+    if (ui->num_bad) return 0;
+    v = (float)atof(ui->num_buf);
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    if (v == *value) return 0;
+    *value = v;
+    return 1;
+}
+
+static void seed_number(bm_ui *ui, float value, int decimals)
+{
+    /* Without the unit: "118 Hz" is not something strtod will take back, and
+     * asking somebody to delete the unit before editing the number is a small
+     * insult. */
+    snprintf(ui->num_buf, sizeof ui->num_buf, "%.*f", decimals, (double)value);
+    ui->num_len = (int)strlen(ui->num_buf);
+    ui->num_bad = 0;
+}
+
+int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
               float *value, float lo, float hi, const char *fmt)
 {
     Vector2 m = GetMousePosition();
@@ -323,16 +421,153 @@ int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
      * as it always was and only a narrow one gives ground. */
     float labelw = r.width * 0.34f;
     float valuew = r.width * 0.30f;
-    Rectangle track;
+    Rectangle track, field, up, down;
     float t = (hi > lo) ? (*value - lo) / (hi - lo) : 0.0f;
-    int changed = 0;
-    char buf[48];
+    int   decimals = fmt_decimals(fmt);
+    float step     = decimal_step(decimals);
+    int   editing, over_field, free_ = mouse_free(ui);
+    int   changed = 0;
+    char  buf[48];
 
     if (labelw > 110.0f) labelw = 110.0f;
     if (valuew > 100.0f) valuew = 100.0f;
-    track = (Rectangle){ r.x + labelw, r.y + r.height * 0.5f - 3,
-                         r.width - labelw - valuew, 6 };
 
+    /* The readout is a control now, so it gets a rectangle. The steppers take a
+     * fixed 13 px column off its right rather than a share: they are two
+     * triangles and a hit target, and both want to be the same size in a wide
+     * column and a narrow one. */
+    field = (Rectangle){ r.x + r.width - valuew, r.y, valuew - 13.0f, r.height };
+    up    = (Rectangle){ r.x + r.width - 13.0f, r.y, 13.0f, r.height * 0.5f };
+    down  = (Rectangle){ up.x, r.y + r.height * 0.5f, 13.0f, r.height * 0.5f };
+    track = (Rectangle){ r.x + labelw, r.y + r.height * 0.5f - 3,
+                         field.x - (r.x + labelw) - 8.0f, 6 };
+
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    editing    = (ui->num_id == id && ui->focus == id);
+    over_field = free_ && CheckCollisionPointRec(m, field);
+
+    /* Somebody else took the caret before this slider was reached this frame -
+     * a text box, which is laid out above and so runs first. Commit rather than
+     * discard: typing a number and then clicking the thing you want to hear it
+     * on is the normal way to use this, and throwing the number away at that
+     * moment would be the single most annoying behaviour available. */
+    if (ui->num_id == id && !editing) {
+        changed |= commit_number(ui, value, lo, hi);
+        ui->num_id = 0;
+    }
+
+    /* ---- taking and giving up the caret ---- */
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && free_) {
+        if (over_field && !editing) {
+            seed_number(ui, *value, decimals);
+            ui->num_blink = 0.0f;
+            ui->num_id    = id;
+            ui->focus     = id;
+            editing       = 1;
+        } else if (editing && !over_field) {
+            changed   |= commit_number(ui, value, lo, hi);
+            ui->num_id = 0;
+            ui->focus  = 0;
+            editing    = 0;
+        }
+    }
+
+    if (editing) {
+        int key;
+
+        while ((key = GetCharPressed()) != 0) {
+            /* Digits, one sign, one point. Filtering here rather than at commit
+             * means the field cannot be got into a state it will not come out
+             * of, and the reject is silent because a beep for a letter typed
+             * into a number field is noise about a thing you already know. */
+            int ok = (key >= '0' && key <= '9') ||
+                     (key == '.' && strchr(ui->num_buf, '.') == 0) ||
+                     (key == '-' && ui->num_len == 0);
+            if (ok && ui->num_len < (int)sizeof ui->num_buf - 1) {
+                ui->num_buf[ui->num_len++] = (char)key;
+                ui->num_buf[ui->num_len]   = '\0';
+            }
+        }
+        if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) &&
+            ui->num_len > 0) {
+            ui->num_buf[--ui->num_len] = '\0';
+        }
+
+        /* "-" and "." and "" are all things a half-typed number passes
+         * through. Shown in the alert colour and simply not committed, rather
+         * than corrected under the caret while somebody is still typing. */
+        {
+            char *end;
+            double v = strtod(ui->num_buf, &end);
+            (void)v;
+            ui->num_bad = (ui->num_len == 0 || *end != '\0');
+        }
+
+        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) ||
+            IsKeyPressed(KEY_TAB)) {
+            changed   |= commit_number(ui, value, lo, hi);
+            ui->num_id = 0;
+            ui->focus  = 0;
+            editing    = 0;
+        }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            ui->num_id = 0;
+            ui->focus  = 0;
+            editing    = 0;
+        }
+
+        /* The arrow keys step, which is the same control as the arrow buttons
+         * and is how anyone who has just typed a number expects to nudge it. */
+        if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP) ||
+            IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN)) {
+            int dir = (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP)) ? 1 : -1;
+            *value  = step_value(*value, step, dir, lo, hi);
+            changed = 1;
+            seed_number(ui, *value, decimals);
+        }
+    }
+
+    /* ---- the steppers ---- */
+    {
+        int over_up   = free_ && CheckCollisionPointRec(m, up);
+        int over_down = free_ && CheckCollisionPointRec(m, down);
+        int dir       = over_up ? 1 : (over_down ? -1 : 0);
+
+        if (dir != 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            ui->step_id   = id;
+            ui->step_dir  = dir;
+            ui->step_held = 0.0f;
+            /* Hold before repeating, then ten a second. A stepper that repeats
+             * immediately cannot be used for a single increment. */
+            ui->step_next = 0.45f;
+            *value  = step_value(*value, step, dir, lo, hi);
+            changed = 1;
+        } else if (ui->step_id == id && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            ui->step_held += GetFrameTime();
+            if (ui->step_held >= ui->step_next) {
+                ui->step_next += 0.05f;
+                *value  = step_value(*value, step, ui->step_dir, lo, hi);
+                changed = 1;
+            }
+        } else if (ui->step_id == id) {
+            ui->step_id = 0;
+        }
+
+        if (changed && editing) seed_number(ui, *value, decimals);
+
+        step_arrow(up,   1, over_up   ? BM_ACCENT : BM_DIM);
+        step_arrow(down, 0, over_down ? BM_ACCENT : BM_DIM);
+    }
+
+    /* ---- the track ---- *
+     *
+     * Recomputed after the steppers and the keyboard, so the fill drawn this
+     * frame is the value this frame ended with rather than the one it started
+     * with. A one-frame lag here is invisible while dragging and obvious when
+     * clicking a stepper, which moves the number and not the bar. */
+    t = (hi > lo) ? (*value - lo) / (hi - lo) : 0.0f;
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
 
@@ -343,20 +578,58 @@ int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
     DrawRectangle((int)track.x, (int)track.y, (int)(track.width * t), (int)track.height,
                   BM_ACCENT);
 
-    /* Grab anywhere on the row, not just the 6px track - a 6px hit target is
-     * the kind of thing that makes an interface feel hostile. */
-    if (mouse_free(ui) && CheckCollisionPointRec(m, r) &&
-        IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        float nt = (m.x - track.x) / track.width;
-        if (nt < 0.0f) nt = 0.0f;
-        if (nt > 1.0f) nt = 1.0f;
-        *value = lo + (hi - lo) * nt;
-        changed = 1;
+    /* Grab anywhere left of the readout, not just the 6px track - a 6px hit
+     * target is the kind of thing that makes an interface feel hostile. The
+     * readout and its arrows are excluded, because they are controls of their
+     * own now and a drag that started on the number used to jump the value. */
+    if (free_ && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        m.x < field.x && CheckCollisionPointRec(m, r)) {
+        ui->drag_id = id;
+    }
+    if (ui->drag_id == id) {
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            ui->drag_id = 0;
+        } else {
+            float nt = (m.x - track.x) / track.width;
+            if (nt < 0.0f) nt = 0.0f;
+            if (nt > 1.0f) nt = 1.0f;
+            if (*value != lo + (hi - lo) * nt) {
+                *value  = lo + (hi - lo) * nt;
+                changed = 1;
+            }
+            t = nt;
+            DrawRectangle((int)track.x, (int)track.y, (int)(track.width * t),
+                          (int)track.height, BM_ACCENT);
+        }
     }
 
-    snprintf(buf, sizeof buf, fmt, (double)*value);
-    bm_text(ui, BM_FONT_SMALL, buf, track.x + track.width + 12,
-            r.y + (r.height - BM_FONT_SMALL) * 0.5f, BM_TEXT);
+    /* ---- the readout ---- */
+    if (editing) {
+        float cx;
+        DrawRectangleRec(field, BM_PANEL);
+        DrawRectangleLinesEx(field, 1, BM_ACCENT);
+        bm_text(ui, BM_FONT_SMALL, ui->num_buf, field.x + 4,
+                r.y + (r.height - BM_FONT_SMALL) * 0.5f,
+                ui->num_bad ? BM_ALERT : BM_TEXT);
+
+        ui->num_blink += GetFrameTime();
+        if (ui->num_blink > 1.0f) ui->num_blink -= 1.0f;
+        cx = field.x + 4 + bm_text_measure(ui, BM_FONT_SMALL, ui->num_buf, 0.0f);
+        if (ui->num_blink < 0.5f) {
+            DrawRectangle((int)cx + 1, (int)r.y + 4, 1,
+                          (int)r.height - 8, BM_TEXT);
+        }
+    } else {
+        /* An outline on hover, so the number reads as something you can click
+         * into. Without it the only cue is the colour change, and a readout
+         * that merely brightens looks like a hover effect rather than like a
+         * field - nobody tries to type into it. */
+        if (over_field) DrawRectangleLinesEx(field, 1, BM_BORDER);
+        snprintf(buf, sizeof buf, fmt, (double)*value);
+        bm_text(ui, BM_FONT_SMALL, buf, field.x + 4,
+                r.y + (r.height - BM_FONT_SMALL) * 0.5f,
+                over_field ? BM_ACCENT : BM_TEXT);
+    }
 
     return changed;
 }

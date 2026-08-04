@@ -119,12 +119,18 @@ int main(int argc, char **argv)
             printf("\n");
             for (k = 0; k < bm_voice_preset_count(); k++) {
                 const bm_voice *v = bm_voice_preset_at(k);
+                const char *chain = bm_voice_chain(v);
                 printf("  %-20s f0 %5.1f +-%.1fst  throat %.2f  mouth %.2f"
-                       "  speed %.2f  gain %.2f  coart %.2f  prosody %.2f\n",
+                       "  speed %.2f  gain %.2f  coart %.2f  prosody %.2f",
                        v->name, (double)v->f0_base, (double)v->f0_range,
                        (double)v->throat, (double)v->mouth, (double)v->speed,
                        (double)v->gain, (double)v->coarticulation,
                        (double)v->prosody);
+                /* Worth saying: -v Sentry quietly brings an effects chain with
+                 * it, and a listing that did not mention that would make the
+                 * -e column look like it had been ignored. */
+                if (chain != 0) printf("  + %s", chain);
+                printf("\n");
             }
             return 0;
         }
@@ -141,11 +147,20 @@ int main(int argc, char **argv)
             voice.f0_base = (float)atof(argv[++i]);
         else if (strcmp(a, "-v") == 0 && i + 1 < argc) {
             const bm_voice *p = bm_voice_preset(argv[++i]);
+            const char     *chain;
             if (p == 0) {
                 fprintf(stderr, "bm: unknown voice \"%s\"; -l lists presets\n", argv[i]);
                 return 1;
             }
             voice = *p;
+            /* Some voices are not the voice without their chain - see
+             * bm_voice_chain. A later -e overrides this, which is the ordinary
+             * reading of a command line: the last thing you said wins. */
+            chain = bm_voice_chain(&voice);
+            if (chain != 0) {
+                const bm_effects *x = bm_effects_preset(chain);
+                if (x != 0) effects = *x;
+            }
         }
         else if (strcmp(a, "-e") == 0 && i + 1 < argc) {
             const bm_effects *x = bm_effects_preset(argv[++i]);

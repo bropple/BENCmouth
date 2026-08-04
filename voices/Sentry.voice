@@ -36,3 +36,8 @@ comb           = 0.55
 comb_hz        = 150
 drive          = 0.3
 crush          = 0.22
+# Not cosmetic. Ring at 0.62 sits in the dip where the dry and wet paths partly
+# cancel, and stacking a comb on top put the whole voice 3.7 dB down - far
+# enough that selecting it read as a fault rather than as a quiet voice. This
+# brings it back to within 0.2 dB of dry.
+level          = 1.5

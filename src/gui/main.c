@@ -41,6 +41,19 @@
 #define SCOPE_LEN   2048
 #define SAMPLE_RATE 22050
 
+/* Widget ids, which are what focus is tracked by.
+ *
+ * One numbering for every widget that can hold the caret, text boxes and slider
+ * readouts alike, because there is one caret. Two schemes would let a slider
+ * and a text box both be lit at once, and both take the same keystroke.
+ *
+ * 1 is this file's text box; 2 to 4 are the song panel's, in bm_song_ui.c. The
+ * sliders start well clear of those and take a block each, so adding a
+ * parameter costs nothing here. */
+#define ID_TEXT          1
+#define ID_VOICE_SLIDER  100
+#define ID_FX_SLIDER     200
+
 /* ------------------------------------------------------------------ *
  * Shared with the audio callback.
  *
@@ -181,6 +194,20 @@ static float param_get(const bm_voice *v, const char *key)
     return 0.0f;
 }
 
+/* Where `name` sits in a dropdown's list, or `fallback` if it is not in it -
+ * which is the normal case for a voice that has been edited or loaded from a
+ * file, and not an error. */
+static int name_index(const char **names, int count, const char *name,
+                      int fallback)
+{
+    int i;
+    if (name == 0) return fallback;
+    for (i = 0; i < count; i++) {
+        if (strcmp(names[i], name) == 0) return i;
+    }
+    return fallback;
+}
+
 /* Alphabetical, case-insensitive, for the voice dropdown.
  *
  * The presets are declared in the order they were written - default, Retro, the
@@ -274,7 +301,7 @@ int main(int argc, char **argv)
      * one being chosen. */
     const bm_voice *voice_list[64];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
-    const char *fx_names[16];
+    const char *fx_names[32];
     int   fx_count = 0, fx_index = 0, fx_open = 0;
     bm_effects effects;
     int   i, dirty = 1;
@@ -509,15 +536,24 @@ int main(int argc, char **argv)
             }
             bm_engine_set_voice(g_engine, &voice);
             bm_engine_set_effects(g_engine, &effects);
-            ui.focus = 0;
+            /* Both dropdowns have to be told, or they go on displaying the
+             * other tab's selection over this tab's sliders. An entry that no
+             * longer matches - "edited", or a voice loaded from a file - leaves
+             * the index alone, which is the honest outcome: there is no list
+             * entry to point at. */
+            voice_index = name_index(voice_names, voice_count, voice.name,
+                                     voice_index);
+            fx_index    = name_index(fx_names, fx_count, effects.name, fx_index);
+            bm_ui_defocus(&ui);
             voice_open = 0;
+            fx_open    = 0;
         }
         y += 30;
 
         if (tab == 0) {
             /* ---- text and phonemes ---- */
             bm_label(&ui, "TEXT TO SPEAK", BM_PAD, y);
-            if (bm_textbox(&ui, 1,
+            if (bm_textbox(&ui, ID_TEXT,
                            (Rectangle){ BM_PAD, y + 18, W - 2 * BM_PAD,
                                         PANEL_H - 18 - 66 },
                            text, TEXT_CAP, &text_st)) {
@@ -752,10 +788,30 @@ int main(int argc, char **argv)
             b = (Rectangle){ BM_PAD + 60, y, 220, 28 };
             if (bm_dropdown(&ui, b, voice_names, voice_count, &voice_index,
                             &voice_open)) {
+                const char *chain;
+
                 voice = *voice_list[voice_index];
                 bm_engine_set_voice(g_engine, &voice);
                 snprintf(status, sizeof status, "voice: %s", voice.name);
                 status_color = BM_DIM;
+
+                /* Some presets are a voice *and* a chain, and picking one has
+                 * to move the effects column too - Sentry without its ring
+                 * modulator is a plain neutral tract, so a dropdown that
+                 * changed only the left two columns would look broken. The
+                 * ones that want no chain select None rather than leaving
+                 * whatever the last voice brought, which would make a dry
+                 * voice sound like whoever preceded it. */
+                chain = bm_voice_chain(&voice);
+                for (i = 0; i < fx_count; i++) {
+                    if (strcmp(fx_names[i],
+                               chain != 0 ? chain : "None") == 0) {
+                        fx_index = i;
+                        effects  = *bm_effects_preset_at(i);
+                        bm_engine_set_effects(g_engine, &effects);
+                        break;
+                    }
+                }
             }
             b = (Rectangle){ BM_PAD + 292, y, 76, 28 };
             if (bm_button(&ui, b, "LOAD", 1)) {
@@ -812,6 +868,13 @@ int main(int argc, char **argv)
                         voice.name = voice_name_buf[0] != '\0'
                                          ? voice_name_buf : "loaded";
                         bm_engine_set_voice(g_engine, &voice);
+                        /* A file naming a preset selects it in the dropdown;
+                         * one that does not leaves the selection where it was,
+                         * because there is nothing in the list to point at. */
+                        voice_index = name_index(voice_names, voice_count,
+                                                 voice.name, voice_index);
+                        fx_index    = name_index(fx_names, fx_count,
+                                                 effects.name, fx_index);
                         snprintf(status, sizeof status, "loaded %.120s",
                                  GetFileName(path));
                         status_color = BM_ACCENT;
@@ -897,7 +960,9 @@ int main(int argc, char **argv)
                 Rectangle row = { BM_PAD + (float)col * (colw + BM_PAD),
                                   y + (float)rowi * 24, colw, 22 };
                 float v = param_get(&voice, PARAMS[i].key);
-                if (bm_slider(&ui, row, PARAMS[i].label, &v,
+                /* Ids from ID_VOICE_SLIDER up; see the block comment there for
+                 * why sliders are numbered alongside the text boxes. */
+                if (bm_slider(&ui, ID_VOICE_SLIDER + i, row, PARAMS[i].label, &v,
                               PARAMS[i].lo, PARAMS[i].hi, PARAMS[i].fmt)) {
                     bm_voice_set_param(&voice, PARAMS[i].key, 0, v);
                     /* Lands at the next frame boundary, so it will not click -
@@ -930,8 +995,8 @@ int main(int argc, char **argv)
                 for (i = 0; i < NFXPARAMS; i++) {
                     Rectangle row = { fx_x, y + (float)(i + 1) * 24, colw, 22 };
                     float v = fx_get(&effects, FX_PARAMS[i].key);
-                    if (bm_slider(&ui, row, FX_PARAMS[i].label, &v,
-                                  FX_PARAMS[i].lo, FX_PARAMS[i].hi,
+                    if (bm_slider(&ui, ID_FX_SLIDER + i, row, FX_PARAMS[i].label,
+                                  &v, FX_PARAMS[i].lo, FX_PARAMS[i].hi,
                                   FX_PARAMS[i].fmt)) {
                         bm_effects_set_param(&effects, FX_PARAMS[i].key, 0, v);
                         bm_engine_set_effects(g_engine, &effects);

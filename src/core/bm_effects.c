@@ -59,7 +59,49 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * above about 1 Hz a chorus stops sounding like several voices and starts
      * sounding like one voice being wobbled, which is a different effect and
      * already available as vibrato. */
-    { "Trinode",   0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  1.4f }
+    { "Trinode",   0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  1.4f },
+
+    /* ---- chains that arrived with a voice -------------------------------
+     *
+     * These six were written as part of a voice rather than on their own - see
+     * bm_voice.c, where each is paired with the preset it belongs to. They are
+     * listed here as well because a chain is not specific to the voice it was
+     * built for: the comb that gives Carillon its case rings any voice put
+     * through it, and being able to try one on somebody else is most of what
+     * an effects menu is for.
+     *
+     * Named for the chain, not for the voice, for the same reason. */
+
+    /* A small resonant body. One comb, spaced wide enough that its teeth land
+     * between the formants rather than on them, so it colours without
+     * swallowing the vowels. */
+    { "Chamber",   0.0f, 0.0f,   0.30f, 190.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
+
+    /* A voice arriving over a bad link. The crush is the sample rate of the
+     * channel, the high comb is the pipe it came down, and the ring at 33 Hz is
+     * below pitch - too low to be heard as a tone, so it reads as the thing
+     * being modulated rather than as a modulator. */
+    { "Downlink",  0.18f, 33.0f, 0.60f, 520.0f, 0.0f, 0.0f,  0.20f, 0.45f, 1.2f },
+
+    /* Ring modulation almost to the exclusion of the dry signal, at a carrier
+     * just under a typical fundamental. Harder than Metal and deliberately
+     * plainer - no comb, so nothing gives it a body to be inside. */
+    { "Alloy",     0.90f, 74.0f, 0.0f, 0.0f,    0.0f, 0.0f,  0.15f, 0.0f,  1.3f },
+
+    /* Amplified and slightly broken. The comb is tuned high, where a small horn
+     * resonates, and the crush and drive between them do what a cheap speaker
+     * driven too hard does to a voice. */
+    { "Bullhorn",  0.0f, 0.0f,   0.50f, 700.0f, 0.0f, 0.0f,  0.60f, 0.38f, 1.05f },
+
+    /* A low comb and nothing else: the wooden case an instrument sits in, which
+     * is a resonance and not a distortion. The gentlest entry in this table. */
+    { "Cabinet",   0.0f, 0.0f,   0.35f, 105.0f, 0.0f, 0.0f,  0.0f,  0.0f,  1.0f },
+
+    /* The harsh one. Ring at 92 Hz against a fundamental near 104 puts the
+     * sidebands close enough to the pitch to beat against it rather than
+     * scatter - a buzz rather than a shimmer - and the comb and drive stacked on
+     * top are what make it sound loud before the level control touches it. */
+    { "Klaxon",    0.95f, 92.0f, 0.45f, 168.0f, 0.0f, 0.0f,  0.35f, 0.20f, 1.15f }
 };
 
 #define BM_EFFECT_COUNT \

@@ -22,3 +22,11 @@ coarticulation = 0
 prosody        = 0
 formant_glide  = 0
 bandwidth_track= 0
+
+# This is the line that actually delivers the name, and this file went without
+# it for a release. `f0_range = 0` is read only by the phrase planner, which
+# this voice does not use, so the older contour went on applying its 18%
+# declination and its 6% bump on stressed syllables and the file swung 28.5% in
+# pitch - the same spread as BENCmouth Retro. One pitch for the whole utterance,
+# and every vowel its nominal length whatever stress it carries.
+flatten        = 1

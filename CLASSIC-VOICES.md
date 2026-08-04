@@ -179,7 +179,8 @@ Two presets are the point of the exercise. **Sentinel** is the metallic sentry �
 for the inharmonic edge, a low comb, only a little drive, because it is meant to sound
 inhuman rather than angry. **Enforcer** is the aggressive one, and drive carries it at
 0.88 with a tight comb and only a trace of ring; too much ring turns menace into
-novelty. `voices/Sentry.voice` and `voices/Aggressor.voice` pair each with a voice.
+novelty. The `Sentry` and `Aggressor` presets pair each with a voice — see *Where they
+live*, below, for how that pairing is expressed.
 
 `-DBM_WITH_EFFECTS=0` removes the whole stage, and that is worth doing on a
 microcontroller: it drops the code *and* the comb delay line, which is 8 KB and the
@@ -318,6 +319,32 @@ is struck and decays, and getting that would mean an envelope retriggered per sy
 which the source cannot see, because it is handed a pitch and an amplitude and knows
 nothing about phonemes. The per-phoneme amplitude envelope gives each syllable an onset,
 which carries some of it.
+
+## Where they live
+
+The voices that need a chain were `.voice` files for several rounds of this, on the
+reasoning stated above: an effect is not a property of a speaker, so a preset table
+holding voice-and-chain pairs would be duplicating one of them.
+
+That reasoning is still right about the structs and was wrong about the shipping. The
+GUI dropdown lists presets, and `bm -l` lists presets, so a voice that exists only as a
+file is a voice most people never meet — `Zarvek` was reported missing, which is exactly
+what that failure looks like from outside.
+
+So they are presets, and `bm_voice_chain()` names the chain each is meant to be heard
+through. The pairing lives beside the voice table rather than inside `bm_voice`, which
+keeps both properties: the chain still composes onto anybody (`bm -v cadet -e klaxon`),
+and the voice still arrives with it by default. The files stay — they carry the
+working-out, and they are the format anyone writes their own in — and
+`tests/test_voicefile.c` compares every file against its preset, chain included, so the
+two copies cannot drift.
+
+Writing that test found three things that already had: `BENCmouth Monotone.voice` was
+missing the `flatten = 1` that gives it its name, `Sentry.voice` was missing the level
+trim and played 3.7 dB down, and `preset = retro` was silently renaming the voice that
+used it, because a preset is a whole `bm_voice` and copying one over a named voice takes
+its name too. `Gravel` had been announcing itself as `BENCmouth Retro` for as long as it
+had existed.
 
 ## Summary
 

@@ -89,12 +89,46 @@ jobs:
           done
           exit $fail
 
+      # Enumerated from the binary rather than listed here. The hardcoded list
+      # this replaced was written when there were six chains and was still six
+      # long after there were thirteen, so the ones added since had never been
+      # rendered by CI at all - a check that only covers what it was born
+      # knowing about stops being a check.
       - name: Every effects preset renders
         run: |
           ./bm -l
-          for e in none metal overdrive crushed sentinel enforcer; do
+          for e in $(./bm -l | sed -n 's/^  -e \([A-Za-z]*\) .*/\1/p'); do
+            echo "== -e $e"
             ./bm -v deep -e "$e" "compliance is mandatory" -o /dev/null
           done
+
+      # Same argument for the voices. Most presets also exist as a .voice file
+      # and are covered by the step above, but not all of them do, and a preset
+      # that carries an effects chain is only exercised as a pair through -v.
+      - name: Every preset voice renders
+        run: |
+          fail=0
+          old="$IFS"; IFS='
+          '
+          for v in $(./bm -l | sed -n 's/^  \(.*\)  *f0 .*/\1/p' | sed 's/ *$//'); do
+            IFS="$old"
+            echo "== -v $v"
+            out=$(./bm -v "$v" "The quick brown fox jumps over the lazy dog." \
+                    -o /dev/null 2>&1)
+            echo "$out"
+            case "$out" in
+              *LIMITED*)
+                case "$v" in
+                  BENCmouth|"BENCmouth Retro")
+                    echo "   ^ known, and pinned - see the comment above" ;;
+                  *) echo "   ^ hits the limiter"; fail=1 ;;
+                esac ;;
+            esac
+            IFS='
+          '
+          done
+          IFS="$old"
+          exit $fail
 
       # Built last so it is what survives: the CLI with live audio and the
       # dictionary compiled in, which is the build someone would actually want.

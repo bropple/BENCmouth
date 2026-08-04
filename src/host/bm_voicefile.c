@@ -95,6 +95,10 @@ int bm_voicefile_load(const char *path, bm_voice *voice, bm_effects *effects,
 
         if (strcmp(key, "preset") == 0) {
             const bm_voice *p = bm_voice_preset(value);
+            const char *keep = voice->name;
+            int named = (name_buf != 0 && name_buf[0] != '\0' &&
+                         voice->name == name_buf);
+
             if (p == 0) {
                 if (err != 0) snprintf(err, err_cap, "line %d: unknown preset \"%s\"",
                                        lineno, value);
@@ -102,6 +106,14 @@ int bm_voicefile_load(const char *path, bm_voice *voice, bm_effects *effects,
                 return -1;
             }
             *voice = *p;
+            /* A preset is a whole bm_voice, name included, so copying one over
+             * a voice that has already been named throws the name away. Every
+             * shipped file happens to put `name` first, which is the natural
+             * order to write them in, so this made `preset = retro` silently
+             * rename the voice to "BENCmouth Retro" - Gravel.voice announced
+             * itself as Retro for as long as it existed. The inherited numbers
+             * are the point of the key; the inherited name never is. */
+            if (named) voice->name = keep;
             continue;
         }
 

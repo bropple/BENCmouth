@@ -137,7 +137,7 @@ bm "Hello world" -o hello.wav
 bm -v retro -s 0.8 "I am sorry Dave" -o dave.wav
 bm -P "HH AH0 L OW1" -o hello.wav          # phonemes directly
 bm -t "the quick brown fox"                # see what the rules produced
-bm -f voices/gravel.voice "testing" -o t.wav
+bm -f voices/Gravel.voice "testing" -o t.wav
 bm -S songs/daisy.bmsong -a                # sing a song
 bm -v deep -e enforcer "you have thirty seconds to comply"
 ```
@@ -218,7 +218,7 @@ bm "hello world" -o - > /tmp/x.wav && afplay /tmp/x.wav   # macOS
 
 ## Voices
 
-Fifteen presets ship in the binary:
+Twenty-five presets ship in the binary:
 
 | Voice | Character |
 |---|---|
@@ -238,7 +238,31 @@ Fifteen presets ship in the binary:
 | `Frederick` | the ordinary default male voice the novelty ones were novelties against |
 | `Duchess` | light and high — breathier than `Operator`, and quicker |
 
-The last six are the **classic set**, aimed at the voices desktop machines shipped with in
+Ten more are a voice **and** an effects chain, and `-v` brings both:
+
+| Voice | Chain | Character |
+|---|---|---|
+| `Aggressor` | `Enforcer` | a machine that has decided about you |
+| `Carillon` | `Chamber` | a bell made to speak — bell partials for a source |
+| `Diver` | `Downlink` | underwater, or through a helmet |
+| `Emissary` | `Alloy` | the polite machine: ring modulation over no intonation at all |
+| `Foreman` | `Bullhorn` | somebody shouting over machinery |
+| `Gravel` | — | a rougher, lower Retro; the one here that wants no chain |
+| `Harmonium` | `Cabinet` | reed organ — a pipe for a source, and no intonation |
+| `Sentry` | `Sentinel` | something standing at a door |
+| `Trinode` | `Trinode` | three of it, slightly out with each other |
+| `Zarvek` | `Klaxon` | the harsh one |
+
+These lived only as `.voice` files for a while, on the reasoning that an effect is not part
+of a voice. That was true and still the wrong call — the GUI dropdown lists presets, so a
+voice that is only a file is a voice most people never find. The files stay: they carry the
+working-out for each one, and `tests/test_voicefile.c` holds them to matching the preset
+exactly, chain included, so the two copies cannot drift.
+
+A `-e` *after* a `-v` overrides the chain, and a chain can be put on anyone —
+`bm -v cadet -e klaxon` is a perfectly horrible thing you can now do.
+
+The classic set is aimed at the voices desktop machines shipped with in
 the eighties and early nineties. They are tuned toward those archetypes from the published
 acoustics of the voice types involved — nothing was disassembled or lifted from a shipped
 synthesizer, which is the same rule the rest of this project follows.
@@ -396,7 +420,7 @@ than merely mechanical. Crush is last because it is the digital layer, applied t
 finished sound. Chorus goes *before* drive because modulation after distortion smears
 the harmonics the distortion just made; every guitar rig is wired the same way.
 
-Seven presets ship:
+Thirteen presets ship:
 
 | Preset | |
 |---|---|
@@ -407,14 +431,16 @@ Seven presets ship:
 | `Sentinel` | the metallic sentry — inhuman rather than angry |
 | `Enforcer` | the aggressive one; drive carries it |
 | `Trinode` | three detuned copies of the same voice |
+| `Chamber` | a small resonant body; one comb, spaced to miss the formants |
+| `Downlink` | a voice arriving over a bad link |
+| `Alloy` | ring modulation almost to the exclusion of the dry signal |
+| `Bullhorn` | amplified and slightly broken |
+| `Cabinet` | a low comb and nothing else — the case an instrument sits in |
+| `Klaxon` | the harsh one; sidebands close enough to the pitch to beat against it |
 
-Several `.voice` files pair a voice with a chain, since what makes something sound like
-a particular character is usually both together: `Aggressor` and `Sentry` for the two
-above, `Zarvek` (ring modulation over a completely flattened voice), `Emissary` (the
-same idea done politely), `Diver` (burbling, from inside something), `Foreman` (a site
-announcement through fifteen-year-old outdoor speakers), and `Carillon` / `Harmonium`,
-which use the excitation source below, and `Trinode`, which is three of itself. A `.voice` file can carry an `effects = NAME`
-line and any of the keys above.
+The last six arrived as part of a voice — see the pairings in the voice table above — and
+are listed here as well because a chain is not specific to the voice it was built for.
+A `.voice` file can carry an `effects = NAME` line and any of the keys above.
 
 **Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:
 `drive` is a threshold effect, and a drive stage that saw an untrimmed signal would
@@ -700,7 +726,17 @@ scroll — mouse wheel or the bar on the right — so a paragraph is as workable
 sentence. The text box is a real text box: click to put the caret anywhere, drag or
 shift-arrow to select, Ctrl-A/C/X/V (Cmd on macOS), Ctrl-arrow by word, Home and End,
 and a right-click menu for the same. The phoneme readout follows the DICT button, so
-what you see is what SPEAK will say. Every slider is bound to a `.voice` file key, so
+what you see is what SPEAK will say.
+
+Each slider is three controls. Drag the track for the coarse move; click the **number** to
+the right of it and type an exact one, with Enter or a click elsewhere to commit and Escape
+to put it back; or use the two small **arrows** beside it to step by whatever precision the
+readout displays — 0.01 on a plain parameter, 1 Hz on a frequency, held down to repeat.
+That last one is the difference between being able to place a formant and having to hunt
+for it: a 100 px track across a 0–400 Hz range moves 4 Hz per pixel, and the values worth
+finding are usually a hair off the one you can hit.
+
+Every slider is bound to a `.voice` file key, so
 what you tune and what SAVE writes cannot drift apart, and LOAD reads the same files
 back — the presets in `voices/`, or anything you saved. A file is applied over the
 current voice, the way `bm -f` does, so one that sets two keys is an edit rather than a

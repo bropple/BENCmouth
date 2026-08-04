@@ -280,6 +280,20 @@ int             bm_voice_preset_count(void);
 int             bm_dict_count(void);
 const bm_voice *bm_voice_preset_at(int index);
 
+/* The effects chain a preset is meant to be heard through, as a name to pass to
+ * bm_effects_preset, or NULL if it wants none - which is most of them.
+ *
+ * Some voices are not a voice without their chain. Sentry is a plain neutral
+ * tract and nothing else; everything that makes it a sentry is the ring
+ * modulator. Keeping the pairing here rather than inside bm_voice is what lets
+ * the chain still be selected on its own and tried on somebody else, which is
+ * most of what an effects menu is for.
+ *
+ * A front end that ignores this gets the voice dry. That is a legitimate thing
+ * to want, and it is why this is a separate call rather than something
+ * bm_voice_preset does behind your back. */
+const char     *bm_voice_chain(const bm_voice *voice);
+
 /* Applies one `key = value` setting to a voice, for voice files and CLI
  * overrides. `key_len` may be 0 for a NUL-terminated key. Returns BM_ERR_ARG
  * for an unknown key so that a typo in a voice file is reported rather than
