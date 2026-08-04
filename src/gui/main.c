@@ -21,6 +21,7 @@
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,6 +74,29 @@ static volatile int      g_scope_at;
 static volatile float    g_peak;
 static volatile int      g_limited;
 
+/* Loudness, which is not what the peak meter measures.
+ *
+ * Peak and loudness come apart exactly where this synthesizer is most
+ * interesting. Across the voices that carry an effects chain, peak spans four
+ * to one - Aggressor 0.124 against Gravel 0.527 - while their RMS spans three
+ * decibels. Nothing is quieter; drive and crush collapse the crest factor,
+ * which is what distortion does. The ear follows RMS far more closely than
+ * peak, so a peak-only meter reads a driven voice as much quieter than it
+ * sounds, and anyone trimming gain by eye off that meter is being told the
+ * opposite of the truth.
+ *
+ * Accumulated over the whole utterance and reset by SPEAK, to match the peak
+ * hold beside it: a short-time meter would jitter and would not let two voices
+ * be compared once they had finished speaking, which is the thing this is for.
+ *
+ * The main thread zeroes these to reset, which races with the audio thread by
+ * at most one block - the same non-atomic arrangement g_peak has always used,
+ * and for a meter the cost of losing 1024 samples out of an utterance is
+ * nothing. */
+static volatile float    g_rms;      /* published, linear */
+static double            g_rms_sum;  /* audio thread only, except on reset */
+static volatile double   g_rms_n;
+
 static void audio_cb(void *buffer, unsigned int frames)
 {
     short *out = (short *)buffer;
@@ -106,11 +130,25 @@ static void audio_cb(void *buffer, unsigned int frames)
             if (a > g_peak) g_peak = a;
             if (a > 0.85f) g_limited = 1;
 
+            /* Only what the engine actually produced. Past `got` these are the
+             * zeros that pad the last block and then every block after it, and
+             * averaging those in would walk the reading down toward silence for
+             * as long as the window stayed open. Peak does not care, being a
+             * maximum; a mean cares a great deal. */
+            if (i < got) {
+                g_rms_sum += (double)s * (double)s;
+                g_rms_n   += 1.0;
+            }
+
             g_scope[g_scope_at] = s;
             g_scope_at = (g_scope_at + 1) % SCOPE_LEN;
 
             out[done + i] = (short)bm_pcm_sample(s, 0);
         }
+        /* Published once per block rather than per sample: the square root is
+         * cheap but this is the audio thread, and the meter is redrawn sixty
+         * times a second against a block rate of about twenty. */
+        if (g_rms_n > 0.0) g_rms = (float)sqrt(g_rms_sum / g_rms_n);
         done += want;
     }
 }
@@ -689,6 +727,7 @@ int main(int argc, char **argv)
                                 : bm_speak_phonemes(g_engine, song.score, 0);
                 if (rc == BM_OK) {
                     g_peak = 0.0f; g_limited = 0;
+                    g_rms  = 0.0f; g_rms_sum = 0.0; g_rms_n = 0.0;
                     g_finished = 0; g_speaking = 1;
                     snprintf(status, sizeof status,
                              tab == 0 ? "speaking" : "singing");
@@ -1018,14 +1057,28 @@ int main(int argc, char **argv)
             }
             /* The readouts sit under the meter rather than beside it: at
              * BM_PAD from the right edge, "peak 0.00" had nowhere to go and
-             * was clipped. */
-            float gx = W - BM_PAD - 172;
+             * was clipped. Widened from 172 when the RMS figure joined it -
+             * the two belong on one line, because the whole point of showing
+             * them is the distance between them. */
+            float gx = W - BM_PAD - 212;
             bm_waveform((Rectangle){ BM_PAD, y, gx - BM_PAD - 12, 64 },
                         scope_copy, SCOPE_LEN);
-            bm_meter((Rectangle){ gx, y + 4, 168, 16 }, g_peak, g_limited);
+            bm_meter((Rectangle){ gx, y + 4, 208, 16 }, g_peak, g_rms,
+                     g_limited);
             {
-                char pk[48];
-                snprintf(pk, sizeof pk, "peak %.2f", (double)g_peak);
+                char pk[64];
+                /* RMS in decibels and peak as a fraction, which is not an
+                 * inconsistency: peak is read against the limiter at 0.85, so
+                 * a linear number is the one that answers "how close am I",
+                 * while loudness is only ever compared with another loudness
+                 * and decibels are what that comparison is done in. */
+                if (g_rms > 0.0f) {
+                    snprintf(pk, sizeof pk, "peak %.2f  rms %.1f dB",
+                             (double)g_peak,
+                             20.0 * log10((double)g_rms));
+                } else {
+                    snprintf(pk, sizeof pk, "peak %.2f  rms   --", (double)g_peak);
+                }
                 bm_text(&ui, BM_FONT_SMALL, pk, gx, y + 26, BM_TEXT);
                 snprintf(pk, sizeof pk, "%d Hz  mono", SAMPLE_RATE);
                 bm_label(&ui, pk, gx, y + 46);

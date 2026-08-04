@@ -225,6 +225,9 @@ void  bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c);
  * EndDrawing. */
 void  bm_ui_overlay(bm_ui *ui);
 void  bm_waveform(Rectangle r, const float *samples, int count);
-void  bm_meter(Rectangle r, float peak, int limited);
+/* Level, two ways. `rms` is the fill and `peak` a marker on top of it, because
+ * the two answer different questions and this synthesizer routinely makes them
+ * disagree - see the g_rms comment in main.c. Both linear, 0 to 1. */
+void  bm_meter(Rectangle r, float peak, float rms, int limited);
 
 #endif /* BM_GUI_H */

@@ -378,6 +378,33 @@ that need an actual decision when we get there:
       had it is called. `num_id` outliving the focus change is what lets the slider
       notice it was interrupted and commit rather than discard.
 
+- [x] **The meter reads loudness as well as peak.** The peak meter was misinforming
+      anyone who used it to trim gain, and misinforming them hardest on exactly the
+      voices most likely to need trimming. Rendering "compliance is mandatory" through
+      each voice:
+
+      | Voice | peak | RMS |
+      |---|---|---|
+      | `BENCmouth` | 0.520 | −18.98 dB |
+      | `Gravel` | 0.463 | −19.70 dB |
+      | `Trinode` | 0.264 | −17.97 dB |
+      | `Aggressor` | 0.124 | −19.98 dB |
+
+      `Aggressor` peaks nearly four times lower than `Gravel` and is one decibel
+      quieter. `Trinode` peaks half as high as `BENCmouth` and is a decibel *louder*.
+      Drive and crush collapse the crest factor - that is what distortion is - and
+      loudness follows RMS, not peak.
+
+      So the bar fills to RMS and peak becomes a marker on top of it, which is how a
+      meter that has to be believed is usually built. Accumulated over the whole
+      utterance and reset by SPEAK, matching the peak hold rather than being a
+      short-time meter: the question being asked is "is this voice louder than that
+      one", and that question is asked after both have finished speaking.
+
+      Only samples the engine actually produced are averaged in. Past them the callback
+      writes zeros, and a mean that included those would walk toward silence for as long
+      as the window stayed open - a maximum does not care, a mean cares a great deal.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

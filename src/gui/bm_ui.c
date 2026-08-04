@@ -1448,15 +1448,29 @@ void bm_waveform(Rectangle r, const float *samples, int count)
     }
 }
 
-void bm_meter(Rectangle r, float peak, int limited)
+void bm_meter(Rectangle r, float peak, float rms, int limited)
 {
-    float t = peak;
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
+    float p = peak, m = rms;
+
+    if (p < 0.0f) p = 0.0f;
+    if (p > 1.0f) p = 1.0f;
+    if (m < 0.0f) m = 0.0f;
+    if (m > 1.0f) m = 1.0f;
 
     bm_panel(r);
-    DrawRectangle((int)r.x + 1, (int)r.y + 1, (int)((r.width - 2) * t),
+
+    /* Two readings on one bar, which is how a meter that has to be believed is
+     * usually built: the fill is loudness and the marker is headroom. They are
+     * far apart here more often than they would be on a mixing desk, because a
+     * driven voice can sit two thirds of the way up in level while peaking
+     * barely above its own average - and a meter showing only the peak would
+     * call that voice quiet. The gap between the fill and the marker is the
+     * crest factor, drawn. */
+    DrawRectangle((int)r.x + 1, (int)r.y + 1, (int)((r.width - 2) * m),
                   (int)r.height - 2, limited ? BM_ALERT : BM_ACCENT);
+    DrawRectangle((int)(r.x + 1 + (r.width - 3) * p), (int)r.y + 1, 2,
+                  (int)r.height - 2, limited ? BM_ALERT : BM_TEXT);
+
     /* Where the host limiter starts, so a hot voice is visible before it is
      * audible. */
     DrawRectangle((int)(r.x + r.width * 0.85f), (int)r.y, 1, (int)r.height, BM_AMBER);

@@ -744,6 +744,16 @@ whole voice; it is parsed into a copy first, so a file that fails halfway cannot
 you with a half-changed voice. Audio streams from `bm_read()`
 into the audio callback, so moving a slider mid-sentence is audible immediately.
 
+**The meter shows two numbers, and the gap between them is the point.** The fill is RMS,
+the bright marker is peak, and both are held for the whole utterance and reset by SPEAK.
+They disagree here far more than they would on a mixing desk: across the voices that
+carry an effects chain, peak spans four to one — `Aggressor` at 0.124 against `Gravel` at
+0.463 — while their RMS differs by 0.3 dB. Nothing is quieter. Drive and crush collapse
+the crest factor, which is what distortion does, and the ear follows RMS much more
+closely than peak. A peak-only meter calls a driven voice quiet and sends you to turn it
+up. The amber line is where the host limiter starts, at 0.85, and that one is a peak
+question — which is why peak is shown as a fraction of it and loudness in decibels.
+
 LOAD, SAVE and SAVE WAV ask where the file goes or comes from, through whatever dialog
 the system already has: the standard Windows save dialog, the Cocoa save panel on macOS, and
 zenity or kdialog on Unix. Nothing is bundled to do it — those are all either part of
