@@ -493,8 +493,9 @@ a missing helper program.
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 
-On macOS the GUI ships as `BENCmouth.app`. That is not packaging taste — it is the only
-way a macOS program gets an icon. Windows reads the icon from a resource inside the
+On macOS the GUI ships as a disk image: mount `bencmouth-gui-VERSION-macos-arm64.dmg`
+and drag BENCmouth to Applications. Inside it is `BENCmouth.app`, which is not packaging
+taste — a bundle is the only way a macOS program gets an icon. Windows reads the icon from a resource inside the
 executable and X11 takes it from a property the binary sets at startup, but GLFW's Cocoa
 backend ignores `glfwSetWindowIcon` entirely, because a bare Mach-O executable has no
 Finder or Dock identity to hang one on. The bundle is a wrapper: `Contents/MacOS` holds

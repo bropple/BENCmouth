@@ -301,12 +301,25 @@ jobs:
           echo "self-contained"
       # Built here as well as at release time, so a broken bundle shows up on a
       # push rather than on a tag.
-      - name: The .app bundle builds
+      - name: The .app bundle and disk image build
         run: |
           BM_VERSION=0.0.0 ./tools/macos-app.sh bencmouth-gui BENCmouth.app
           test -f BENCmouth.app/Contents/Resources/BENCmouth.icns
           test -f BENCmouth.app/Contents/MacOS/BENCmouth
+          test -d BENCmouth.app/Contents/Resources/voices
           plutil -lint BENCmouth.app/Contents/Info.plist
+          # Finder decides an app is an app from these two facts alone.
+          test "$(plutil -extract CFBundleExecutable raw \
+                    BENCmouth.app/Contents/Info.plist)" = BENCmouth
+          test "$(plutil -extract CFBundlePackageType raw \
+                    BENCmouth.app/Contents/Info.plist)" = APPL
+          ./tools/macos-dmg.sh BENCmouth.app test.dmg "BENCmouth test"
+          # And that the image really contains a draggable pair.
+          hdiutil attach test.dmg -nobrowse -mountpoint /tmp/dmg
+          ls -l /tmp/dmg
+          test -d /tmp/dmg/BENCmouth.app
+          test -L /tmp/dmg/Applications
+          hdiutil detach /tmp/dmg
 
       - uses: actions/upload-artifact@v4
         with:

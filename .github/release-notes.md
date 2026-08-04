@@ -12,7 +12,7 @@ because nobody double-clicks a console program. The GUI is a separate download.
 | Archive | Contains |
 |---|---|
 | `bencmouth-VERSION-PLATFORM` | the `bm` CLI, with live audio and the 124,910-word CMU dictionary |
-| `bencmouth-gui-VERSION-PLATFORM` | `bencmouth-gui` and the CLI beside it |
+| `bencmouth-gui-VERSION-PLATFORM` | `bencmouth-gui` and the CLI beside it (macOS: a `.dmg`, drag to Applications) |
 | `bencmouth-VERSION-wasm` | `bencmouth.wasm` and its JavaScript wrapper |
 
 ```
@@ -22,9 +22,10 @@ because nobody double-clicks a console program. The GUI is a separate download.
 ./bm -m -P "[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0"   # it sings
 ```
 
-On macOS the GUI is `BENCmouth.app`. A bare Mach-O executable cannot have an icon —
-GLFW's Cocoa backend ignores the request — so the bundle is what gives it one. It is a
-thin wrapper: `Contents/MacOS` holds one file.
+**On macOS the GUI is a `.dmg`.** Mount it and drag BENCmouth to Applications. Inside is
+`BENCmouth.app` — a bundle, because that is the only way a macOS program gets an icon:
+a bare Mach-O executable has nothing to attach one to and GLFW's Cocoa backend ignores
+the request. The bundle is a thin wrapper; `Contents/MacOS` holds one file.
 
 macOS builds are unsigned, so Gatekeeper blocks them on first launch. Right-click the
 app and choose Open, or clear the flag the browser attached:

@@ -98,17 +98,23 @@ jobs:
           cp bm README.md LICENSE NOTICE "$D"/
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
-          G="bencmouth-gui-$V-macos-$A"
-          mkdir -p "$G"
-          # A .app, because that is the only way a macOS program gets an icon:
-          # GLFW cannot set one on a bare executable.
-          BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui "$G/BENCmouth.app"
-          cp bm README.md LICENSE NOTICE "$G"/
-          cp -r voices "$G"/
-          tar czf "$G.tar.gz" "$G"
+          # The GUI ships as a disk image, not a tarball. A .app is a directory
+          # that Finder draws as one icon, and a tarball of one arrives looking
+          # like a folder called Contents to anyone who opens it - which is
+          # exactly what happened to the first person who tried. A .dmg mounts
+          # as a window with the app on one side and Applications on the other.
+          BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui BENCmouth.app
+          ./tools/macos-dmg.sh BENCmouth.app "bencmouth-gui-$V-macos-$A.dmg" \
+            "BENCmouth $V"
+          ls -l ./*.dmg
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
-        with: { name: pkg-macos, path: '*.tar.gz', if-no-files-found: error }
+        with:
+          name: pkg-macos
+          path: |
+            *.tar.gz
+            *.dmg
+          if-no-files-found: error
 
   windows:
     runs-on: windows-latest

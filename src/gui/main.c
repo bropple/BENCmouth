@@ -463,11 +463,21 @@ int main(int argc, char **argv)
                 /* Start in the voices folder that ships beside the binary,
                  * which is where the presets are and where SAVE's suggestions
                  * are most likely to be wanted. */
+                /* Beside the binary, then inside a macOS bundle - where the
+                 * executable sits in Contents/MacOS and anything shipped with
+                 * it belongs in Contents/Resources - then the working
+                 * directory, then give up and open wherever. */
                 snprintf(start, sizeof start, "%svoices",
                          GetApplicationDirectory());
                 if (!DirectoryExists(start)) {
+                    snprintf(start, sizeof start, "%s../Resources/voices",
+                             GetApplicationDirectory());
+                }
+                if (!DirectoryExists(start)) {
                     snprintf(start, sizeof start, "%s", "voices");
-                    if (!DirectoryExists(start)) snprintf(start, sizeof start, ".");
+                }
+                if (!DirectoryExists(start)) {
+                    snprintf(start, sizeof start, ".");
                 }
 
                 dlg = bm_open_dialog(GetWindowHandle(), "Load voice", start,
