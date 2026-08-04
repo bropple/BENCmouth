@@ -104,19 +104,22 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
             git
             mingw-w64-ucrt-x86_64-pkg-config
             make zip
+      # raylib's own Makefile, not cmake. cmake's "MinGW Makefiles" generator
+      # wants mingw32-make, which is a separate package from the MSYS make that
+      # is already here - and picking the wrong generator is the kind of thing
+      # that fails at configure time for reasons unrelated to this project.
+      # raylib ships a plain Makefile that needs neither.
       - name: Build raylib from source
         run: |
           git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
-          cmake -S /tmp/raylib -B /tmp/raylib/build -G "MinGW Makefiles" \
-            -DCMAKE_INSTALL_PREFIX=/tmp/rl -DBUILD_SHARED_LIBS=OFF \
-            -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build /tmp/raylib/build -j2
-          cmake --install /tmp/raylib/build
-          ls -l /tmp/rl/lib
+          make -C /tmp/raylib/src PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC -j2
+          mkdir -p /tmp/rl/include /tmp/rl/lib
+          cp /tmp/raylib/src/raylib.h /tmp/raylib/src/raymath.h /tmp/raylib/src/rlgl.h /tmp/rl/include/
+          cp /tmp/raylib/src/libraylib.a /tmp/rl/lib/
+          ls -l /tmp/rl/lib /tmp/rl/include
       - name: Build the CLI
         run: |
           make dict
