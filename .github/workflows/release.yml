@@ -35,13 +35,6 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/raylib/build -j2
           cmake --install /tmp/raylib/build
-      # Writes the disk image's .DS_Store directly. Driving Finder over
-      # AppleScript, which is the usual way, needs an interactive session and
-      # cannot work on a runner.
-      - name: dmgbuild
-        run: |
-          python3 -m venv /tmp/dmgvenv
-          /tmp/dmgvenv/bin/pip install --quiet dmgbuild
       - name: Build
         run: |
           make dict
@@ -87,6 +80,17 @@ jobs:
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
           RAYLIB=/tmp/rl make gui-dict
+      # Writes the disk image's .DS_Store directly. Driving Finder over
+      # AppleScript, which is the usual way, needs an interactive session and
+      # cannot work on a runner. Anchored to this job by a step only this job
+      # has: every platform's `Build` step is worded identically, so a replace
+      # aimed at one of them lands on whichever comes first in the file.
+      - name: dmgbuild
+        run: |
+          python3 -m venv /tmp/dmgvenv
+          /tmp/dmgvenv/bin/pip install --quiet dmgbuild
+          /tmp/dmgvenv/bin/dmgbuild --help >/dev/null
+
       - name: The GUI is self-contained
         run: |
           otool -L bencmouth-gui
