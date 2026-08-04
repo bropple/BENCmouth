@@ -27,7 +27,7 @@ extern "C" {
 
 #define BM_VERSION_MAJOR 0
 #define BM_VERSION_MINOR 1
-#define BM_VERSION_PATCH 2
+#define BM_VERSION_PATCH 3
 
 /* ------------------------------------------------------------------ *
  * Compile-time configuration
