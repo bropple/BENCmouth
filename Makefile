@@ -214,21 +214,37 @@ endif
 src/gui/bencmouth.res.o: src/gui/bencmouth.rc assets/icon/bencmouth.ico
 	$(WINDRES) -I. $< -O coff -o $@
 
+# `--static` matters more than it looks. It makes pkg-config emit Libs.private,
+# which is where raylib declares what *it* needs - GLFW, OpenGL, and the
+# platform libraries. Without it you get a bare -lraylib, and a static
+# libraylib.a then fails to link with undefined __imp_glfw* symbols, because
+# nothing ever supplied GLFW.
+#
+# The fallback names -lglfw3 explicitly since there is no pkg-config to ask.
+# That is a guess, and it is only correct when raylib was built against a system
+# GLFW rather than its bundled copy - which is why pkg-config is tried first
+# rather than being the afterthought.
 ifdef RAYLIB
   RL_CFLAGS := -I$(RAYLIB)/include
   RL_LIBS   := -L$(RAYLIB)/lib -lraylib
 else
   RL_CFLAGS := $(shell pkg-config --cflags raylib 2>/dev/null)
-  RL_LIBS   := $(shell pkg-config --libs raylib 2>/dev/null || echo -lraylib)
+  RL_LIBS   := $(shell pkg-config --libs --static raylib 2>/dev/null)
+  ifeq (,$(RL_LIBS))
+    ifneq (,$(WINDOWS))
+      RL_LIBS := -lraylib -lglfw3
+    else
+      RL_LIBS := -lraylib
+    endif
+  endif
 endif
 
-ifeq ($(UNAME),Darwin)
+# Keyed off the compiler triple like everything else, not uname.
+ifneq (,$(WINDOWS))
+  RL_SYS := -lopengl32 -lgdi32 -lwinmm
+else ifeq ($(UNAME),Darwin)
   RL_SYS := -framework Cocoa -framework IOKit -framework CoreVideo \
             -framework CoreAudio -framework OpenGL
-else ifneq (,$(findstring MINGW,$(UNAME)))
-  RL_SYS := -lopengl32 -lgdi32 -lwinmm
-else ifneq (,$(findstring MSYS,$(UNAME)))
-  RL_SYS := -lopengl32 -lgdi32 -lwinmm
 else
   RL_SYS := -lGL -lm -lpthread -ldl -lrt -lX11
 endif
@@ -241,6 +257,9 @@ gui-info:
 	@echo "  windows  = $(if $(WINDOWS),yes,no)"
 	@echo "  GUI_RES  = $(if $(GUI_RES),$(GUI_RES),(none - no icon will be embedded))"
 	@echo "  GUI_LINK = $(GUI_LINK)"
+	@echo "  RL_CFLAGS= $(RL_CFLAGS)"
+	@echo "  RL_LIBS  = $(if $(RL_LIBS),$(RL_LIBS),(empty - pkg-config found nothing))"
+	@echo "  RL_SYS   = $(RL_SYS)"
 
 gui: $(GUI)
 

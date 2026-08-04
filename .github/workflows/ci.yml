@@ -207,8 +207,17 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-raylib
+            mingw-w64-ucrt-x86_64-glfw
             mingw-w64-ucrt-x86_64-pkg-config
             make
+
+      # Printed before building: when a link fails on GLFW symbols the first
+      # question is always what pkg-config actually returned.
+      - name: What the build decided
+        run: |
+          make gui-info
+          echo "pkg-config --libs        : $(pkg-config --libs raylib || echo '(failed)')"
+          echo "pkg-config --libs --static: $(pkg-config --libs --static raylib || echo '(failed)')"
 
       - name: Build the GUI
         run: make gui
