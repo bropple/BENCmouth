@@ -43,9 +43,18 @@
  * Held per phoneme rather than as running parser state because the generator
  * can be reset and replayed, and a command's effect has to survive that. */
 typedef struct bm_phoneme_mod {
-    float          f0;      /* absolute Hz;   0 = use the voice */
+    float          f0;      /* Hz;            0 = use the voice */
     float          speed;   /* multiplier;    0 = use the voice */
     unsigned short dur_ms;  /* steady length; 0 = use the phoneme */
+
+    /* Whether f0 replaces the planned contour or transposes it.
+     *
+     * [pitch] transposes: the intonation of everything after it is preserved,
+     * shifted to a new base, which is what you want when speaking. [note]
+     * replaces: a sung note is that pitch and not that pitch plus whatever
+     * accent the prosody planner had in mind for the syllable. Getting this
+     * wrong put A4 at 525 Hz instead of 440. */
+    unsigned char  f0_absolute;
 } bm_phoneme_mod;
 
 typedef struct bm_frame_gen {

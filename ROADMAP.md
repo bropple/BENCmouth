@@ -138,7 +138,16 @@ that need an actual decision when we get there:
   Emscripten. The C and the JS are type- and syntax-checked here; the build and a Node
   smoke test that renders audio and inspects it run in CI, which is where the evidence
   that it works actually comes from.*
-- Singing / explicit F0 control through the public `bm_frame` path
+- [x] **Singing.** Two markup commands rather than a separate API: `[note NAME]` sets an
+  absolute pitch by name (`C4`, `A#3`, `Bb5`) and `[hold MS]` sets the length of the
+  vowels that follow. Both reach `bm_speak_phonemes()` too, so `bm -m -P` sings.
+
+  `[note]` had to be *absolute* where `[pitch]` transposes. Sharing the transposing
+  behaviour meant the prosody planner's accent multiplied on top and A4 came out at
+  525 Hz. `[hold]` applies to vowels only: a sung note's duration lives in its vowel,
+  and stretching the consonants turns the word into a groan.
+
+  `render/daisy.txt` holds the score; `make dict && sh` it through `bm -m -P`.
 - ~~Inline markup in text~~ — **done**, and it lives in core. `bm_config.markup` gates it
   at runtime (off by default, so brackets stay ordinary text for anyone who did not opt
   in) and `BM_WITH_MARKUP` removes the parser entirely for embedded builds.

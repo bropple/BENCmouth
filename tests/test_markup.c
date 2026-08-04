@@ -120,6 +120,47 @@ static void test_effects(void)
     }
 }
 
+static void test_singing(void)
+{
+    bm_result rc;
+    float     f0 = 0.0f, f0b = 0.0f;
+    int       plain, held;
+
+    printf("singing\n");
+
+    /* A note is an absolute pitch, not a transposition of the speech contour.
+     * When [note] shared [pitch]'s behaviour, the prosody planner's accent on a
+     * stressed syllable multiplied on top and A4 came out at 525 Hz. */
+    (void)measure("[note A4] AA1", &f0, &rc);
+    printf("    [note A4] final F0 %.1f Hz (A4 = 440.0)\n", (double)f0);
+    check(rc == BM_OK && fabs((double)f0 - 440.0) < 12.0,
+          "[note A4] is 440 Hz, not 440 plus an accent");
+
+    (void)measure("[note C3] AA1", &f0b, &rc);
+    check(fabs((double)f0b - 130.81) < 5.0, "[note C3] is middle-C-minus-an-octave");
+
+    (void)measure("[note Bb3] AA1", &f0b, &rc);
+    check(rc == BM_OK && fabs((double)f0b - 233.08) < 8.0, "flats parse");
+    (void)measure("[note A#3] AA1", &f0b, &rc);
+    check(rc == BM_OK && fabs((double)f0b - 233.08) < 8.0, "sharps parse, and agree");
+
+    (void)measure("[note H4] AA1", 0, &rc);
+    check(rc == BM_ERR_ARG, "a letter that is not a note is rejected");
+
+    /* [hold] lengthens vowels only. Stretching the consonants with them would
+     * turn a sung word into a groan. */
+    plain = measure("D EY1 Z IY0", 0, &rc);
+    held  = measure("[hold 600] D EY1 Z IY0", 0, &rc);
+    printf("    \"daisy\" %d frames, held %d\n", plain, held);
+    check(held > plain + 60, "[hold] lengthens the note");
+
+    {
+        int cons = measure("[hold 600] S S S", 0, &rc);
+        int base = measure("S S S", 0, &rc);
+        check(cons == base, "[hold] leaves consonants alone");
+    }
+}
+
 static void test_errors(void)
 {
     bm_result rc;
@@ -198,6 +239,7 @@ int main(void)
     test_off_by_default();
     test_on_passes_through();
     test_effects();
+    test_singing();
     test_errors();
     test_survives_the_engine();
     printf("\n%s (%d failure%s)\n\n",

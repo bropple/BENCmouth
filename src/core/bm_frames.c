@@ -437,6 +437,45 @@ static float parse_number(const char *s, size_t len, int *ok)
     return neg ? -v : v;
 }
 
+/* Note name to frequency: a letter, an optional accidental, an octave.
+ * "A4" is 440 Hz and middle C is "C4", which is the convention a song is
+ * actually written in - asking someone to transcribe a melody into hertz is
+ * asking them to do arithmetic instead of music.
+ *
+ * Returns 0 if this is not a note name, which is how the command parser tells
+ * a note from a number. */
+static int parse_note(const char *s, size_t len, float *out_hz)
+{
+    static const int SEMITONE[7] = { 9, 11, 0, 2, 4, 5, 7 };  /* A B C D E F G */
+    size_t i = 0;
+    int    letter, accidental = 0, octave = 4, midi;
+
+    while (i < len && is_ws(s[i])) i++;
+    if (i >= len) return 0;
+
+    letter = s[i];
+    if (letter >= 'a' && letter <= 'z') letter -= 'a' - 'A';
+    if (letter < 'A' || letter > 'G') return 0;
+    i++;
+
+    if (i < len && (s[i] == '#' || s[i] == 's')) { accidental = 1; i++; }
+    else if (i < len && (s[i] == 'b' || s[i] == 'B')) { accidental = -1; i++; }
+
+    if (i < len && s[i] >= '0' && s[i] <= '9') {
+        octave = s[i] - '0';
+        i++;
+    }
+    while (i < len && is_ws(s[i])) i++;
+    if (i != len) return 0;
+
+    /* MIDI note 69 is A4 = 440 Hz. */
+    midi = (octave + 1) * 12 + SEMITONE[letter - 'A'] + accidental;
+    if (midi < 12 || midi > 108) return 0;
+
+    *out_hz = 440.0f * bm_exp2f((float)(midi - 69) / 12.0f);
+    return 1;
+}
+
 static int word_is(const char *s, size_t len, const char *word)
 {
     size_t i;
@@ -468,6 +507,17 @@ static bm_result parse_command(const char *s, size_t len,
         cur->f0 = 0.0f;
         cur->speed = 0.0f;
         cur->dur_ms = 0u;
+        cur->f0_absolute = 0u;
+        return BM_OK;
+    }
+
+    /* [note] takes a name, not a number, so it is resolved before the numeric
+     * argument is parsed. */
+    if (word_is(s + k, name_end - k, "note")) {
+        float hz;
+        if (!parse_note(s + name_end, len - name_end, &hz)) return BM_ERR_ARG;
+        cur->f0 = hz;
+        cur->f0_absolute = 1u;
         return BM_OK;
     }
 
@@ -481,12 +531,19 @@ static bm_result parse_command(const char *s, size_t len,
     if (word_is(s + k, name_end - k, "pitch")) {
         if (value < 20.0f || value > 500.0f) return BM_ERR_ARG;
         cur->f0 = value;
+        cur->f0_absolute = 0u;
     } else if (word_is(s + k, name_end - k, "speed")) {
         if (value < 0.1f || value > 10.0f) return BM_ERR_ARG;
         cur->speed = value;
     } else if (word_is(s + k, name_end - k, "pause")) {
         if (value < 0.0f || value > 10000.0f) return BM_ERR_ARG;
         *pause_ms = (unsigned)value;
+    } else if (word_is(s + k, name_end - k, "hold")) {
+        /* Absolute length for the vowels that follow. Applied to vowels only:
+         * a sung note's duration lives in its vowel, and stretching the
+         * consonants with it would turn "Daisy" into a groan. */
+        if (value < 0.0f || value > 10000.0f) return BM_ERR_ARG;
+        cur->dur_ms = (unsigned short)value;
     } else {
         return BM_ERR_UNSUPPORTED;
     }
@@ -512,6 +569,7 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
     cur.f0 = 0.0f;
     cur.speed = 0.0f;
     cur.dur_ms = 0u;
+    cur.f0_absolute = 0u;
 
     while (i < len) {
         size_t start;
@@ -569,7 +627,11 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
         g->seq[g->count] = p;
         g->stress[g->count] = stress;
         g->mod[g->count] = cur;
-        g->mod[g->count].dur_ms = 0u;   /* only [pause] sets an absolute length */
+        /* [hold] applies to vowels only; everything else keeps its own timing.
+         * [pause] sets a length directly on the silence it inserts, above. */
+        if (p->cls != BM_CLS_VOWEL && p->cls != BM_CLS_DIPHTHONG) {
+            g->mod[g->count].dur_ms = 0u;
+        }
         g->count++;
     }
 
@@ -632,8 +694,12 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
              * replace the contour, it transposes it - otherwise [pitch 90]
              * would flatten the intonation of everything after it. */
             float target = g->f0_plan[g->index];
-            if (g->mod[g->index].f0 > 0.0f && g->voice.f0_base > 1.0f) {
-                target *= g->mod[g->index].f0 / g->voice.f0_base;
+            if (g->mod[g->index].f0 > 0.0f) {
+                if (g->mod[g->index].f0_absolute) {
+                    target = g->mod[g->index].f0;   /* a note is that note */
+                } else if (g->voice.f0_base > 1.0f) {
+                    target *= g->mod[g->index].f0 / g->voice.f0_base;
+                }
             }
             if (!g->f0_started) { g->f0_smooth = target; g->f0_started = 1; }
             g->f0_smooth += F0_SMOOTH * (target - g->f0_smooth);
@@ -647,8 +713,13 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
                     : 0.0f;
             float base = (g->mod[g->index].f0 > 0.0f)
                        ? g->mod[g->index].f0 : g->voice.f0_base;
-            float f0 = base * (1.0f + (F0_DECLINATION - 1.0f) * t);
-            if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;
+            float f0;
+            if (g->mod[g->index].f0_absolute) {
+                f0 = base;              /* no declination, no stress bump */
+            } else {
+                f0 = base * (1.0f + (F0_DECLINATION - 1.0f) * t);
+                if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;
+            }
             out->f0 = f0;
         }
 

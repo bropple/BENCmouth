@@ -157,7 +157,18 @@ bm -m "[pitch 70] low ... [reset] and back to normal"
 | `[pitch N]` | base pitch in Hz, 20–500, for everything after it |
 | `[speed X]` | rate multiplier, 0.1–10 |
 | `[pause N]` | N milliseconds of silence, inserted here (max 10000) |
+| `[note NAME]` | absolute pitch by name — `C4`, `A#3`, `Bb5`, `G` |
+| `[hold N]` | length in ms of the vowels that follow |
 | `[reset]` | back to the voice's own settings |
+
+`[note]` and `[hold]` are what make it sing. `[note]` is absolute where `[pitch]` is a
+transposition — a sung note should be that pitch, not that pitch plus whatever accent the
+prosody planner had in mind. `[hold]` applies only to vowels, because that is where a
+note's duration lives; stretching the consonants turns the word into a groan.
+
+```
+bm -m -P "[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0 ..." -o daisy.wav
+```
 
 Commands survive into the phoneme string rather than being resolved away, so `bm -m -t`
 shows exactly what the synthesizer will act on, and `-P` input honours them too:
