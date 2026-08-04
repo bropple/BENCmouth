@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding
+.PHONY: all lib bm demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding gui-dict
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -276,6 +276,19 @@ gui-info:
 	@echo "  GLFW     = $(if $(GLFW_LIB),$(firstword $(GLFW_LIB)) (found),none found - assuming raylib bundles it)"
 
 gui: $(GUI)
+
+# The GUI with the dictionary compiled in.
+#
+# This exists because `make dict && make gui` only worked by luck. The gui
+# target links whatever libbencmouth.a happens to be sitting in the tree, so
+# whether the window pronounced "robot" as R OW B AA T or R AA B AA T came down
+# to which target had been run last - and the CI jobs that publish the GUI
+# never ran `make dict` at all, so every artifact was the rules-only build. A
+# named target says what it builds instead of depending on the order somebody
+# typed things in.
+gui-dict: $(DICT_DATA)
+	$(MAKE) clean-objs
+	$(MAKE) gui OPT="$(OPT) -DBM_WITH_DICT=1"
 
 $(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render

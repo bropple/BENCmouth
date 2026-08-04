@@ -208,7 +208,7 @@ static int is_digit(char c) { return c >= '0' && c <= '9'; }
 
 /* Runs one word through the rules and appends the result. */
 static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
-                         size_t at, bm_result *rc)
+                         size_t at, bm_result *rc, unsigned flags)
 {
     char   phon[MAX_WORD * 6];
     size_t n = 0;
@@ -232,7 +232,7 @@ static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
             size_t start = 0, i = 0;
             for (;; i++) {
                 if (s[i] == ' ' || s[i] == '\0') {
-                    if (i > start) at = speak_word(s + start, i - start, out, cap, at, rc);
+                    if (i > start) at = speak_word(s + start, i - start, out, cap, at, rc, flags);
                     start = i + 1;
                     if (s[i] == '\0') break;
                 }
@@ -243,7 +243,8 @@ static size_t speak_word(const char *w, size_t len, char *out, size_t cap,
 
     /* The dictionary, when one is compiled in. It supplies stress digits,
      * which the rules cannot produce at all. */
-    if (bm_dict_lookup(w, len, phon, sizeof phon, &n) == BM_OK && n > 0) {
+    if ((flags & BM_TEXT_NO_DICT) == 0u &&
+        bm_dict_lookup(w, len, phon, sizeof phon, &n) == BM_OK && n > 0) {
         return put(out, cap, at, phon, ' ');
     }
 
@@ -279,7 +280,8 @@ bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
     if (text == 0 || out == 0 || out_cap == 0) return BM_ERR_ARG;
 
 #if !BM_WITH_MARKUP
-    (void)flags;   /* the parser is compiled out; nothing consults it */
+    /* The markup parser is compiled out, but BM_TEXT_NO_DICT still reaches
+     * speak_word, so flags is not unused. */
 #endif
 
     if (text_len == 0) {
@@ -293,7 +295,7 @@ bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
         if (is_letter(c)) {
             size_t start = i;
             while (i < text_len && is_letter(text[i])) i++;
-            at = speak_word(text + start, i - start, out, out_cap, at, &rc);
+            at = speak_word(text + start, i - start, out, out_cap, at, &rc, flags);
             if (rc != BM_OK) return rc;
             if (at > out_cap) return BM_ERR_OVERFLOW;
 
@@ -310,7 +312,7 @@ bm_result bm_text_to_phonemes_ex(const char *text, size_t text_len,
             for (;; w++) {
                 if (words[w] == ' ' || words[w] == '\0') {
                     if (w > ws) {
-                        at = speak_word(words + ws, w - ws, out, out_cap, at, &rc);
+                        at = speak_word(words + ws, w - ws, out, out_cap, at, &rc, flags);
                         if (rc != BM_OK) return rc;
                     }
                     ws = w + 1;

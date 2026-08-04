@@ -119,6 +119,11 @@ void  bm_divider(float x, float y, float w);
 void  bm_label(const bm_ui *ui, const char *s, float x, float y);
 
 int   bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled);
+
+/* A button that stays pressed. Filled when on, outlined when off - the state
+ * is the fill, so it reads at a glance rather than only from the label. */
+int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
+                int enabled);
 int   bm_slider(const bm_ui *ui, Rectangle r, const char *label,
                 float *value, float lo, float hi, const char *fmt);
 int   bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,

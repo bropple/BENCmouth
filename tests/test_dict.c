@@ -104,6 +104,44 @@ static void test_present_build(void)
         check(strstr(phon, "ER1") != 0, "primary stress reaches the phoneme stream");
         check(strstr(phon, "AH0") != 0, "unstressed vowels are marked too");
     }
+
+    printf("\n  BM_TEXT_NO_DICT switches the dictionary off at runtime\n");
+    {
+        char with[512], without[512];
+        size_t a = 0, b = 0;
+
+        bm_text_to_phonemes_ex("robot", 0, with, sizeof with, &a, 0u);
+        bm_text_to_phonemes_ex("robot", 0, without, sizeof without, &b,
+                               BM_TEXT_NO_DICT);
+        printf("    dictionary: %s\n    rules:      %s\n", with, without);
+
+        /* The word this was reported against. The rules see two syllables and
+         * no reason to make either of them OW. */
+        check(strstr(with, "OW") != 0, "the dictionary rounds the first vowel");
+        check(strstr(without, "OW") == 0, "the rules do not");
+        check(strcmp(with, without) != 0, "the flag actually changes the answer");
+
+        /* Stress digits come from the dictionary only, so their absence is a
+         * second, independent signal that the rules ran. */
+        check(strstr(without, "1") == 0 && strstr(without, "0") == 0,
+              "no stress digits survive with the dictionary off");
+    }
+
+    printf("\n  and the engine honours config.use_dict\n");
+    {
+        bm_engine_storage st;
+        bm_engine *e = 0;
+        bm_config cfg;
+
+        bm_config_default(&cfg);
+        check(cfg.use_dict == 1, "the dictionary is on by default");
+
+        cfg.use_dict = 0;
+        check(bm_engine_init(&st, &cfg, &e) == BM_OK, "an engine with it off starts");
+        check(bm_speak_text(e, "robot", 0) == BM_OK, "and speaks");
+        check(bm_engine_set_dictionary(e, 1) == BM_OK, "it can be switched back on");
+        check(bm_engine_set_dictionary(0, 1) == BM_ERR_ARG, "and rejects a null engine");
+    }
 }
 
 int main(void)

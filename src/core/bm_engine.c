@@ -155,6 +155,13 @@ bm_result bm_speak_phonemes(bm_engine *engine, const char *phonemes, size_t len)
     return BM_OK;
 }
 
+bm_result bm_engine_set_dictionary(bm_engine *engine, int enabled)
+{
+    if (engine == 0) return BM_ERR_ARG;
+    engine->config.use_dict = enabled ? 1 : 0;
+    return BM_OK;
+}
+
 bm_result bm_speak_text(bm_engine *engine, const char *text, size_t len)
 {
     size_t    n = 0;
@@ -164,7 +171,8 @@ bm_result bm_speak_text(bm_engine *engine, const char *text, size_t len)
 
     rc = bm_text_to_phonemes_ex(text, len, engine->phonemes,
                                 sizeof engine->phonemes, &n,
-                                engine->config.markup ? BM_TEXT_MARKUP : 0u);
+                                (engine->config.markup ? BM_TEXT_MARKUP : 0u) |
+                                (engine->config.use_dict ? 0u : BM_TEXT_NO_DICT));
     if (rc != BM_OK) return rc;
     if (n == 0) return BM_ERR_ARG;
 

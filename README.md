@@ -466,15 +466,24 @@ const pcm = bm.say('hello world');         // or just the Float32Array
 ### The GUI
 
 ```
-make gui          # or: RAYLIB=/some/prefix make gui
+make gui-dict     # the GUI, with the CMU dictionary compiled in
+make gui          # without it - smaller, letter-to-sound rules only
 ./bencmouth-gui              # optionally: ./bencmouth-gui 1400x760
 ```
+
+`make gui` and `make gui-dict` differ in one thing that you can hear. Without the
+dictionary every word goes through the letter-to-sound rules, which get *robot* as
+`R AA B AA T` — two flat vowels, no stress. With it, `R OW1 B AA2 T`. The DICT button
+switches between the two at runtime so you can hear the difference on any word, which
+is also how you find the ones worth adding to the exception list; it greys out in a
+build that has no dictionary to switch to. The status line says which build you have.
 
 Type, and the phoneme readout under the field updates as you go. Both panels wrap and
 scroll — mouse wheel or the bar on the right — so a paragraph is as workable as a
 sentence. The text box is a real text box: click to put the caret anywhere, drag or
 shift-arrow to select, Ctrl-A/C/X/V (Cmd on macOS), Ctrl-arrow by word, Home and End,
-and a right-click menu for the same. Every slider is bound to a `.voice` file key, so
+and a right-click menu for the same. The phoneme readout follows the DICT button, so
+what you see is what SPEAK will say. Every slider is bound to a `.voice` file key, so
 what you tune and what SAVE writes cannot drift apart. Audio streams from `bm_read()`
 into the audio callback, so moving a slider mid-sentence is audible immediately.
 

@@ -195,6 +195,14 @@ const bm_voice *bm_voice_preset(const char *name);
 
 /* Enumeration, for CLI help and tests. */
 int             bm_voice_preset_count(void);
+
+/* Number of dictionary entries compiled in, or 0 in a build without one.
+ *
+ * Public because a caller cannot otherwise tell, and the difference is
+ * audible: without the dictionary every word goes through the letter-to-sound
+ * rules, which get "robot" as R AA B AA T. A front end that shows which build
+ * it is saves someone diagnosing a pronunciation that is working as designed. */
+int             bm_dict_count(void);
 const bm_voice *bm_voice_preset_at(int index);
 
 /* Applies one `key = value` setting to a voice, for voice files and CLI
@@ -295,6 +303,11 @@ typedef struct bm_config {
      * characters into commands, which would silently swallow text for any
      * caller who did not ask for it. See BM_TEXT_MARKUP. */
     int markup;
+
+    /* Consult the dictionary when one is compiled in. On by default, because a
+     * dictionary that is present and unused is a surprise; turning it off is
+     * how you hear the rules on their own. See BM_TEXT_NO_DICT. */
+    int use_dict;
 } bm_config;
 
 void bm_config_default(bm_config *config);
@@ -311,6 +324,11 @@ void bm_engine_reset(bm_engine *engine);
 /* Swaps the voice mid-stream. Takes effect at the next phoneme boundary,
  * so it will not click. */
 bm_result bm_engine_set_voice(bm_engine *engine, const bm_voice *voice);
+
+/* Turns the dictionary on or off on a live engine. Takes effect on the next
+ * bm_speak_text(); an utterance already queued is unaffected. Harmless in a
+ * build without a dictionary, where the rules are the only path either way. */
+bm_result bm_engine_set_dictionary(bm_engine *engine, int enabled);
 
 /* ------------------------------------------------------------------ *
  * Speaking
@@ -367,6 +385,15 @@ bm_result bm_text_to_phonemes(const char *text, size_t text_len,
  * ------------------------------------------------------------------ */
 
 #define BM_TEXT_MARKUP 0x01u
+
+/* Skip the dictionary and send every word through the letter-to-sound rules.
+ *
+ * A switch rather than a rebuild because the difference is the interesting
+ * part: the rules are what a build for a microcontroller has, and hearing what
+ * they do to a word - "robot" as R AA B AA T - is how you find the words that
+ * need an exception. No effect in a build without a dictionary, where the
+ * rules are the only path anyway. */
+#define BM_TEXT_NO_DICT 0x02u
 
 /* As bm_text_to_phonemes(), with behaviour flags. Passing 0 is identical to
  * the plain call, which is what that call does. */

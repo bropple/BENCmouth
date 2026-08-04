@@ -40,7 +40,7 @@ jobs:
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
-          RAYLIB=/tmp/rl make gui
+          RAYLIB=/tmp/rl make gui-dict
           ./bm -l && ./bm "release build" -o /dev/null || true
       - name: Package
         run: |
@@ -73,7 +73,7 @@ jobs:
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
-          make gui
+          make gui-dict
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"
@@ -130,7 +130,7 @@ jobs:
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
       - name: Build the GUI
-        run: RAYLIB=/tmp/rl make gui
+        run: RAYLIB=/tmp/rl make gui-dict
 
       # Do not ship a release whose window shows the wrong icon.
       - name: The icon is the one GLFW will use

@@ -57,8 +57,7 @@ extern const unsigned int  BM_DICT_BLOCK_PHONE[];
 bm_result bm_dict_lookup(const char *word, size_t len,
                          char *out, size_t out_cap, size_t *out_len);
 
-/* Number of entries compiled in, or 0 when built without the dictionary.
- * Lets a caller report which build it is without preprocessor games. */
-int bm_dict_count(void);
+/* bm_dict_count() is declared in bencmouth.h: front ends need it, and they are
+ * not allowed in here. */
 
 #endif /* BM_DICT_H */

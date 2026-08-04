@@ -18,6 +18,19 @@
 
 #define CHUNK 4096
 
+/* Which pronunciation path this build has. Without the dictionary every word
+ * goes through the letter-to-sound rules, which get "robot" as R AA B AA T -
+ * correct for the rules and wrong for the word. Worth saying out loud rather
+ * than leaving someone to deduce it from what they hear. */
+static const char *dict_line(void)
+{
+    static char buf[64];
+    int n = bm_dict_count();
+    if (n <= 0) return "letter-to-sound rules only (build with `make dict`)";
+    snprintf(buf, sizeof buf, "%d-word dictionary, then the rules", n);
+    return buf;
+}
+
 static void usage(void)
 {
     printf(
@@ -41,6 +54,7 @@ static void usage(void)
 "  -h           this help\n"
 "\n"
 "audio backend: %s\n"
+"pronunciation: %s\n"
 "\n"
 "examples:\n"
 "  bm \"hello world\" -o hello.wav\n"
@@ -50,7 +64,7 @@ static void usage(void)
 "  bm -m \"normal. [pitch 70][speed 0.8] and now slow.\"\n"
 "  bm -a \"straight out of the speakers\"\n"
 "  bm -R 4242 -w found.voice   # keep a random voice you liked\n",
-        bm_audio_backend());
+        bm_audio_backend(), dict_line());
 }
 
 int main(int argc, char **argv)

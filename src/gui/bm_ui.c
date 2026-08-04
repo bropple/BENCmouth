@@ -157,6 +157,32 @@ int bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled)
     return enabled && over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
+int bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
+              int enabled)
+{
+    Vector2 m = GetMousePosition();
+    int over = enabled && mouse_free(ui) && CheckCollisionPointRec(m, r);
+    int hit  = over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+    Color fill, text;
+    float w;
+
+    if (!enabled)     { fill = BM_PANEL; text = BM_BORDER; }
+    else if (*on)     { fill = BM_ACCENT; text = BM_BG; }
+    else if (over)    { fill = BM_EDGE;  text = BM_TEXT; }
+    else              { fill = BM_PANEL; text = BM_DIM; }
+
+    DrawRectangleRounded(r, BM_RADIUS / r.height, 4, fill);
+    DrawRectangleRoundedLines(r, BM_RADIUS / r.height, 4,
+                              enabled ? BM_ACCENT : BM_BORDER);
+
+    w = bm_text_measure(ui, BM_FONT_SMALL, label, 1.0f);
+    bm_text_spaced(ui, BM_FONT_SMALL, label, r.x + (r.width - w) * 0.5f,
+                   r.y + (r.height - BM_FONT_SMALL) * 0.5f, text);
+
+    if (hit) *on = !*on;
+    return hit;
+}
+
 int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
               float *value, float lo, float hi, const char *fmt)
 {

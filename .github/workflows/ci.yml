@@ -172,7 +172,7 @@ jobs:
       # builds - not that it draws. It was run headless under Xvfb during
       # development, which is where the screenshot in the README came from.
       - name: Build the GUI
-        run: RAYLIB=/tmp/rl make gui
+        run: RAYLIB=/tmp/rl make gui-dict
 
       # The font goes with it: the OFL requires the licence to travel with the
       # binary that embeds it.
@@ -230,7 +230,7 @@ jobs:
         run: RAYLIB=/tmp/rl make gui-info
 
       - name: Build the GUI
-        run: RAYLIB=/tmp/rl make gui
+        run: RAYLIB=/tmp/rl make gui-dict
 
       # A missing resource is not a link error - windres simply not running
       # leaves an iconless binary that builds and works - so this checks for the
@@ -283,7 +283,7 @@ jobs:
       - name: What the build decided
         run: make gui-info
       - name: Build the GUI
-        run: make gui
+        run: make gui-dict
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-macos

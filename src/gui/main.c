@@ -165,6 +165,7 @@ int main(int argc, char **argv)
     const char *voice_names[16];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
     int   i, dirty = 1;
+    int   have_dict = 0, use_dict = 1;
     bm_edit text_st, phon_st;
     Color status_color;
 
@@ -172,6 +173,8 @@ int main(int argc, char **argv)
 
     bm_config_default(&config);
     config.sample_rate = SAMPLE_RATE;
+    have_dict = bm_dict_count() > 0;
+    use_dict  = have_dict;
     config.markup = 1;          /* the GUI is a place to experiment */
     voice = config.voice;
 
@@ -242,8 +245,20 @@ int main(int argc, char **argv)
 #endif
 
     status_color = BM_DIM;
-    snprintf(status, sizeof status, "ready  -  %s%s", ui.font_name,
-             ui.loaded ? "" : "  (no Terminus TTF found)");
+    {
+        /* Say which pronunciation path this build has. Without the dictionary
+         * every word goes through the letter-to-sound rules, which get "robot"
+         * as R AA B AA T - correct for the rules, wrong for the word - and
+         * nothing on screen said so. */
+        int  words = bm_dict_count();
+        char dict[64];
+
+        if (words > 0) snprintf(dict, sizeof dict, "%d-word dictionary", words);
+        else           snprintf(dict, sizeof dict, "no dictionary - rules only");
+
+        snprintf(status, sizeof status, "ready  -  %s%s  -  %s", ui.font_name,
+                 ui.loaded ? "" : "  (no Terminus TTF found)", dict);
+    }
 
     while (!WindowShouldClose()) {
         float W = (float)GetScreenWidth();
@@ -263,8 +278,9 @@ int main(int argc, char **argv)
          * not free, and doing it every frame would be silly. */
         if (dirty) {
             size_t n = 0;
+            unsigned tf = BM_TEXT_MARKUP | (use_dict ? 0u : BM_TEXT_NO_DICT);
             if (bm_text_to_phonemes_ex(text, 0, phonemes, sizeof phonemes, &n,
-                                       BM_TEXT_MARKUP) != BM_OK) {
+                                       tf) != BM_OK) {
                 snprintf(phonemes, sizeof phonemes, "(cannot convert that)");
             }
             dirty = 0;
@@ -333,6 +349,7 @@ int main(int argc, char **argv)
                 size_t cap = 0, len = 0;
 
                 c2.voice = voice;
+                c2.use_dict = use_dict;
                 if (bm_engine_init(&s2, &c2, &e2) == BM_OK &&
                     bm_speak_text(e2, text, 0) == BM_OK) {
                     while (bm_is_speaking(e2)) {
@@ -395,6 +412,21 @@ int main(int argc, char **argv)
                 bm_engine_set_voice(g_engine, &voice);
                 snprintf(status, sizeof status, "random voice, seed %u", seed);
                 status_color = BM_ACCENT;
+            }
+
+            /* Greyed rather than hidden in a build without a dictionary: the
+             * absence is the thing worth knowing, and a control that is simply
+             * missing tells you nothing. */
+            b.x += 84; b.width = 150;
+            if (bm_toggle(&ui, b, have_dict ? (use_dict ? "DICT ON" : "DICT OFF")
+                                            : "NO DICTIONARY",
+                          &use_dict, have_dict)) {
+                bm_engine_set_dictionary(g_engine, use_dict);
+                dirty = 1;
+                snprintf(status, sizeof status, "%s",
+                         use_dict ? "dictionary on"
+                                  : "dictionary off - letter-to-sound rules only");
+                status_color = use_dict ? BM_DIM : BM_AMBER;
             }
         }
         y += 38;
