@@ -402,6 +402,16 @@ render/               generated audio; gitignored
 
 ---
 
+## Prebuilt binaries
+
+Every push builds on Linux, macOS and Windows and keeps the result. Grab one from the
+[latest run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — each job
+attaches its `bm` (with live audio and the dictionary compiled in), plus `bencmouth.wasm`
+and the Linux GUI. They are build artifacts rather than releases, so they expire; for
+anything permanent, build it.
+
+---
+
 ## License
 
 MIT — see `LICENSE`. Do what you like with it; keep the copyright notice. That is the only
@@ -446,7 +456,7 @@ const pcm = bm.say('hello world');         // or just the Float32Array
 
 ```
 make gui          # or: RAYLIB=/some/prefix make gui
-./bencmouth-gui
+./bencmouth-gui              # optionally: ./bencmouth-gui 1400x580
 ```
 
 ![the BENCmouth GUI](render/gui-screenshot.png)

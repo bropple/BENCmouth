@@ -1,5 +1,9 @@
 name: build
 
+# Each job keeps what it built. An earlier version ran `make clean` as the last
+# step of several jobs, so CI proved the build worked and then deleted the
+# evidence - the artifacts below are the point of running it on three platforms.
+
 # The README claims BENCmouth builds on Linux, macOS and Windows, but only the
 # Linux path was ever built by hand. This is what turns that claim into
 # something verified rather than asserted.
@@ -41,13 +45,27 @@ jobs:
           ./bm -l
           ls -l ci.wav
 
-      # Compile-only. A CI runner has no sound card, so this proves the backend
-      # builds and links, not that it plays - only the ALSA path has been heard.
-      - name: Build the audio backend
+      # Built last so it is what survives: the CLI with live audio and the
+      # dictionary compiled in, which is the build someone would actually want.
+      # A runner has no sound card, so this proves the backend links, not that
+      # it plays - only the ALSA path has been heard.
+      - name: Build the release binary
         run: |
           make clean
-          make audio
+          make dict
+          make clean-objs
+          make audio OPT="-O2 -DBM_WITH_DICT=1"
           ./bm -h | grep "audio backend"
+          ./bm "continuous integration" -o ci.wav
+          ls -l bm ci.wav
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-${{ matrix.os }}
+          path: |
+            bm
+            ci.wav
+          if-no-files-found: error
 
   windows:
     name: windows-latest (ucrt64)
@@ -82,11 +100,23 @@ jobs:
           ./bm -l
           ls -l ci.wav
 
-      - name: Build the audio backend
+      - name: Build the release binary
         run: |
           make clean
-          make audio
+          make dict
+          make clean-objs
+          make audio OPT="-O2 -DBM_WITH_DICT=1"
           ./bm -h | grep "audio backend"
+          ./bm "continuous integration" -o ci.wav
+          ls -l bm.exe ci.wav
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-windows
+          path: |
+            bm.exe
+            ci.wav
+          if-no-files-found: error
 
   wasm:
     name: wasm32 (freestanding, no libc)
@@ -105,6 +135,15 @@ jobs:
       # all - there is no toolchain for it on the machine it was written on.
       - name: Run the module under Node
         run: node src/wasm/test_wasm.mjs bencmouth.wasm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-wasm
+          path: |
+            bencmouth.wasm
+            src/wasm/bencmouth.js
+            src/wasm/test_wasm.mjs
+          if-no-files-found: error
 
   gui:
     name: GUI (raylib)
@@ -135,6 +174,18 @@ jobs:
       - name: Build the GUI
         run: RAYLIB=/tmp/rl make gui
 
+      # The font goes with it: the OFL requires the licence to travel with the
+      # binary that embeds it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-gui-linux
+          path: |
+            bencmouth-gui
+            assets/fonts/TerminusTTF.ttf
+            assets/fonts/OFL.txt
+          if-no-files-found: error
+
+      # Last, because it cleans - and by now the artifact is already uploaded.
       - name: The rest of the project still builds without raylib
         run: |
           make clean

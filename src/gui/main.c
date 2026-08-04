@@ -121,7 +121,21 @@ static float param_get(const bm_voice *v, const char *key)
     return 0.0f;
 }
 
-int main(void)
+/* Optional "WxH" on the command line. Useful for a cramped desktop, and it is
+ * what produced the screenshot in the README at a sensible resolution. */
+static void parse_size(int argc, char **argv, int *w, int *h)
+{
+    int i, a, b;
+    for (i = 1; i < argc; i++) {
+        if (sscanf(argv[i], "%dx%d", &a, &b) == 2 && a >= 760 && b >= 540 &&
+            a <= 8192 && b <= 8192) {
+            *w = a;
+            *h = b;
+        }
+    }
+}
+
+int main(int argc, char **argv)
 {
     bm_ui     ui;
     bm_config config;
@@ -152,7 +166,11 @@ int main(void)
 
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(WIN_W, WIN_H, "BENCmouth");
+    {
+        int w = WIN_W, h = WIN_H;
+        parse_size(argc, argv, &w, &h);
+        InitWindow(w, h, "BENCmouth");
+    }
     SetWindowMinSize(760, 540);
     SetTargetFPS(60);
     InitAudioDevice();
