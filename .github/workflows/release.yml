@@ -104,8 +104,10 @@ jobs:
           # exactly what happened to the first person who tried. A .dmg mounts
           # as a window with the app on one side and Applications on the other.
           BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui BENCmouth.app
+          # No version in the volume name: it becomes the mounted disk's name,
+          # and "BENCmouth" is what belongs on a desktop.
           ./tools/macos-dmg.sh BENCmouth.app "bencmouth-gui-$V-macos-$A.dmg" \
-            "BENCmouth $V"
+            BENCmouth
           ls -l ./*.dmg
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4

@@ -313,12 +313,18 @@ jobs:
                     BENCmouth.app/Contents/Info.plist)" = BENCmouth
           test "$(plutil -extract CFBundlePackageType raw \
                     BENCmouth.app/Contents/Info.plist)" = APPL
-          ./tools/macos-dmg.sh BENCmouth.app test.dmg "BENCmouth test"
-          # And that the image really contains a draggable pair.
+          ./tools/macos-dmg.sh BENCmouth.app test.dmg BENCmouthTest
+          # And that the image really contains a draggable pair, with the
+          # styling actually applied - a .DS_Store is what carries the window
+          # layout, so an image without one opens as a plain list and the
+          # background nobody sees might as well not exist.
           hdiutil attach test.dmg -nobrowse -mountpoint /tmp/dmg
-          ls -l /tmp/dmg
+          ls -la /tmp/dmg
           test -d /tmp/dmg/BENCmouth.app
           test -L /tmp/dmg/Applications
+          test -f /tmp/dmg/.DS_Store
+          test -f /tmp/dmg/.VolumeIcon.icns
+          ls /tmp/dmg/.background/
           hdiutil detach /tmp/dmg
 
       - uses: actions/upload-artifact@v4
