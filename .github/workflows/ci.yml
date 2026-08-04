@@ -49,19 +49,32 @@ jobs:
       # text, so a change to the voice keys, the effect keys or the markup
       # commands can invalidate one without touching a line of C - and nothing
       # else in the suite would notice.
-      - name: The shipped songs sing
+      # ...and none of them may hit the limiter. Both novelty songs did on
+      # first writing - sustained notes with the declination switched off stack
+      # up the way a flutter-free voice does - and a shipped file that clips is
+      # not something anyone would think to check by hand twice.
+      - name: The shipped songs sing, without clipping
         run: |
+          fail=0
           for s in songs/*.bmsong; do
             echo "== $s"
-            ./bm -S "$s" -o /dev/null
+            if ./bm -S "$s" -o /dev/null 2>&1 | tee /dev/stderr | grep -q LIMITED; then
+              echo "   ^ hits the limiter"; fail=1
+            fi
           done
+          exit $fail
 
-      - name: The shipped voices load
+      - name: The shipped voices load, without clipping
         run: |
+          fail=0
           for v in voices/*.voice; do
             echo "== $v"
-            ./bm -f "$v" "check" -o /dev/null
+            if ./bm -f "$v" "The quick brown fox jumps over the lazy dog." \
+                 -o /dev/null 2>&1 | tee /dev/stderr | grep -q LIMITED; then
+              echo "   ^ hits the limiter"; fail=1
+            fi
           done
+          exit $fail
 
       - name: Every effects preset renders
         run: |

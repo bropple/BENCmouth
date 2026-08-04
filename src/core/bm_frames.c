@@ -57,8 +57,15 @@ enum {
 
 /* ------------------------------------------------------------------ */
 
-static float stress_duration_scale(unsigned char stress, const bm_phoneme *p)
+/* `flatten` blends the result toward 1.0, which is what removes durational
+ * emphasis: at 1 every vowel takes its nominal length whatever stress digit it
+ * carries. Kept here rather than at the call sites so that the two places that
+ * ask for a duration scale cannot disagree about it. */
+static float stress_duration_scale(unsigned char stress, const bm_phoneme *p,
+                                   float flatten)
 {
+    float scale;
+
     if (p->cls != BM_CLS_VOWEL && p->cls != BM_CLS_DIPHTHONG) return 1.0f;
 
     /* No stress digit at all is not the same as a digit saying "unstressed".
@@ -69,9 +76,15 @@ static float stress_duration_scale(unsigned char stress, const bm_phoneme *p)
      * nominal duration alone. */
     if (stress == BM_STRESS_UNMARKED) return 1.0f;
 
-    if (stress == 1u) return DUR_STRESS_PRIMARY;
-    if (stress == 2u) return DUR_STRESS_SECONDARY;
-    return DUR_STRESS_NONE;
+    if      (stress == 1u) scale = DUR_STRESS_PRIMARY;
+    else if (stress == 2u) scale = DUR_STRESS_SECONDARY;
+    else                   scale = DUR_STRESS_NONE;
+
+    if (flatten > 0.0f) {
+        float f = bm_clampf(flatten, 0.0f, 1.0f);
+        scale += (1.0f - scale) * f;
+    }
+    return scale;
 }
 
 static int ms_to_frames(const bm_frame_gen *g, unsigned short ms,
@@ -96,7 +109,7 @@ static float phoneme_speed(const bm_frame_gen *g, int index)
 static int segment_frames(const bm_frame_gen *g, int index, int seg)
 {
     const bm_phoneme *p = g->seq[index];
-    float scale = stress_duration_scale(g->stress[index], p);
+    float scale = stress_duration_scale(g->stress[index], p, g->voice.flatten);
     float speed = phoneme_speed(g, index);
     unsigned short steady = g->mod[index].dur_ms;
 
@@ -140,7 +153,8 @@ static float undershoot_weight(const bm_frame_gen *g, int index)
     /* Shorter segments undershoot more, because there is less time to travel.
      * This is exactly why unstressed syllables reduce so heavily in English,
      * and why a synthesizer that hits every target sounds over-enunciated. */
-    dur = (float)p->steady_ms * stress_duration_scale(g->stress[index], p);
+    dur = (float)p->steady_ms *
+          stress_duration_scale(g->stress[index], p, g->voice.flatten);
     if (dur < 1.0f) dur = 1.0f;
 
     w = 80.0f / dur;
@@ -693,6 +707,24 @@ int bm_frame_gen_length(const bm_frame_gen *g)
     return (g == 0) ? 0 : g->frames_total;
 }
 
+/* Pulls a computed pitch toward the voice's flat base by `flatten`.
+ *
+ * Applied to whichever contour produced the value, so one parameter covers both
+ * the phrase planner and the older declination rather than each needing its own
+ * escape hatch. An absolute [note] is left alone - see bm_voice.flatten. */
+static float flattened(const bm_frame_gen *g, float f0)
+{
+    float f, flat;
+
+    if (g->voice.flatten <= 0.0f) return f0;
+    if (g->mod[g->index].f0_absolute) return f0;
+
+    f = bm_clampf(g->voice.flatten, 0.0f, 1.0f);
+    flat = (g->mod[g->index].f0 > 0.0f) ? g->mod[g->index].f0
+                                        : g->voice.f0_base;
+    return f0 + (flat - f0) * f;
+}
+
 int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
 {
     if (g == 0 || out == 0) return 0;
@@ -740,6 +772,7 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
             if (!g->f0_started) { g->f0_smooth = target; g->f0_started = 1; }
             g->f0_smooth += F0_SMOOTH * (target - g->f0_smooth);
             out->f0 = g->f0_smooth;
+            out->f0 = flattened(g, out->f0);
         } else {
             /* Pre-bm_prosody.c contour, preserved verbatim for voices that do
              * not opt in. Note it is a function of elapsed frames, not phoneme
@@ -756,7 +789,7 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
                 f0 = base * (1.0f + (F0_DECLINATION - 1.0f) * t);
                 if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;
             }
-            out->f0 = f0;
+            out->f0 = flattened(g, f0);
         }
 
         g->last = *out;

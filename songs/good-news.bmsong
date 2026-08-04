@@ -1,0 +1,51 @@
+# BENCmouth song
+#
+# The counterpart to bad-news.bmsong, and the same point: this is a score, not
+# a voice. Same engine, same markup, opposite mood - which is entirely a matter
+# of which notes are written down.
+#
+# The tune is a plain major-key fanfare written for this file, so there is no
+# provenance question to answer about it.
+#
+#   make bm && ./bm -S songs/good-news.bmsong -a
+
+title          = Good News
+voice          = Bright
+tempo          = 132
+
+f0_base        = 165
+f0_range       = 5
+f0_flutter     = 0.25
+vibrato        = 0.3
+vibrato_rate   = 5.5
+speed          = 1
+throat         = 1.08
+mouth          = 1.14
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.48
+whisper        = 0
+gain           = 0.66
+coarticulation = 0.55
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.8
+flatten        = 0
+
+score =
+# "Ev-ery-thing has fin-ished with-out a sin-gle er-ror!"
+[hold 220][note C4] EH1 V
+[hold 220][note E4] R IY0
+[hold 340][note G4] TH IH2 NG
+[hold 220][note G4] HH AE1 Z
+[hold 220][note A4] F IH1 N
+[hold 220][note G4] IH0 SH
+[hold 340][note E4] T
+[hold 220][note E4] W IH0 TH
+[hold 220][note G4] AW1 T
+[hold 220][note C5] AH0
+[hold 340][note G4] S IH1 NG
+[hold 220][note E4] G AH0 L
+[hold 220][note D4] EH1
+[hold 220][note E4] R ER0
+[hold 620][note C4] .

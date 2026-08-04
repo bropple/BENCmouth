@@ -202,6 +202,29 @@ typedef struct bm_voice {
      * touching the table, so a large speaker used to get a small speaker's
      * bandwidths. */
     float bandwidth_track;
+
+    /* How much prosodic variation is removed, 0..1.
+     *
+     * This one runs the other way from its neighbours - 0 is still the setting
+     * that changes nothing, but here 1 is *less* natural rather than more. It
+     * exists because "monotone" turned out not to mean what the parameters said
+     * it meant.
+     *
+     * `f0_range` is documented as "0 = monotone robot", and for a voice using
+     * the phrase-level planner it is. For a voice with `prosody` at 0 it was
+     * read by nothing at all: the older contour applied its declination and its
+     * stressed-syllable bump regardless, so BENCmouth Monotone swung 28.5% in
+     * pitch - 4.3 semitones, the same spread as BENCmouth Retro - and stretched
+     * stressed vowels to 1.61x the length of unstressed ones.
+     *
+     * At 1 there is no declination, no pitch accent, and every vowel takes its
+     * nominal length whatever stress it carries. The pitch is one number for
+     * the whole utterance and the emphasis is the same everywhere.
+     *
+     * An absolute `[note]` is exempt: a sung note is that note, and flattening
+     * it would make song mode and this parameter mutually exclusive for no
+     * reason. */
+    float flatten;
 } bm_voice;
 
 /* Fills in a sane default voice. Start here, then perturb. */

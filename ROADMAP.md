@@ -230,6 +230,33 @@ that need an actual decision when we get there:
       a full-width slider is laid out exactly as before and only a narrow one
       gives ground.
 
+## Monotone, actually
+
+- [x] **`flatten`** (`bm_voice.flatten`, 0..1, default 0). BENCmouth Monotone was not
+      monotone. `f0_range = 0` is documented as "monotone robot" and is read only by
+      `bm_prosody.c`, which that preset does not use - so the older contour went on
+      applying its 18% declination and its 6% stressed-syllable bump, and the preset
+      measured a **28.5% pitch swing**, 4.3 semitones, the same spread as BENCmouth
+      Retro. Stressed vowels also ran 1.61x the length of unstressed ones.
+
+      At 1: no declination, no pitch accent, no durational stress. Default 0, so every
+      other preset is untouched and Retro's reference is unmoved. An absolute `[note]`
+      is exempt - flattening it would have made song mode and this parameter mutually
+      exclusive for no reason.
+
+      Monotone now measures 120.0..120.0 Hz across an utterance, and the same vowels
+      take the same number of frames whatever stress digit they carry.
+
+- [x] **Second wave of voice analogues.** `Frantic` and `Grizzled` as presets;
+      `Emissary`, `Diver` and `Foreman` as `.voice` files, because each needs an effects
+      chain and an effect is not part of a `bm_voice`. Plus `songs/bad-news.bmsong` and
+      `songs/good-news.bmsong`, which are the honest form of two classic novelty
+      "voices" that were always scores rather than settings.
+
+      Both songs hit the limiter on first writing - sustained notes with the declination
+      off stack up the way a flutter-free voice does - so CI now fails if any shipped
+      voice or song clips.
+
 ## Releases
 
 Tagging is **paused** until the release pipeline is finished. The runners already build

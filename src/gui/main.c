@@ -134,7 +134,8 @@ static const param_row PARAMS[] = {
     { "coarticulation",  "coart.",        0.0f,   1.0f, "%.2f"    },
     { "prosody",         "prosody",       0.0f,   1.0f, "%.2f"    },
     { "formant_glide",   "glide",         0.0f,   1.0f, "%.2f"    },
-    { "bandwidth_track", "bandwidth",     0.0f,   1.0f, "%.2f"    }
+    { "bandwidth_track", "bandwidth",     0.0f,   1.0f, "%.2f"    },
+    { "flatten",         "flatten",       0.0f,   1.0f, "%.2f"    }
 };
 #define NPARAMS ((int)(sizeof PARAMS / sizeof PARAMS[0]))
 
@@ -165,7 +166,8 @@ static float param_get(const bm_voice *v, const char *key)
         "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate",
         "speed", "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "whisper", "gain",
-        "coarticulation", "prosody", "formant_glide", "bandwidth_track"
+        "coarticulation", "prosody", "formant_glide", "bandwidth_track",
+        "flatten"
     };
     const float *f = (const float *)(const void *)&v->f0_base;
     int i;

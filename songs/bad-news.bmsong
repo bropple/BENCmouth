@@ -1,0 +1,52 @@
+# BENCmouth song
+#
+# The announcement nobody wants, delivered to a funeral march.
+#
+# This is here to make a point that CLASSIC-VOICES.md makes in prose: some of
+# the classic novelty "voices" were never voices at all. There is no setting
+# that makes a synthesizer sing a fixed melody - a melody is a score, and a
+# score is this file. Nothing in the voice below is doing the work.
+#
+# The tune is the third movement of Chopin's Piano Sonata No. 2 (1839), which
+# is comfortably public domain.
+#
+#   make bm && ./bm -S songs/bad-news.bmsong -a
+
+title          = Bad News
+voice          = Announcer
+tempo          = 54
+
+f0_base        = 92
+f0_range       = 4
+f0_flutter     = 0.2
+vibrato        = 0.35
+vibrato_rate   = 5
+speed          = 1
+throat         = 0.86
+mouth          = 0.92
+breathiness    = 0
+tilt           = 5
+open_quotient  = 0.55
+whisper        = 0
+gain           = 0.58
+coarticulation = 0.5
+# Off: the melody is written down, and the phrase planner would argue with it.
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.8
+flatten        = 0
+
+score =
+# "The soft-ware you are us-ing has stopped work-ing."
+[hold 620][note B3] DH AH0
+[hold 620][note B3] S AO1 F T
+[hold 460][note B3] W EH2 R
+[hold 160][note B3] Y UW1
+[hold 620][note D4] AA1 R
+[hold 300][note D4] Y UW1 Z
+[hold 160][note C4] IH0 NG
+[hold 620][note C4] HH AE1 Z
+[hold 300][note B3] S T AA1 P T
+[hold 160][note B3] W ER1
+[hold 900][note A3] K IH0 NG
+[pause 500]

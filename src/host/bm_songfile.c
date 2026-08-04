@@ -267,6 +267,7 @@ int bm_song_save(const char *path, const bm_song *song, const char *score)
     fprintf(f, "prosody        = %.6g\n", (double)v->prosody);
     fprintf(f, "formant_glide  = %.6g\n", (double)v->formant_glide);
     fprintf(f, "bandwidth_track= %.6g\n", (double)v->bandwidth_track);
+    fprintf(f, "flatten        = %.6g\n", (double)v->flatten);
 
     if (song->effects.ring > 0.0f || song->effects.comb > 0.0f ||
         song->effects.drive > 0.0f || song->effects.crush > 0.0f) {

@@ -1,0 +1,43 @@
+# BENCmouth voice
+# The site announcement nobody wants to hear, over a speaker that has been
+# outdoors for fifteen years.
+#
+# The chain is the point rather than the voice: a plain mid-range speaker, then
+# drive to strain it, a comb where a small horn speaker would resonate, and
+# crush for the sense of a signal that has been through cheap electronics. Turn
+# the effects off and this is an ordinary voice, which is the honest way round -
+# the damage is in the equipment, not the person.
+#
+#   ./bm -f voices/Foreman.voice -a "attention. this area is now restricted"
+
+name           = Foreman
+
+f0_base        = 108
+f0_range       = 4
+f0_flutter     = 0.28
+vibrato        = 0
+vibrato_rate   = 0
+speed          = 0.95
+
+throat         = 0.94
+mouth          = 1
+
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.48
+whisper        = 0
+gain           = 1
+
+coarticulation = 0.55
+prosody        = 0.75
+formant_glide  = 1
+bandwidth_track= 0.8
+flatten        = 0
+
+ring           = 0
+ring_hz        = 0
+comb           = 0.5
+comb_hz        = 700
+drive          = 0.6
+crush          = 0.38
+level          = 1.05

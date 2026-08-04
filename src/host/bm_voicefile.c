@@ -165,6 +165,7 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
     fprintf(f, "prosody        = %.6g\n", (double)voice->prosody);
     fprintf(f, "formant_glide  = %.6g\n", (double)voice->formant_glide);
     fprintf(f, "bandwidth_track= %.6g\n", (double)voice->bandwidth_track);
+    fprintf(f, "flatten        = %.6g\n", (double)voice->flatten);
 
     /* Only when there is something to say. A file full of zeroed effect keys
      * would suggest the voice has an effects chain that happens to be off,

@@ -38,7 +38,7 @@ static const bm_voice BM_PRESETS[] = {
       1.0f,
       1.0f, 1.0f,
       0.0f, 6.0f, 0.50f, 0.0f, 1.0f,
-      0.60f, 0.85f, 1.0f, 0.80f },
+      0.60f, 0.85f, 1.0f, 0.80f, 0.0f },
 
     /* BENCmouth Retro - the original voice.
      *
@@ -62,19 +62,30 @@ static const bm_voice BM_PRESETS[] = {
       0.0f,     /* coarticulation - off, and staying off */
       0.0f,     /* prosody        - likewise */
       0.0f,     /* formant_glide  - likewise */
-      0.0f },   /* bandwidth_track - likewise */
+      0.0f,     /* bandwidth_track - likewise */
+      0.0f },   /* flatten - the declination and the stress bump stay */
 
-    /* Retro taken further: no flutter, no intonation. The gain trim is not
-     * cosmetic - with flutter at zero the pulse train is perfectly periodic,
-     * so the cascade resonators are excited in lockstep and peaks stack up.
-     * At unity this voice hit 0.96 where the others sit near 0.55. */
+    /* Retro taken further: no flutter, and now genuinely no intonation.
+     *
+     * It was not, for a long time. `f0_range = 0` is documented as "monotone
+     * robot" and is read only by the phrase planner, which this voice does not
+     * use - so the older contour went on applying its 18% declination and its
+     * 6% bump on stressed syllables, and this preset swung 28.5% in pitch, the
+     * same spread as BENCmouth Retro. `flatten = 1` is what actually delivers
+     * the name: one pitch for the whole utterance, and every vowel its nominal
+     * length whatever stress it carries.
+     *
+     * The gain trim is not cosmetic - with flutter at zero the pulse train is
+     * perfectly periodic, so the cascade resonators are excited in lockstep and
+     * peaks stack up. At unity this voice hit 0.96 where the others sit near
+     * 0.55. */
     { "BENCmouth Monotone",
       120.0f, 0.0f, 0.0f,
       0.0f, 0.0f,
       1.0f,
       1.0f, 1.0f,
       0.0f, 4.0f, 0.50f, 0.0f, 0.62f,
-      0.0f, 0.0f, 0.0f, 0.0f },
+      0.0f, 0.0f, 0.0f, 0.0f, 1.0f },
 
     /* Larger speaker. The tuning here is deliberate: an earlier version
      * dropped f0 to 92 with only a slight tract change and was heard as Retro
@@ -90,7 +101,7 @@ static const bm_voice BM_PRESETS[] = {
       0.93f,
       0.78f, 0.84f,
       0.0f, 9.0f, 0.58f, 0.0f, 1.0f,
-      0.60f, 0.85f, 1.0f, 0.80f },
+      0.60f, 0.85f, 1.0f, 0.80f, 0.0f },
 
     /* Smaller speaker: shorter tract, higher pitch, brighter because less
      * spectral tilt. */
@@ -100,7 +111,7 @@ static const bm_voice BM_PRESETS[] = {
       1.05f,
       1.10f, 1.16f,
       0.0f, 3.0f, 0.46f, 0.0f, 1.0f,
-      0.60f, 0.90f, 1.0f, 0.80f },
+      0.60f, 0.90f, 1.0f, 0.80f, 0.0f },
 
     /* ---- the classic set ---------------------------------------------
      *
@@ -128,7 +139,7 @@ static const bm_voice BM_PRESETS[] = {
       1.10f,
       1.02f, 1.06f,
       0.0f, 2.0f, 0.42f, 0.0f, 0.92f,
-      0.0f, 0.0f, 0.0f, 0.0f },
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
 
     /* The deep one. Long tract, slow, soft-edged: heavy spectral tilt is what
      * turns a low voice from a buzz into a rumble, and it does more of the work
@@ -139,7 +150,7 @@ static const bm_voice BM_PRESETS[] = {
       0.88f,
       0.74f, 0.80f,
       1.5f, 10.0f, 0.60f, 0.0f, 1.0f,
-      0.60f, 0.90f, 1.0f, 0.80f },
+      0.60f, 0.90f, 1.0f, 0.80f, 0.0f },
 
     /* The operator. A female tract is roughly 15% shorter than a male one, and
      * measurably breathier - Klatt & Klatt 1990 found the open quotient and the
@@ -151,7 +162,7 @@ static const bm_voice BM_PRESETS[] = {
       1.0f,
       1.14f, 1.18f,
       4.0f, 6.0f, 0.58f, 0.0f, 0.95f,
-      0.60f, 0.90f, 1.0f, 0.80f },
+      0.60f, 0.90f, 1.0f, 0.80f, 0.0f },
 
     /* The child. Both axes pushed further than any adult setting, because a
      * child's tract really is that much shorter - and the pitch alone would
@@ -162,7 +173,7 @@ static const bm_voice BM_PRESETS[] = {
       1.08f,
       1.26f, 1.32f,
       3.0f, 3.0f, 0.50f, 0.0f, 0.72f,
-      0.65f, 0.90f, 1.0f, 0.80f },
+      0.65f, 0.90f, 1.0f, 0.80f, 0.0f },
 
     /* The whisper. Voicing fully traded for turbulence, so there is no
      * fundamental at all and f0_base only decides what the pitch *would* be -
@@ -174,7 +185,7 @@ static const bm_voice BM_PRESETS[] = {
       0.95f,
       1.0f, 1.04f,
       0.0f, 4.0f, 0.55f, 1.0f, 1.0f,
-      0.60f, 0.85f, 1.0f, 0.80f },
+      0.60f, 0.85f, 1.0f, 0.80f, 0.0f },
 
     /* The one that came loose. Flutter near its limit, a fast shallow vibrato
      * on top, wide intonation and a harsh source. Flutter and vibrato together
@@ -186,7 +197,42 @@ static const bm_voice BM_PRESETS[] = {
       1.15f,
       0.95f, 1.10f,
       0.0f, 1.5f, 0.40f, 0.0f, 0.85f,
-      0.70f, 1.0f, 1.0f, 0.80f }
+      0.70f, 1.0f, 1.0f, 0.80f, 0.0f },
+
+    /* ---- second wave ---------------------------------------------------
+     *
+     * The novelty end of the same era's rosters. These two need only voice
+     * parameters; the ones that also need an effects chain are `.voice` files
+     * in voices/, because an effect is not part of a bm_voice and a preset
+     * table that held every voice-plus-effect pairing would be mostly
+     * duplication. See CLASSIC-VOICES.md.
+     */
+
+    /* The manic one. Fast, high, and unstable in two ways at once: flutter
+     * near its ceiling for the aperiodic jitter and a wide fast vibrato on top
+     * of it. Distinct from Rattled by being *quick* - Rattled is a machine that
+     * has come loose, this one has had far too much of something. */
+    { "Frantic",
+      190.0f, 9.0f, 0.55f,
+      0.90f, 7.5f,
+      1.35f,
+      1.12f, 1.20f,
+      0.0f, 2.0f, 0.42f, 0.0f, 0.80f,
+      0.70f, 1.0f, 1.0f, 0.80f, 0.0f },
+
+    /* The old one. Low and slow, with the two things that make a voice sound
+     * worn rather than merely deep: heavy flutter, which is the aperiodic
+     * wobble of folds that no longer close cleanly, and a high open quotient,
+     * which is the breath that escapes because they no longer close fully.
+     * Neither is a pitch change, and pitch alone would only have made a
+     * younger person sound larger. */
+    { "Grizzled",
+      78.0f, 3.5f, 0.68f,
+      0.0f, 0.0f,
+      0.90f,
+      0.86f, 0.92f,
+      6.0f, 7.0f, 0.64f, 0.0f, 1.0f,
+      0.60f, 0.85f, 1.0f, 0.80f, 0.0f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
@@ -354,6 +400,12 @@ void bm_voice_random(bm_voice *voice, uint32_t seed)
     voice->prosody        = rnd_range(&st, 0.55f, 1.00f);
     voice->formant_glide  = rnd_range(&st, 0.40f, 1.00f);
     voice->bandwidth_track = rnd_range(&st, 0.50f, 1.00f);
+
+    /* Not drawn. A random voice should be a plausible speaker, and removing all
+     * of its intonation makes it a machine reading a list - which is a specific
+     * effect somebody asks for, not a corner of the voice space worth exploring
+     * by accident. */
+    voice->flatten        = 0.0f;
 }
 
 bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
@@ -383,6 +435,7 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
     else if (key_equals("prosody",        key, key_len)) voice->prosody = value;
     else if (key_equals("formant_glide",  key, key_len)) voice->formant_glide = value;
     else if (key_equals("bandwidth_track",key, key_len)) voice->bandwidth_track = value;
+    else if (key_equals("flatten",        key, key_len)) voice->flatten = value;
     else return BM_ERR_ARG;
 
     return BM_OK;

@@ -279,7 +279,8 @@ static void test_every_field_has_a_key(void)
         "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate", "speed",
         "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "whisper", "gain",
-        "coarticulation", "prosody", "formant_glide", "bandwidth_track"
+        "coarticulation", "prosody", "formant_glide", "bandwidth_track",
+        "flatten"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, mismatched = 0;
@@ -293,7 +294,7 @@ static void test_every_field_has_a_key(void)
      * introduced four bytes of pad and made it report a field that does not
      * exist. Spanning named members is padding-proof. */
     {
-        size_t span = offsetof(bm_voice, bandwidth_track) + sizeof(float)
+        size_t span = offsetof(bm_voice, flatten) + sizeof(float)
                     - offsetof(bm_voice, f0_base);
         size_t float_fields = span / sizeof(float);
         printf("    %d keys for %lu tunable fields\n", nkeys, (unsigned long)float_fields);
@@ -560,6 +561,95 @@ static void test_vibrato(void)
     check(bm_voice_preset("retro")->vibrato == 0.0f, "Retro has no vibrato");
 }
 
+/* Total frames a phoneme string takes, which is how durational emphasis is
+ * observed from outside: the same vowels with different stress digits take
+ * different amounts of time unless something has flattened them. */
+static int frames_for(const bm_voice *v, const char *phonemes)
+{
+    bm_frame_gen g;
+    bm_frame     f;
+    int          n = 0;
+
+    bm_frame_gen_init(&g, FRAME_HZ, v);
+    if (bm_frame_gen_set_phonemes(&g, phonemes, 0) != BM_OK) return -1;
+    while (bm_frame_gen_next(&g, &f)) n++;
+    return n;
+}
+
+/* Pitch extremes over an utterance. */
+static void f0_range_of(const bm_voice *v, const char *phonemes,
+                        float *lo, float *hi)
+{
+    bm_frame_gen g;
+    bm_frame     f;
+
+    *lo = 1e9f;
+    *hi = -1e9f;
+    bm_frame_gen_init(&g, FRAME_HZ, v);
+    if (bm_frame_gen_set_phonemes(&g, phonemes, 0) != BM_OK) return;
+    while (bm_frame_gen_next(&g, &f)) {
+        if (f.f0 <= 0.0f) continue;
+        if (f.f0 < *lo) *lo = f.f0;
+        if (f.f0 > *hi) *hi = f.f0;
+    }
+}
+
+static void test_flatten(void)
+{
+    const char *UTT = "DH IH1 S IH1 Z AH0 T EH1 S T";
+    bm_voice v, flat;
+    float    lo, hi, flo, fhi;
+    int      stressed, unstressed, f_stressed, f_unstressed;
+
+    printf("flatten\n");
+
+    bm_voice_default(&v);
+    v.prosody = 0.0f;              /* the older contour, which Monotone uses */
+    v.f0_flutter = 0.0f;
+    flat = v;
+    flat.flatten = 1.0f;
+
+    f0_range_of(&v,    UTT, &lo,  &hi);
+    f0_range_of(&flat, UTT, &flo, &fhi);
+    printf("    f0 %.1f..%.1f Hz  ->  %.1f..%.1f Hz\n",
+           (double)lo, (double)hi, (double)flo, (double)fhi);
+
+    /* The declination and the stressed-syllable bump are both in the older
+     * contour, and neither was gated by anything before this parameter. */
+    check(hi - lo > 10.0f, "without it the pitch moves across an utterance");
+    check(fhi - flo < 0.01f, "with it the pitch is one number throughout");
+    check(flo > v.f0_base * 0.98f && flo < v.f0_base * 1.02f,
+          "and that number is the voice's own base");
+
+    /* Durational emphasis, observed as the length of the same vowels under
+     * different stress digits. */
+    stressed   = frames_for(&v, "M IY1 M IY1 M IY1");
+    unstressed = frames_for(&v, "M IY0 M IY0 M IY0");
+    f_stressed   = frames_for(&flat, "M IY1 M IY1 M IY1");
+    f_unstressed = frames_for(&flat, "M IY0 M IY0 M IY0");
+    printf("    stressed vs unstressed: %d vs %d frames  ->  %d vs %d\n",
+           stressed, unstressed, f_stressed, f_unstressed);
+
+    check(stressed > unstressed, "without it a stressed vowel is longer");
+    check(f_stressed == f_unstressed, "with it every vowel takes the same time");
+
+    /* The parameter has to leave a voice that did not ask for it alone, which
+     * is the contract every other one here obeys. */
+    check(bm_voice_preset("retro")->flatten == 0.0f, "Retro does not flatten");
+    check(bm_voice_preset("monotone")->flatten == 1.0f,
+          "BENCmouth Monotone does, which is what its name claims");
+
+    /* An absolute note must survive it, or song mode and this parameter would
+     * be mutually exclusive for no reason. */
+    {
+        float nlo, nhi;
+        f0_range_of(&flat, "[note A3] AA1 AA1", &nlo, &nhi);
+        printf("    [note A3] under flatten: %.1f..%.1f Hz\n",
+               (double)nlo, (double)nhi);
+        check(nlo > 215.0f && nhi < 225.0f, "an absolute note is exempt");
+    }
+}
+
 /* Last-frame bandwidth for a phoneme, at a given tracking strength. */
 static void bandwidths_for(const char *ph, float track, float *f1, float *b1)
 {
@@ -643,6 +733,7 @@ int main(void)
     printf("\nBENCmouth voice tests\n\n");
     test_formant_glide();
     test_bandwidth_tracking();
+    test_flatten();
     test_whisper();
     test_vibrato();
     test_random_voices();

@@ -1,0 +1,42 @@
+# BENCmouth voice
+# Talking from inside something. Burbling, and slightly too far away.
+#
+# The vibrato is doing something it was not designed for: at 1.9 semitones and
+# 9 Hz it is well past anything a singer would produce, and past the point
+# where the ear hears it as pitch at all. It becomes a warble instead, which is
+# most of the burble. The comb supplies the small enclosure and the crush
+# supplies the sense of a signal that has been through something lossy.
+#
+#   ./bm -f voices/Diver.voice -a "everything down here is fine"
+
+name           = Diver
+
+f0_base        = 138
+f0_range       = 5
+f0_flutter     = 0.45
+vibrato        = 1.9
+vibrato_rate   = 9
+speed          = 0.96
+
+throat         = 1.02
+mouth          = 1.08
+
+breathiness    = 3
+tilt           = 5
+open_quotient  = 0.56
+whisper        = 0
+gain           = 0.9
+
+coarticulation = 0.7
+prosody        = 0.8
+formant_glide  = 1
+bandwidth_track= 0.8
+flatten        = 0
+
+ring           = 0.18
+ring_hz        = 33
+comb           = 0.6
+comb_hz        = 520
+drive          = 0.2
+crush          = 0.45
+level          = 1.2

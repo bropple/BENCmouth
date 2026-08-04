@@ -1,0 +1,47 @@
+# BENCmouth voice
+# The one that speaks for something that is not from here.
+#
+# Almost all of this is the ring modulator. Multiplying speech by a sine
+# replaces every harmonic with a pair of sidebands either side of the carrier,
+# and because the carrier bears no musical relation to the fundamental the
+# result is inharmonic - there is no pitch for the ear to lock onto, which is
+# precisely why it does not sound like a person rather than sounding like a
+# person with an effect on.
+#
+# The voice underneath is flattened on purpose. Intonation is a human signal,
+# and leaving it in makes the thing sound like someone doing an impression.
+#
+#   ./bm -f voices/Emissary.voice -a "we have been expecting you"
+
+name           = Emissary
+
+f0_base        = 112
+f0_range       = 0
+f0_flutter     = 0
+vibrato        = 0
+vibrato_rate   = 0
+speed          = 0.94
+
+throat         = 0.96
+mouth          = 1.04
+
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.44
+whisper        = 0
+gain           = 0.8
+
+coarticulation = 0
+prosody        = 0
+formant_glide  = 0
+bandwidth_track= 0
+# One pitch, one emphasis, everywhere. See bm_voice.flatten.
+flatten        = 1
+
+ring           = 0.9
+ring_hz        = 74
+comb           = 0
+comb_hz        = 0
+drive          = 0.15
+crush          = 0
+level          = 1.3

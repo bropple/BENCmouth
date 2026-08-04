@@ -218,7 +218,7 @@ bm "hello world" -o - > /tmp/x.wav && afplay /tmp/x.wav   # macOS
 
 ## Voices
 
-Eleven presets ship in the binary:
+Thirteen presets ship in the binary:
 
 | Voice | Character |
 |---|---|
@@ -233,6 +233,8 @@ Eleven presets ship in the binary:
 | `Cadet` | a child |
 | `Whisper` | no voicing at all — turbulence through the formants |
 | `Rattled` | the one that came loose |
+| `Frantic` | fast, high and unstable — far too much of something |
+| `Grizzled` | old and worn: heavy flutter and a leaky glottis, not just a low pitch |
 
 The last six are the **classic set**, aimed at the voices desktop machines shipped with in
 the eighties and early nineties. They are tuned toward those archetypes from the published
@@ -285,6 +287,14 @@ Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`
 `whisper` and `vibrato` are worth calling out because each is easily confused with a
 neighbour:
 
+- **`flatten` is what "monotone" actually needs.** `f0_range` is documented as
+  "0 = monotone robot" and for a voice using the phrase planner it is — but a voice with
+  `prosody` at 0 uses the older contour, which read `f0_range` not at all and applied its
+  declination and its stressed-syllable bump regardless. BENCmouth Monotone swung **28.5%
+  in pitch**, 4.3 semitones, the same spread as BENCmouth Retro, and stretched stressed
+  vowels to 1.61× the length of unstressed ones. At `flatten = 1` the pitch is one number
+  for the whole utterance and every vowel takes its nominal length whatever stress it
+  carries. An absolute `[note]` is exempt, so song mode still works.
 - **`whisper` is not `breathiness`.** Breathiness *adds* aspiration alongside phonation and
   leaves the vocal folds working. Whispering is not breathy speech — the folds do not
   vibrate at all, so there is no fundamental, and the formants are excited by glottal
@@ -384,9 +394,12 @@ Six presets ship:
 | `Sentinel` | the metallic sentry — inhuman rather than angry |
 | `Enforcer` | the aggressive one; drive carries it |
 
-`voices/Sentry.voice` and `voices/Aggressor.voice` pair each of the last two with a
-voice, since what makes something sound like a particular character is usually both
-together. A `.voice` file can carry an `effects = NAME` line and any of the keys above.
+Several `.voice` files pair a voice with a chain, since what makes something sound like
+a particular character is usually both together — `Aggressor` and `Sentry` for the two
+above, plus `Emissary` (ring-modulated, flattened, not from here), `Diver` (burbling,
+from inside something), and `Foreman` (a site announcement through fifteen-year-old
+outdoor speakers). A `.voice` file can carry an `effects = NAME` line and any of the
+keys above.
 
 **Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:
 `drive` is a threshold effect, and a drive stage that saw an untrimmed signal would
@@ -573,8 +586,14 @@ for a 90 Hz voice with a little vibrato sounds wrong out of a 200 Hz voice with 
 
 ```
 bm -S songs/daisy.bmsong -a
-bm -S songs/daisy.bmsong -o daisy.wav
+bm -S songs/bad-news.bmsong -a      # the announcement nobody wants
+bm -S songs/good-news.bmsong -a
 ```
+
+`bad-news` and `good-news` exist to make a point CLASSIC-VOICES.md makes in prose: some
+of the classic novelty *voices* were never voices at all. There is no setting that makes
+a synthesizer sing a fixed melody — a melody is a score, and a score is a file. Nothing
+in either voice block is doing the work.
 
 The format is text and deliberately the same shape as a `.voice` file — a header of
 `key = value` lines. The one addition is that a score is many lines of free text, which
