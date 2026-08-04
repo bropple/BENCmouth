@@ -187,11 +187,41 @@ int main(int argc, char **argv)
     SetAudioStreamCallback(stream, audio_cb);
     PlayAudioStream(stream);
 
-    /* Window icon: H. Hex, from the roster. */
+    /* Window icon: H. Hex, from the roster.
+     *
+     * Windows takes it from the GLFW_ICON resource compiled into the binary,
+     * which carries every size Explorer and the taskbar want and needs no file
+     * at runtime. Setting it again here from a 64x64 PNG would override that
+     * with a single size, so on Windows this is left alone.
+     *
+     * Everywhere else there is no such thing as an executable resource, so the
+     * icon has to be loaded from disk - and from more than one place, because
+     * the program is as likely to be run from a menu as from its own
+     * directory. */
+#if !defined(_WIN32)
     {
-        Image icon = LoadImage("assets/icon/hex-64.png");
-        if (icon.data != 0) { SetWindowIcon(icon); UnloadImage(icon); }
+        char beside[1024];
+        const char *candidates[3];
+        size_t k;
+
+        /* Beside the executable first. Someone who unpacks the archive and
+         * launches it from a file manager gets whatever working directory the
+         * file manager felt like, which is rarely the one holding the assets. */
+        snprintf(beside, sizeof beside, "%sassets/icon/hex-64.png",
+                 GetApplicationDirectory());
+        candidates[0] = beside;
+        candidates[1] = "assets/icon/hex-64.png";
+        candidates[2] = "/usr/share/bencmouth/hex-64.png";
+
+        for (k = 0; k < sizeof candidates / sizeof candidates[0]; k++) {
+            if (FileExists(candidates[k])) {
+                Image icon = LoadImage(candidates[k]);
+                if (icon.data != 0) { SetWindowIcon(icon); UnloadImage(icon); }
+                break;
+            }
+        }
     }
+#endif
 
     status_color = BM_DIM;
     snprintf(status, sizeof status, "ready  -  %s%s", ui.font_name,

@@ -208,7 +208,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             git
             mingw-w64-ucrt-x86_64-pkg-config
-            make
+            make python
       # raylib's own Makefile, not cmake. cmake's "MinGW Makefiles" generator
       # wants mingw32-make, which is a separate package from the MSYS make that
       # is already here - and picking the wrong generator is the kind of thing
@@ -240,12 +240,17 @@ jobs:
       # against a statically linked Linux build and failed on a perfectly good
       # Windows one. Look for the .rsrc section instead: it exists only if
       # resources were linked, and it does not care how big anything is.
+      # And it is the icon GLFW will actually use. Presence is not enough:
+      # GLFW loads the window-class icon by the name GLFW_ICON and silently
+      # falls back to the generic Windows one otherwise, so a numerically
+      # numbered icon passes every "is there a resource" test while leaving the
+      # titlebar and taskbar wrong. This walks the resource directory of the
+      # built binary, which is the only place the answer actually lives -
+      # grepping the .rc cannot tell you whether windres ran.
       - name: The icon is really in there
         run: |
           ls -l bencmouth-gui.exe
-          objdump -h bencmouth-gui.exe | grep -q '\.rsrc' \
-            || { echo "no .rsrc section - the icon was not linked"; exit 1; }
-          echo "resource section present"
+          python tools/check_win_icon.py bencmouth-gui.exe
 
       # Static, so a downloaded binary does not need MSYS2's DLLs on PATH.
       - name: No MSYS2 DLL dependencies

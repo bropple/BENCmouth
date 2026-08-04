@@ -1,12 +1,18 @@
 /*
  * BENCmouth GUI - Windows resources
  *
- * The icon lives here and only here. The CLI is a console program that nobody
+ * The icon lives here and only here. The CLI is a console program nobody
  * double-clicks, so giving bm.exe a 370 KB icon would be 370 KB spent on
  * something no one sees.
  *
- * Resource ID 1: Windows uses the lowest-numbered icon in the file as the
- * application icon, in Explorer and in the title bar.
+ * The name matters. GLFW looks for an icon resource called exactly GLFW_ICON
+ * when it registers the window class, and falls back to IDI_APPLICATION - the
+ * generic Windows icon - when it does not find one. A numeric ID gives Explorer
+ * the right icon while leaving the titlebar and taskbar generic, which is
+ * exactly the half-working state this replaces.
+ *
+ * Explorer is happy either way: with one icon group in the binary, that is the
+ * one it uses.
  */
 
-1 ICON "assets/icon/bencmouth.ico"
+GLFW_ICON ICON "assets/icon/bencmouth.ico"
