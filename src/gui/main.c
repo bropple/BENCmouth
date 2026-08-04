@@ -22,8 +22,8 @@
 #include <string.h>
 
 #define WIN_W       900
-#define WIN_H       580
-#define TEXT_CAP    512
+#define WIN_H       700
+#define TEXT_CAP    2048
 #define SCOPE_LEN   2048
 #define SAMPLE_RATE 22050
 
@@ -38,6 +38,9 @@
 static bm_engine_storage g_storage;
 static bm_engine        *g_engine;
 static volatile int      g_speaking;
+/* Latched by the audio thread when an utterance runs out, cleared by the UI
+ * once it has been noticed. A flag rather than an edge: see audio_cb. */
+static volatile int      g_finished;
 static float             g_scope[SCOPE_LEN];
 static volatile int      g_scope_at;
 static volatile float    g_peak;
@@ -51,11 +54,23 @@ static void audio_cb(void *buffer, unsigned int frames)
 
     while (done < frames) {
         unsigned int want = frames - done;
-        size_t got;
+        size_t got = 0;
         unsigned int i;
 
         if (want > 1024) want = 1024;
-        got = g_speaking ? bm_read(g_engine, chunk, want) : 0;
+
+        if (g_speaking) {
+            got = bm_read(g_engine, chunk, want);
+            /* Latched, not left for the UI to spot as a change between frames.
+             * A short utterance can begin and end inside a single 16 ms video
+             * frame - more easily still with a large audio buffer - and a
+             * "was it speaking last time I looked" test then never sees it
+             * speaking at all, leaving the status line reading "speaking" over
+             * a silent engine. Setting it only on this path is also what keeps
+             * STOP's own message: STOP clears g_speaking itself, so the next
+             * callback does not come through here. */
+            if (got == 0) { g_speaking = 0; g_finished = 1; }
+        }
 
         for (i = 0; i < want; i++) {
             float s = (i < got) ? chunk[i] : 0.0f;
@@ -69,7 +84,6 @@ static void audio_cb(void *buffer, unsigned int frames)
 
             out[done + i] = (short)bm_pcm_sample(s, 0);
         }
-        if (got == 0) g_speaking = 0;
         done += want;
     }
 }
@@ -127,7 +141,7 @@ static void parse_size(int argc, char **argv, int *w, int *h)
 {
     int i, a, b;
     for (i = 1; i < argc; i++) {
-        if (sscanf(argv[i], "%dx%d", &a, &b) == 2 && a >= 760 && b >= 540 &&
+        if (sscanf(argv[i], "%dx%d", &a, &b) == 2 && a >= 800 && b >= 680 &&
             a <= 8192 && b <= 8192) {
             *w = a;
             *h = b;
@@ -151,6 +165,7 @@ int main(int argc, char **argv)
     const char *voice_names[16];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
     int   i, dirty = 1;
+    bm_edit text_st, phon_st;
     Color status_color;
 
     (void)scope;
@@ -171,11 +186,14 @@ int main(int argc, char **argv)
         parse_size(argc, argv, &w, &h);
         InitWindow(w, h, "BENCmouth");
     }
-    SetWindowMinSize(760, 540);
+    SetWindowMinSize(800, 680);
     SetTargetFPS(60);
     InitAudioDevice();
 
     bm_ui_init(&ui);
+    memset(&text_st, 0, sizeof text_st);
+    memset(&phon_st, 0, sizeof phon_st);
+    text_st.caret = text_st.sel = (int)strlen(text);
 
     if (bm_engine_init(&g_storage, &config, &g_engine) != BM_OK) {
         TraceLog(LOG_ERROR, "engine init failed");
@@ -231,6 +249,16 @@ int main(int argc, char **argv)
         float W = (float)GetScreenWidth();
         float y;
 
+        /* The utterance ends on the audio thread, which has no way to say so
+         * beyond this flag. Without it the status line went on reading
+         * "speaking" over a silent engine - and a readout that is wrong about
+         * the one thing it reports is worse than no readout at all. */
+        if (g_finished) {
+            g_finished = 0;
+            snprintf(status, sizeof status, "ready");
+            status_color = BM_DIM;
+        }
+
         /* Phonemes are recomputed only when the text changes: it is cheap, but
          * not free, and doing it every frame would be silly. */
         if (dirty) {
@@ -263,13 +291,16 @@ int main(int argc, char **argv)
         y = 72;
         bm_label(&ui, "TEXT TO SPEAK", BM_PAD, y);
         y += 18;
-        if (bm_textfield(&ui, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 38 },
-                         text, TEXT_CAP)) {
+        if (bm_textbox(&ui, 1, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 114 },
+                       text, TEXT_CAP, &text_st)) {
             dirty = 1;
         }
-        y += 46;
-        bm_text(&ui, BM_FONT_SMALL, phonemes, BM_PAD, y, BM_DIM);
-        y += 26;
+        /* Two popups at once would fight over which of them owns the mouse. */
+        if (ui.menu_open) voice_open = 0;
+        y += 122;
+        bm_textview(&ui, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 58 },
+                    phonemes, &phon_st, BM_DIM);
+        y += 66;
 
         /* ---- transport ---- */
         {
@@ -277,7 +308,8 @@ int main(int argc, char **argv)
             if (bm_button(&ui, b, "SPEAK", 1)) {
                 bm_engine_set_voice(g_engine, &voice);
                 if (bm_speak_text(g_engine, text, 0) == BM_OK) {
-                    g_peak = 0.0f; g_limited = 0; g_speaking = 1;
+                    g_peak = 0.0f; g_limited = 0;
+                    g_finished = 0; g_speaking = 1;
                     snprintf(status, sizeof status, "speaking");
                     status_color = BM_ACCENT;
                 } else {
@@ -420,6 +452,10 @@ int main(int argc, char **argv)
         y += 74;
 
         bm_text(&ui, BM_FONT_SMALL, status, BM_PAD, y, status_color);
+
+        /* Last, so a dropdown list or a context menu is above the layout it
+         * covers rather than under it. */
+        bm_ui_overlay(&ui);
 
         EndDrawing();
     }

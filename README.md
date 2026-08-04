@@ -467,13 +467,16 @@ const pcm = bm.say('hello world');         // or just the Float32Array
 
 ```
 make gui          # or: RAYLIB=/some/prefix make gui
-./bencmouth-gui              # optionally: ./bencmouth-gui 1400x580
+./bencmouth-gui              # optionally: ./bencmouth-gui 1400x760
 ```
 
-Type, and the phoneme readout under the field updates as you go. Every slider is bound to
-a `.voice` file key, so what you tune and what SAVE writes cannot drift apart. Audio
-streams from `bm_read()` into the audio callback, so moving a slider mid-sentence is
-audible immediately.
+Type, and the phoneme readout under the field updates as you go. Both panels wrap and
+scroll — mouse wheel or the bar on the right — so a paragraph is as workable as a
+sentence. The text box is a real text box: click to put the caret anywhere, drag or
+shift-arrow to select, Ctrl-A/C/X/V (Cmd on macOS), Ctrl-arrow by word, Home and End,
+and a right-click menu for the same. Every slider is bound to a `.voice` file key, so
+what you tune and what SAVE writes cannot drift apart. Audio streams from `bm_read()`
+into the audio callback, so moving a slider mid-sentence is audible immediately.
 
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.

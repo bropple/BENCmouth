@@ -42,6 +42,10 @@ extern Color BM_AMBER;     /* warnings - a limiter that engaged             */
 #define BM_FONT_BODY   20
 #define BM_FONT_TITLE  32
 
+/* What a right-click menu came back with. Read by the widget that owns the
+ * menu, on the frame after the click - see bm_ui_overlay. */
+enum { BM_MENU_NONE = 0, BM_MENU_CUT, BM_MENU_COPY, BM_MENU_PASTE, BM_MENU_ALL };
+
 typedef struct bm_ui {
     Font  small;
     Font  body;
@@ -49,10 +53,49 @@ typedef struct bm_ui {
     int   loaded;          /* nonzero if a real font file was found         */
     const char *font_name; /* which one, for the status line                */
 
-    /* One active text field at a time, identified by its rectangle's y. */
+    /* One active text field at a time, by caller-chosen id. Zero is nobody. */
     int   focus;
-    float caret;           /* blink phase                                   */
+
+    /* Anything popped up over the layout - a dropdown list, a context menu -
+     * has to be drawn after the widgets it covers and has to take the mouse
+     * away from them. Immediate mode gives you neither for free: widgets draw
+     * and hit-test in call order, so a list drawn where it is declared ends up
+     * underneath everything declared later, and the controls beneath it stay
+     * live. Both symptoms had the same cause.
+     *
+     * So popups are handled in two parts. The widget that owns one takes its
+     * input where it is called - it is on top, so it gets first refusal - and
+     * publishes the rectangle here. Widgets called later see the rectangle and
+     * ignore a mouse inside it. Drawing is deferred to bm_ui_overlay, which
+     * runs after the whole layout. */
+    Rectangle block;
+    int       blocking;
+
+    /* Deferred draw: 1 = dropdown list, 2 = context menu. */
+    int         pop_kind;
+    Rectangle   pop_rect;
+    const char **pop_items;
+    int         pop_count;
+    int         pop_sel;
+
+    /* Context menu, which belongs to whichever text box opened it. */
+    int   menu_open;
+    int   menu_owner;
+    int   menu_action;
 } bm_ui;
+
+/* Per-text-box state. Kept by the caller so a widget can stay a function:
+ * a caret is a position in a buffer that has to survive between frames, and
+ * there is nowhere else for it to live. */
+typedef struct bm_edit {
+    int   caret;       /* byte index of the insertion point                 */
+    int   sel;         /* the other end of the selection; == caret if none  */
+    float scroll;      /* pixels scrolled down                             */
+    float blink;
+    int   drag_text;   /* sweeping out a selection with the mouse           */
+    int   drag_bar;    /* dragging the scrollbar thumb                      */
+    float drag_grab;   /* where in the thumb it was grabbed                 */
+} bm_edit;
 
 void bm_ui_init(bm_ui *ui);
 void bm_ui_free(bm_ui *ui);
@@ -78,9 +121,20 @@ void  bm_label(const bm_ui *ui, const char *s, float x, float y);
 int   bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled);
 int   bm_slider(const bm_ui *ui, Rectangle r, const char *label,
                 float *value, float lo, float hi, const char *fmt);
-int   bm_dropdown(const bm_ui *ui, Rectangle r, const char **items, int count,
+int   bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
                   int *index, int *open);
-int   bm_textfield(bm_ui *ui, Rectangle r, char *buf, int cap);
+
+/* A wrapped, scrolling, editable text box: caret, selection, clipboard, and a
+ * scrollbar when the text outgrows the box. `id` is any nonzero number unique
+ * among the boxes on screen - it is what focus is tracked by. */
+int   bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st);
+
+/* The same wrapping and scrolling, read-only. */
+void  bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c);
+
+/* Draws whatever popped up, above everything else. Call once, last, before
+ * EndDrawing. */
+void  bm_ui_overlay(bm_ui *ui);
 void  bm_waveform(Rectangle r, const float *samples, int count);
 void  bm_meter(Rectangle r, float peak, int limited);
 

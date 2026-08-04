@@ -120,12 +120,26 @@ void bm_label(const bm_ui *ui, const char *s, float x, float y)
     bm_text_spaced(ui, BM_FONT_SMALL, s, x, y, BM_DIM);
 }
 
+/* ------------------------------------------------------------------ *
+ * Popup arbitration
+ *
+ * A widget asks whether the mouse is its to use. It is not, if a popup that
+ * was declared earlier in the frame is covering it. See the comment on
+ * bm_ui.block for why this is explicit rather than automatic.
+ * ------------------------------------------------------------------ */
+
+static int mouse_free(const bm_ui *ui)
+{
+    return !ui->blocking ||
+           !CheckCollisionPointRec(GetMousePosition(), ui->block);
+}
+
 /* ------------------------------------------------------------------ */
 
 int bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled)
 {
     Vector2 m = GetMousePosition();
-    int over = enabled && CheckCollisionPointRec(m, r);
+    int over = enabled && mouse_free(ui) && CheckCollisionPointRec(m, r);
     int down = over && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     Color fill = enabled ? (down ? BM_EDGE : (over ? BM_ACCENT : BM_PANEL)) : BM_PANEL;
     Color text = enabled ? (over && !down ? BM_BG : BM_TEXT) : BM_BORDER;
@@ -164,7 +178,8 @@ int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
 
     /* Grab anywhere on the row, not just the 6px track - a 6px hit target is
      * the kind of thing that makes an interface feel hostile. */
-    if (CheckCollisionPointRec(m, r) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+    if (mouse_free(ui) && CheckCollisionPointRec(m, r) &&
+        IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         float nt = (m.x - track.x) / track.width;
         if (nt < 0.0f) nt = 0.0f;
         if (nt > 1.0f) nt = 1.0f;
@@ -179,11 +194,12 @@ int bm_slider(const bm_ui *ui, Rectangle r, const char *label,
     return changed;
 }
 
-int bm_dropdown(const bm_ui *ui, Rectangle r, const char **items, int count,
+int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
                 int *index, int *open)
 {
     Vector2 m = GetMousePosition();
     int changed = 0, i;
+    int free_ = mouse_free(ui);
 
     bm_panel(r);
     bm_text(ui, BM_FONT_SMALL, items[*index], r.x + 8,
@@ -191,75 +207,693 @@ int bm_dropdown(const bm_ui *ui, Rectangle r, const char **items, int count,
     bm_text(ui, BM_FONT_SMALL, *open ? "^" : "v", r.x + r.width - 18,
             r.y + (r.height - BM_FONT_SMALL) * 0.5f, BM_DIM);
 
-    if (CheckCollisionPointRec(m, r) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+    if (free_ && CheckCollisionPointRec(m, r) &&
+        IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
         *open = !*open;
+        if (*open) ui->menu_open = 0;   /* one popup at a time */
     }
 
     if (*open) {
+        Rectangle list = { r.x, r.y + r.height + 1, r.width,
+                           (float)count * r.height };
+
+        /* Input here, drawing in bm_ui_overlay. The list is on top, so it takes
+         * the mouse first - and publishing its rectangle is what stops the
+         * sliders underneath from being dragged through it. */
         for (i = 0; i < count; i++) {
-            Rectangle item = { r.x, r.y + r.height + 1 + (float)i * r.height,
-                               r.width, r.height };
-            int over = CheckCollisionPointRec(m, item);
-            DrawRectangleRec(item, over ? BM_EDGE : BM_PANEL);
-            DrawRectangleLinesEx(item, 1, BM_BORDER);
-            bm_text(ui, BM_FONT_SMALL, items[i], item.x + 8,
-                    item.y + (item.height - BM_FONT_SMALL) * 0.5f,
-                    i == *index ? BM_ACCENT : BM_TEXT);
-            if (over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            Rectangle item = { list.x, list.y + (float)i * r.height,
+                               list.width, r.height };
+            if (CheckCollisionPointRec(m, item) &&
+                IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
                 *index = i;
                 *open = 0;
                 changed = 1;
             }
         }
+        /* A click anywhere else dismisses it, as every other menu does. */
+        if (*open && IsMouseButtonReleased(MOUSE_BUTTON_LEFT) &&
+            !CheckCollisionPointRec(m, list) && !CheckCollisionPointRec(m, r)) {
+            *open = 0;
+        }
+
+        if (*open) {
+            ui->pop_kind  = 1;
+            ui->pop_rect  = list;
+            ui->pop_items = items;
+            ui->pop_count = count;
+            ui->pop_sel   = *index;
+            ui->block     = list;
+            ui->blocking  = 1;
+        }
     }
     return changed;
 }
 
-int bm_textfield(bm_ui *ui, Rectangle r, char *buf, int cap)
-{
-    Vector2 m = GetMousePosition();
-    int len = (int)strlen(buf);
-    int changed = 0, key;
+/* ------------------------------------------------------------------ *
+ * Text
+ *
+ * Wrapping, a caret, a selection and a scrollbar. This is more code than the
+ * append-and-backspace field it replaces, but that field could not do the
+ * things a text box is for: put the caret back in the middle of a word, select
+ * a phrase, paste one in. Those are not embellishments on typing - for anyone
+ * correcting a sentence rather than composing one, they are the interaction.
+ * ------------------------------------------------------------------ */
 
-    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-        ui->focus = CheckCollisionPointRec(m, r) ? (int)r.y + 1 : 0;
+#define BM_MAXLINES 512
+
+/* Advance width of one glyph, from the font's own metrics.
+ *
+ * The alternative - MeasureTextEx on a one-character string - is what the
+ * single-line field did, and it is a full text-shaping call per character per
+ * frame. Wrapping needs a width for every character in the buffer, so this is
+ * on the hot path in a way it was not before. */
+static float char_w(const bm_ui *ui, int size, int c)
+{
+    Font  f = font_for(ui, size);
+    int   i = GetGlyphIndex(f, c);
+    float scale = (float)size / (float)f.baseSize;
+    float adv;
+
+    if (f.glyphs == 0 || f.recs == 0) return (float)size * 0.5f;
+    adv = (f.glyphs[i].advanceX != 0)
+              ? (float)f.glyphs[i].advanceX
+              : f.recs[i].width + (float)f.glyphs[i].offsetX;
+    return adv * scale;
+}
+
+/* Break `s` into visual lines no wider than maxw, at spaces where there is
+ * one and mid-word where there is not. Returns the line count, always >= 1. */
+static int wrap_text(const bm_ui *ui, int size, const char *s, float maxw,
+                     int *start, int *end, int maxlines)
+{
+    int   n = 0, i = 0, ls = 0, lastsp = -1;
+    float w = 0.0f;
+
+    if (maxw < 1.0f) maxw = 1.0f;
+
+    for (;;) {
+        int c = (unsigned char)s[i];
+
+        if (c == '\0') { start[n] = ls; end[n] = i; n++; break; }
+
+        if (c == '\n') {
+            start[n] = ls; end[n] = i; n++;
+            if (n >= maxlines) break;
+            i++; ls = i; lastsp = -1; w = 0.0f;
+            continue;
+        }
+
+        {
+            float cw = char_w(ui, size, c);
+
+            /* i > ls guarantees at least one character per line, which is what
+             * keeps this from looping forever on a box narrower than a glyph. */
+            if (w + cw > maxw && i > ls) {
+                int at_space = (lastsp > ls);
+                int brk = at_space ? lastsp : i;
+
+                start[n] = ls; end[n] = brk; n++;
+                if (n >= maxlines) break;
+                ls = at_space ? brk + 1 : brk;   /* the space itself is eaten */
+                i = ls; lastsp = -1; w = 0.0f;
+                continue;
+            }
+            if (c == ' ') lastsp = i;
+            w += cw;
+            i++;
+        }
+    }
+    if (n == 0) { start[0] = 0; end[0] = 0; n = 1; }
+    return n;
+}
+
+static int line_of(int caret, const int *start, int n)
+{
+    int i;
+    for (i = n - 1; i > 0; i--) {
+        if (caret >= start[i]) return i;
+    }
+    return 0;
+}
+
+static float span_w(const bm_ui *ui, int size, const char *s, int from, int to)
+{
+    float w = 0.0f;
+    int   i;
+    for (i = from; i < to; i++) w += char_w(ui, size, (unsigned char)s[i]);
+    return w;
+}
+
+/* Which character position on a line the point x lands on, rounded to the
+ * nearer gap between glyphs - clicking the left half of a letter puts the
+ * caret before it, the right half after. */
+static int index_at(const bm_ui *ui, int size, const char *s, int ls, int le,
+                    float x)
+{
+    float w = 0.0f;
+    int   i;
+    for (i = ls; i < le; i++) {
+        float cw = char_w(ui, size, (unsigned char)s[i]);
+        if (x < w + cw * 0.5f) return i;
+        w += cw;
+    }
+    return le;
+}
+
+static void del_range(char *buf, int a, int b)
+{
+    int len = (int)strlen(buf);
+    if (a < 0) a = 0;
+    if (b > len) b = len;
+    if (b <= a) return;
+    memmove(buf + a, buf + b, (size_t)(len - b + 1));
+}
+
+/* Insert, keeping to the printable ASCII the synthesiser's front end accepts
+ * plus newlines. Pasting from a browser otherwise brings smart quotes and
+ * non-breaking spaces in with it, which reach the letter-to-sound rules as
+ * unknown bytes. */
+static int ins_text(char *buf, int cap, int at, const char *s)
+{
+    int len = (int)strlen(buf), room = cap - 1 - len, n = 0, i;
+    char clean[1024];
+
+    for (i = 0; s[i] != '\0' && n < (int)sizeof clean - 1 && n < room; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\n' || c == '\r') clean[n++] = '\n';
+        else if (c == '\t') clean[n++] = ' ';
+        else if (c >= 32 && c < 127) clean[n++] = (char)c;
+    }
+    clean[n] = '\0';
+    if (n <= 0) return 0;
+
+    memmove(buf + at + n, buf + at, (size_t)(len - at + 1));
+    memcpy(buf + at, clean, (size_t)n);
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
+
+/* Shared by the editable box and the read-only view. Returns the width the
+ * text may use, which is narrower when a bar is showing. */
+static float scrollbar(Rectangle r, float content, float view, bm_edit *st,
+                       int hovered)
+{
+    Rectangle bar, thumb;
+    float     maxs = content - view;
+    float     t;
+
+    if (maxs <= 0.0f) { st->scroll = 0.0f; return r.width - 20.0f; }
+
+    if (hovered) {
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0.0f) st->scroll -= wheel * 3.0f * (BM_FONT_BODY + 4);
+    }
+
+    bar = (Rectangle){ r.x + r.width - 12, r.y + 4, 7, r.height - 8 };
+    {
+        float th = bar.height * (view / content);
+        Vector2 m = GetMousePosition();
+
+        if (th < 18.0f) th = 18.0f;
+        if (st->scroll < 0.0f) st->scroll = 0.0f;
+        if (st->scroll > maxs) st->scroll = maxs;
+        t = st->scroll / maxs;
+
+        thumb = (Rectangle){ bar.x, bar.y + (bar.height - th) * t, bar.width, th };
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+            CheckCollisionPointRec(m, bar)) {
+            if (CheckCollisionPointRec(m, thumb)) {
+                st->drag_grab = m.y - thumb.y;
+            } else {
+                st->drag_grab = th * 0.5f;      /* jump the thumb to the click */
+            }
+            st->drag_bar = 1;
+        }
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) st->drag_bar = 0;
+
+        if (st->drag_bar && bar.height > th) {
+            float nt = (m.y - st->drag_grab - bar.y) / (bar.height - th);
+            if (nt < 0.0f) nt = 0.0f;
+            if (nt > 1.0f) nt = 1.0f;
+            st->scroll = nt * maxs;
+            t = nt;
+            thumb.y = bar.y + (bar.height - th) * t;
+        }
+
+        DrawRectangleRounded(bar, 0.5f, 4, BM_PANEL);
+        DrawRectangleRounded(thumb, 0.5f, 4,
+                             st->drag_bar ? BM_ACCENT : BM_EDGE);
+    }
+    return r.width - 30.0f;
+}
+
+static void clamp_scroll(bm_edit *st, float content, float view)
+{
+    float maxs = content - view;
+    if (maxs < 0.0f) maxs = 0.0f;
+    if (st->scroll > maxs) st->scroll = maxs;
+    if (st->scroll < 0.0f) st->scroll = 0.0f;
+}
+
+int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
+{
+    /* One text box is edited at a time, so these are scratch rather than
+     * state - recomputed from the buffer every frame. */
+    static int start[BM_MAXLINES], end[BM_MAXLINES];
+
+    Vector2 m       = GetMousePosition();
+    int     size    = BM_FONT_BODY;
+    float   lh      = (float)size + 4.0f;
+    float   pad     = 8.0f;
+    Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
+    int     focused = (ui->focus == id);
+    int     over    = mouse_free(ui) && CheckCollisionPointRec(m, r);
+    int     changed = 0;
+    int     nlines, i, moved = 0;
+    float   textw, content;
+    int     ctrl, shift;
+
+    /* An action chosen from the context menu last frame. The menu is drawn
+     * after this widget, so its result cannot arrive any sooner - and a frame
+     * is 16 ms, which is not a delay anyone can perceive. */
+    if (ui->menu_action != BM_MENU_NONE && ui->menu_owner == id) {
+        int a = st->sel < st->caret ? st->sel : st->caret;
+        int b = st->sel < st->caret ? st->caret : st->sel;
+
+        switch (ui->menu_action) {
+        case BM_MENU_COPY:
+        case BM_MENU_CUT:
+            if (b > a) {
+                char save = buf[b];
+                buf[b] = '\0';
+                SetClipboardText(buf + a);
+                buf[b] = save;
+                if (ui->menu_action == BM_MENU_CUT) {
+                    del_range(buf, a, b);
+                    st->caret = st->sel = a;
+                    changed = 1;
+                }
+            }
+            break;
+        case BM_MENU_PASTE: {
+            const char *clip = GetClipboardText();
+            if (clip != 0) {
+                int n;
+                if (b > a) { del_range(buf, a, b); st->caret = a; }
+                n = ins_text(buf, cap, st->caret, clip);
+                st->caret += n;
+                st->sel = st->caret;
+                changed = 1;
+            }
+            break;
+        }
+        case BM_MENU_ALL:
+            st->sel = 0;
+            st->caret = (int)strlen(buf);
+            break;
+        default: break;
+        }
+        ui->menu_action = BM_MENU_NONE;
+    }
+
+    /* The menu belongs to this box, so this box publishes its rectangle. */
+    if (ui->menu_open && ui->menu_owner == id) {
+        ui->blocking = 1;
+        ui->block    = ui->pop_rect;
+    }
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && mouse_free(ui)) {
+        ui->focus = over ? id : (ui->focus == id ? 0 : ui->focus);
+        focused = (ui->focus == id);
     }
 
     bm_panel(r);
-    if (ui->focus == (int)r.y + 1) {
-        DrawRectangleRoundedLines(r, BM_RADIUS / r.height, 4, BM_ACCENT);
+    if (focused) DrawRectangleRoundedLines(r, BM_RADIUS / r.height, 4, BM_ACCENT);
 
-        while ((key = GetCharPressed()) != 0) {
-            if (key >= 32 && key < 127 && len < cap - 1) {
-                buf[len++] = (char)key;
-                buf[len] = '\0';
+    /* Wrap to the text width, which depends on whether a bar is showing -
+     * which depends on the wrap. One pass at the narrow width settles it
+     * without the flicker of a bar that appears and disappears. */
+    textw  = inner.width - 18.0f;
+    nlines = wrap_text(ui, size, buf, textw, start, end, BM_MAXLINES);
+    content = (float)nlines * lh;
+
+    if (content <= inner.height) {
+        textw  = inner.width;
+        nlines = wrap_text(ui, size, buf, textw, start, end, BM_MAXLINES);
+        content = (float)nlines * lh;
+    }
+
+    if (st->caret > (int)strlen(buf)) st->caret = (int)strlen(buf);
+    if (st->sel   > (int)strlen(buf)) st->sel   = (int)strlen(buf);
+
+    ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+            IsKeyDown(KEY_LEFT_SUPER)   || IsKeyDown(KEY_RIGHT_SUPER);
+    shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+    /* ---- mouse: place the caret, sweep out a selection ---- */
+    {
+        int line = line_of(st->caret, start, nlines);
+
+        if (over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            int li = (int)((m.y - inner.y + st->scroll) / lh);
+            if (li < 0) li = 0;
+            if (li >= nlines) li = nlines - 1;
+            st->caret = index_at(ui, size, buf, start[li], end[li], m.x - inner.x);
+            if (!shift) st->sel = st->caret;
+            st->drag_text = 1;
+            st->blink = 0.0f;
+        }
+        if (st->drag_text && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            int li = (int)((m.y - inner.y + st->scroll) / lh);
+            if (li < 0) li = 0;
+            if (li >= nlines) li = nlines - 1;
+            st->caret = index_at(ui, size, buf, start[li], end[li], m.x - inner.x);
+        }
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) st->drag_text = 0;
+
+        if (over && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+            Rectangle menu;
+            ui->focus      = id;
+            focused        = 1;
+            ui->menu_open  = 1;
+            ui->menu_owner = id;
+            menu = (Rectangle){ m.x, m.y, 148, 4 * 24 + 8 };
+            ui->pop_rect = menu;
+            ui->blocking = 1;
+            ui->block    = menu;
+        }
+        (void)line;
+    }
+
+    /* ---- keyboard ---- */
+    if (focused) {
+        int len = (int)strlen(buf);
+        int a   = st->sel < st->caret ? st->sel : st->caret;
+        int b   = st->sel < st->caret ? st->caret : st->sel;
+        int key;
+
+        if (ctrl && IsKeyPressed(KEY_A)) { st->sel = 0; st->caret = len; }
+
+        if (ctrl && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_X)) && b > a) {
+            char save = buf[b];
+            buf[b] = '\0';
+            SetClipboardText(buf + a);
+            buf[b] = save;
+            if (IsKeyPressed(KEY_X)) {
+                del_range(buf, a, b);
+                st->caret = st->sel = a;
                 changed = 1;
+                len = (int)strlen(buf);
             }
         }
-        if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) {
-            if (len > 0) { buf[--len] = '\0'; changed = 1; }
+        if (ctrl && IsKeyPressed(KEY_V)) {
+            const char *clip = GetClipboardText();
+            if (clip != 0) {
+                int n;
+                if (b > a) { del_range(buf, a, b); st->caret = a; }
+                n = ins_text(buf, cap, st->caret, clip);
+                st->caret += n;
+                st->sel = st->caret;
+                changed = 1;
+                moved = 1;
+            }
         }
-        ui->caret += GetFrameTime();
-        if (ui->caret > 1.0f) ui->caret -= 1.0f;
+
+        if (!ctrl) {
+            while ((key = GetCharPressed()) != 0) {
+                if (key >= 32 && key < 127) {
+                    a = st->sel < st->caret ? st->sel : st->caret;
+                    b = st->sel < st->caret ? st->caret : st->sel;
+                    if (b > a) { del_range(buf, a, b); st->caret = a; }
+                    if ((int)strlen(buf) < cap - 1) {
+                        char one[2];
+                        one[0] = (char)key;
+                        one[1] = '\0';
+                        st->caret += ins_text(buf, cap, st->caret, one);
+                        st->sel = st->caret;
+                        changed = 1;
+                        moved = 1;
+                    }
+                }
+            }
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressedRepeat(KEY_ENTER)) {
+                a = st->sel < st->caret ? st->sel : st->caret;
+                b = st->sel < st->caret ? st->caret : st->sel;
+                if (b > a) { del_range(buf, a, b); st->caret = a; }
+                st->caret += ins_text(buf, cap, st->caret, "\n");
+                st->sel = st->caret;
+                changed = 1;
+                moved = 1;
+            }
+        }
+
+        if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) {
+            a = st->sel < st->caret ? st->sel : st->caret;
+            b = st->sel < st->caret ? st->caret : st->sel;
+            if (b > a)          { del_range(buf, a, b); st->caret = a; changed = 1; }
+            else if (st->caret > 0) { del_range(buf, st->caret - 1, st->caret);
+                                      st->caret--; changed = 1; }
+            st->sel = st->caret;
+            moved = 1;
+        }
+        if (IsKeyPressed(KEY_DELETE) || IsKeyPressedRepeat(KEY_DELETE)) {
+            a = st->sel < st->caret ? st->sel : st->caret;
+            b = st->sel < st->caret ? st->caret : st->sel;
+            len = (int)strlen(buf);
+            if (b > a)              { del_range(buf, a, b); st->caret = a; changed = 1; }
+            else if (st->caret < len) { del_range(buf, st->caret, st->caret + 1);
+                                        changed = 1; }
+            st->sel = st->caret;
+            moved = 1;
+        }
+
+        /* Editing changes the wrap, so redo it before the arrows use it. */
+        if (changed) {
+            nlines = wrap_text(ui, size, buf, textw, start, end, BM_MAXLINES);
+            content = (float)nlines * lh;
+        }
+
+        {
+            int line = line_of(st->caret, start, nlines);
+            int step = 0;
+
+            if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT)) {
+                if (!shift && st->sel != st->caret) {
+                    st->caret = st->sel < st->caret ? st->sel : st->caret;
+                } else if (st->caret > 0) {
+                    st->caret--;
+                    /* Ctrl-left: to the start of the word, as everywhere else. */
+                    if (ctrl) {
+                        while (st->caret > 0 && buf[st->caret - 1] != ' ' &&
+                               buf[st->caret - 1] != '\n') st->caret--;
+                    }
+                }
+                step = 1;
+            }
+            if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) {
+                len = (int)strlen(buf);
+                if (!shift && st->sel != st->caret) {
+                    st->caret = st->sel > st->caret ? st->sel : st->caret;
+                } else if (st->caret < len) {
+                    st->caret++;
+                    if (ctrl) {
+                        while (st->caret < len && buf[st->caret] != ' ' &&
+                               buf[st->caret] != '\n') st->caret++;
+                    }
+                }
+                step = 1;
+            }
+            if ((IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP)) && line > 0) {
+                float x = span_w(ui, size, buf, start[line], st->caret);
+                st->caret = index_at(ui, size, buf, start[line - 1],
+                                     end[line - 1], x);
+                step = 1;
+            }
+            if ((IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN)) &&
+                line < nlines - 1) {
+                float x = span_w(ui, size, buf, start[line], st->caret);
+                st->caret = index_at(ui, size, buf, start[line + 1],
+                                     end[line + 1], x);
+                step = 1;
+            }
+            if (IsKeyPressed(KEY_HOME)) { st->caret = ctrl ? 0 : start[line]; step = 1; }
+            if (IsKeyPressed(KEY_END)) {
+                st->caret = ctrl ? (int)strlen(buf) : end[line];
+                step = 1;
+            }
+
+            if (step) {
+                if (!shift) st->sel = st->caret;
+                st->blink = 0.0f;
+                moved = 1;
+            }
+        }
+
+        st->blink += GetFrameTime();
+        if (st->blink > 1.0f) st->blink -= 1.0f;
     }
 
-    /* Show the tail when the text outruns the box, which is where the caret is
-     * and therefore what the typist needs to see. */
-    {
-        const char *shown = buf;
-        float w = bm_text_measure(ui, BM_FONT_BODY, shown, 0.0f);
-        while (w > r.width - 20 && *shown != '\0') {
-            shown++;
-            w = bm_text_measure(ui, BM_FONT_BODY, shown, 0.0f);
-        }
-        bm_text(ui, BM_FONT_BODY, shown, r.x + 9,
-                r.y + (r.height - BM_FONT_BODY) * 0.5f, BM_TEXT);
-        if (ui->focus == (int)r.y + 1 && ui->caret < 0.5f) {
-            DrawRectangle((int)(r.x + 10 + w), (int)(r.y + 6), 2,
-                          (int)(r.height - 12), BM_ACCENT);
+    /* Keep the caret on screen after anything that moved it. */
+    if (moved || changed) {
+        int   line = line_of(st->caret, start, nlines);
+        float top  = (float)line * lh;
+        if (top < st->scroll) st->scroll = top;
+        if (top + lh > st->scroll + inner.height) {
+            st->scroll = top + lh - inner.height;
         }
     }
+    clamp_scroll(st, content, inner.height);
+
+    /* ---- draw ---- */
+    if (content > inner.height) {
+        scrollbar(r, content, inner.height, st, over);
+        clamp_scroll(st, content, inner.height);
+    }
+
+    BeginScissorMode((int)inner.x, (int)inner.y, (int)inner.width,
+                     (int)inner.height);
+    {
+        int a = st->sel < st->caret ? st->sel : st->caret;
+        int b = st->sel < st->caret ? st->caret : st->sel;
+
+        for (i = 0; i < nlines; i++) {
+            float ly = inner.y + (float)i * lh - st->scroll;
+            char  line[1024];
+            int   n = end[i] - start[i];
+
+            if (ly + lh < inner.y || ly > inner.y + inner.height) continue;
+            if (n > (int)sizeof line - 1) n = (int)sizeof line - 1;
+            memcpy(line, buf + start[i], (size_t)n);
+            line[n] = '\0';
+
+            if (b > a && b > start[i] && a < end[i]) {
+                int sa = a > start[i] ? a : start[i];
+                int sb = b < end[i] ? b : end[i];
+                float x0 = span_w(ui, size, buf, start[i], sa);
+                float x1 = span_w(ui, size, buf, start[i], sb);
+                DrawRectangle((int)(inner.x + x0), (int)ly,
+                              (int)(x1 - x0) + 1, (int)lh, BM_EDGE);
+            }
+            bm_text(ui, size, line, inner.x, ly, BM_TEXT);
+        }
+
+        if (focused && st->blink < 0.5f) {
+            int   line = line_of(st->caret, start, nlines);
+            float cx = inner.x + span_w(ui, size, buf, start[line], st->caret);
+            float cy = inner.y + (float)line * lh - st->scroll;
+            DrawRectangle((int)cx, (int)cy, 2, (int)lh - 2, BM_ACCENT);
+        }
+    }
+    EndScissorMode();
+
     return changed;
+}
+
+void bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c)
+{
+    static int start[BM_MAXLINES], end[BM_MAXLINES];
+
+    Vector2 m       = GetMousePosition();
+    int     size    = BM_FONT_SMALL;
+    float   lh      = (float)size + 4.0f;
+    float   pad     = 8.0f;
+    Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
+    int     over    = mouse_free(ui) && CheckCollisionPointRec(m, r);
+    int     nlines, i;
+    float   textw, content;
+
+    bm_panel(r);
+
+    textw   = inner.width - 18.0f;
+    nlines  = wrap_text(ui, size, s, textw, start, end, BM_MAXLINES);
+    content = (float)nlines * lh;
+    if (content <= inner.height) {
+        textw   = inner.width;
+        nlines  = wrap_text(ui, size, s, textw, start, end, BM_MAXLINES);
+        content = (float)nlines * lh;
+    }
+
+    if (content > inner.height) {
+        scrollbar(r, content, inner.height, st, over);
+    } else {
+        st->scroll = 0.0f;
+    }
+    clamp_scroll(st, content, inner.height);
+
+    BeginScissorMode((int)inner.x, (int)inner.y, (int)inner.width,
+                     (int)inner.height);
+    for (i = 0; i < nlines; i++) {
+        float ly = inner.y + (float)i * lh - st->scroll;
+        char  line[1024];
+        int   n = end[i] - start[i];
+
+        if (ly + lh < inner.y || ly > inner.y + inner.height) continue;
+        if (n > (int)sizeof line - 1) n = (int)sizeof line - 1;
+        memcpy(line, s + start[i], (size_t)n);
+        line[n] = '\0';
+        bm_text(ui, size, line, inner.x, ly, c);
+    }
+    EndScissorMode();
+}
+
+/* ------------------------------------------------------------------ */
+
+void bm_ui_overlay(bm_ui *ui)
+{
+    static const char *MENU[] = { "CUT", "COPY", "PASTE", "SELECT ALL" };
+    Vector2 m = GetMousePosition();
+    int i;
+
+    if (ui->pop_kind == 1) {
+        Rectangle list = ui->pop_rect;
+        float ih = list.height / (float)ui->pop_count;
+
+        /* Drawn as one card with a shadow, so it reads as being above the
+         * layout rather than punched into it. */
+        DrawRectangle((int)list.x + 3, (int)list.y + 3, (int)list.width,
+                      (int)list.height, (Color){ 0, 0, 0, 110 });
+        for (i = 0; i < ui->pop_count; i++) {
+            Rectangle item = { list.x, list.y + (float)i * ih, list.width, ih };
+            int over = CheckCollisionPointRec(m, item);
+            DrawRectangleRec(item, over ? BM_EDGE : BM_PANEL);
+            DrawRectangleLinesEx(item, 1, BM_BORDER);
+            bm_text(ui, BM_FONT_SMALL, ui->pop_items[i], item.x + 8,
+                    item.y + (item.height - BM_FONT_SMALL) * 0.5f,
+                    i == ui->pop_sel ? BM_ACCENT : BM_TEXT);
+        }
+    }
+
+    if (ui->menu_open) {
+        Rectangle menu = ui->pop_rect;
+
+        DrawRectangle((int)menu.x + 3, (int)menu.y + 3, (int)menu.width,
+                      (int)menu.height, (Color){ 0, 0, 0, 110 });
+        DrawRectangleRec(menu, BM_PANEL);
+        DrawRectangleLinesEx(menu, 1, BM_BORDER);
+
+        for (i = 0; i < 4; i++) {
+            Rectangle item = { menu.x + 1, menu.y + 4 + (float)i * 24,
+                               menu.width - 2, 24 };
+            int over = CheckCollisionPointRec(m, item);
+            if (over) DrawRectangleRec(item, BM_EDGE);
+            bm_text(ui, BM_FONT_SMALL, MENU[i], item.x + 10,
+                    item.y + (item.height - BM_FONT_SMALL) * 0.5f, BM_TEXT);
+            if (over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+                ui->menu_action = BM_MENU_CUT + i;
+                ui->menu_open = 0;
+            }
+        }
+        if (ui->menu_open && !CheckCollisionPointRec(m, menu) &&
+            (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) ||
+             IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+            ui->menu_open = 0;
+        }
+    }
+
+    ui->pop_kind = 0;
+    ui->blocking = 0;
 }
 
 void bm_waveform(Rectangle r, const float *samples, int count)
