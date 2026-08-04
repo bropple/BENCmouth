@@ -137,6 +137,12 @@ void bm_synth_set_flutter(bm_synth *s, float flutter)
     s->flutter = bm_clampf(flutter, 0.0f, 1.0f);
 }
 
+void bm_synth_set_source(bm_synth *s, float source)
+{
+    if (s == 0) return;
+    bm_glottis_set_source(&s->glottis, source);
+}
+
 void bm_synth_set_effects(bm_synth *s, const bm_effects *effects)
 {
     if (s == 0 || effects == 0) return;

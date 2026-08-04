@@ -18,6 +18,11 @@
 #ifndef BM_GLOTTIS_H
 #define BM_GLOTTIS_H
 
+/* Partials in each alternate-source table. Six is enough to be recognisably a
+ * bell - the classic series is hum, prime, tierce, quint, nominal, and one
+ * above - and cheap enough to run per sample without thinking about it. */
+#define BM_NPARTIALS 6
+
 typedef struct bm_glottis {
     float sample_rate;
 
@@ -39,6 +44,15 @@ typedef struct bm_glottis {
     float vibrato;        /* semitones of peak deviation; 0 = off */
     float vibrato_rate;   /* Hz */
     float vibrato_phase;
+
+    /* Alternate excitation, 0..2 - see bm_voice.source. The partials need
+     * their own phases rather than being derived from the fundamental's:
+     * `sin(2*pi * phase * ratio)` looks equivalent and is not, because `phase`
+     * wraps at 1 and a non-integer ratio then steps discontinuously at every
+     * wrap. That is a click at the fundamental frequency, which is to say a
+     * buzz exactly where the source is supposed to be smooth. */
+    float source;
+    float partial_phase[BM_NPARTIALS];
 } bm_glottis;
 
 void bm_glottis_init(bm_glottis *g, float sample_rate);
@@ -54,6 +68,9 @@ void bm_glottis_set(bm_glottis *g, float f0, float open_quotient,
  * bm_glottis_set because it comes from the voice, not from the frame - calling
  * it once per frame with the same two numbers would be the only caller. */
 void bm_glottis_set_vibrato(bm_glottis *g, float semitones, float rate_hz);
+
+/* Selects the excitation, 0..2: folds, pipe, bell. See bm_voice.source. */
+void bm_glottis_set_source(bm_glottis *g, float source);
 
 /* One sample of the flow derivative, peak closure excursion -1. */
 float bm_glottis_tick(bm_glottis *g);

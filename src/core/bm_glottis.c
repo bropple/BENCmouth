@@ -28,6 +28,87 @@ static const float BM_FLUTTER_RATE[3] = { 3.1f, 6.9f, 11.3f };
  * faster as a tremble. */
 #define BM_VIBRATO_DEFAULT_HZ 5.5f
 
+/* ------------------------------------------------------------------ *
+ * Alternate excitations
+ *
+ * Ratio and amplitude per partial. The organ set is drawbar-ish: the
+ * fundamental, its octave, the twelfth, and so on, which is a pipe rank
+ * stacked the way an organ stop is. The bell set is the measured partial
+ * series of a church bell, and the numbers are why it sounds like one - a
+ * minor third at 1.19 above a prime at 1 is the interval that makes a bell
+ * sound sad, and it is not a harmonic of anything.
+ * ------------------------------------------------------------------ */
+
+static const float BM_ORGAN[BM_NPARTIALS][2] = {
+    { 1.00f, 1.00f },   /* fundamental        */
+    { 2.00f, 0.55f },   /* octave             */
+    { 3.00f, 0.35f },   /* twelfth            */
+    { 4.00f, 0.22f },   /* two octaves        */
+    { 6.00f, 0.12f },   /* nineteenth         */
+    { 8.00f, 0.08f }    /* three octaves      */
+};
+
+static const float BM_BELL[BM_NPARTIALS][2] = {
+    { 0.50f, 0.40f },   /* hum      - an octave below the strike note */
+    { 1.00f, 1.00f },   /* prime                                      */
+    { 1.19f, 0.55f },   /* tierce   - the minor third, and the reason */
+    { 1.50f, 0.45f },   /* quint                                      */
+    { 2.00f, 0.60f },   /* nominal  - what you think the pitch is     */
+    { 2.66f, 0.25f }    /* superquint                                 */
+};
+
+/* Chosen by measurement, not by summing the amplitude columns.
+ *
+ * Six sines summed are not as loud as their coefficients suggest - they are
+ * partly out of phase with each other - and the glottal pulse they have to
+ * match is a sparse spike train whose RMS is nothing like its peak. Measured
+ * over a sustained 150 Hz tone: folds 0.258 RMS, and these divisors put the
+ * pipe and the bell within a few tenths of a dB of it. Moving between sources
+ * should change the timbre and not the volume. */
+#define BM_ORGAN_NORM (1.0f / 3.34f)
+#define BM_BELL_NORM  (1.0f / 3.95f)
+
+void bm_glottis_set_source(bm_glottis *g, float source)
+{
+    if (g == 0) return;
+    g->source = bm_clampf(source, 0.0f, 2.0f);
+}
+
+/* One sample of the additive stack, and the partial phases advanced.
+ *
+ * Both tables are walked every time rather than only the one in use, because
+ * `source` crossfades: at 1.5 the output is half pipe and half bell, and both
+ * sets of phases have to keep running or the one that is fading in would
+ * arrive mid-cycle. */
+static void partials_tick(bm_glottis *g, float f0, float *organ, float *bell)
+{
+    int k;
+
+    *organ = 0.0f;
+    *bell  = 0.0f;
+
+    for (k = 0; k < BM_NPARTIALS; k++) {
+        float ph = g->partial_phase[k];
+
+        /* One phase per slot, shared by the two tables. They differ in ratio,
+         * so the slot advances at whichever ratio the mix is actually using -
+         * interpolated, so moving the control does not step the phase. */
+        float bmix  = (g->source > 1.0f) ? (g->source - 1.0f) : 0.0f;
+        float ratio = BM_ORGAN[k][0] * (1.0f - bmix) + BM_BELL[k][0] * bmix;
+        float s     = bm_sinf(BM_TWO_PI * ph);
+
+        *organ += s * BM_ORGAN[k][1];
+        *bell  += s * BM_BELL[k][1];
+
+        ph += ratio * f0 / g->sample_rate;
+        while (ph >= 1.0f) ph -= 1.0f;
+        g->partial_phase[k] = ph;
+    }
+
+    *organ *= BM_ORGAN_NORM;
+    *bell  *= BM_BELL_NORM;
+}
+
 void bm_glottis_init(bm_glottis *g, float sample_rate)
 {
     if (g == 0) return;
@@ -39,6 +120,7 @@ void bm_glottis_init(bm_glottis *g, float sample_rate)
     g->phase_inc = 0.0f;
     g->vibrato = 0.0f;
     g->vibrato_rate = BM_VIBRATO_DEFAULT_HZ;
+    g->source = 0.0f;
     bm_glottis_reset(g);
 }
 
@@ -55,6 +137,15 @@ void bm_glottis_reset(bm_glottis *g)
     /* Phase only. Depth and rate are the speaker's, not the utterance's, and
      * survive a reset the same way open quotient does. */
     g->vibrato_phase = 0.0f;
+    {
+        int k;
+        /* Spread rather than all at zero: six sines starting in phase sum to a
+         * single large spike on the first sample, which is an audible tick at
+         * the start of every utterance. */
+        for (k = 0; k < BM_NPARTIALS; k++) {
+            g->partial_phase[k] = (float)k / (float)BM_NPARTIALS;
+        }
+    }
 }
 
 void bm_glottis_set_vibrato(bm_glottis *g, float semitones, float rate_hz)
@@ -154,6 +245,22 @@ float bm_glottis_tick(bm_glottis *g)
         y = 0.0f;
     }
 
+    /* Crossfade into the alternate excitations. Skipped entirely at 0, which
+     * is what keeps a voice that never asked for this paying nothing for it -
+     * and what keeps BENCmouth Retro bit-for-bit where it was. */
+    if (g->source > 0.0f) {
+        float organ, bell;
+
+        partials_tick(g, f0, &organ, &bell);
+        if (g->source <= 1.0f) {
+            y = y + (organ - y) * g->source;
+        } else {
+            y = organ + (bell - organ) * (g->source - 1.0f);
+        }
+    }
+
+    /* Tilt last, so it shapes whatever the source turned out to be rather than
+     * only the glottal path. */
     if (g->tilt_coeff > 0.0f) {
         g->tilt_z += g->tilt_coeff * (y - g->tilt_z);
         y = g->tilt_z;

@@ -119,6 +119,8 @@ static const param_row PARAMS[] = {
     { "f0_flutter",      "flutter",       0.0f,   1.0f, "%.2f"    },
     { "vibrato",         "vibrato",       0.0f,   3.0f, "%.2f st" },
     { "vibrato_rate",    "vib. rate",     0.0f,  12.0f, "%.1f Hz" },
+    /* 0 folds, 1 pipe, 2 bell, and it crossfades - see bm_voice.source. */
+    { "source",          "source",        0.0f,   2.0f, "%.2f"    },
     { "speed",           "speed",         0.5f,   2.0f, "%.2f"    },
     /* The top of the range is 1.4 rather than 1.3 because Cadet needs it: a
      * child's vocal tract really is about a third shorter than an adult's, and
@@ -164,7 +166,7 @@ static float param_get(const bm_voice *v, const char *key)
      * this table the only place the order is written down. */
     static const char *ORDER[] = {
         "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate",
-        "speed", "throat", "mouth",
+        "source", "speed", "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "whisper", "gain",
         "coarticulation", "prosody", "formant_glide", "bandwidth_track",
         "flatten"
@@ -175,6 +177,25 @@ static float param_get(const bm_voice *v, const char *key)
         if (strcmp(ORDER[i], key) == 0) return f[i];
     }
     return 0.0f;
+}
+
+/* Alphabetical, case-insensitive, for the voice dropdown.
+ *
+ * The presets are declared in the order they were written - default, Retro, the
+ * classic set, then whatever arrived last - which is a useful order to read the
+ * source in and a useless one to hunt a name in once there are more than a
+ * dozen. The list is sorted for display only; nothing else depends on preset
+ * order, because everything else looks them up by name. */
+static int by_name(const void *a, const void *b)
+{
+    const char *x = (*(const bm_voice *const *)a)->name;
+    const char *y = (*(const bm_voice *const *)b)->name;
+    for (; *x != '\0' && *y != '\0'; x++, y++) {
+        int cx = (*x >= 'A' && *x <= 'Z') ? *x - 'A' + 'a' : *x;
+        int cy = (*y >= 'A' && *y <= 'Z') ? *y - 'A' + 'a' : *y;
+        if (cx != cy) return cx - cy;
+    }
+    return (int)(unsigned char)*x - (int)(unsigned char)*y;
 }
 
 /* The same trick for the effects chain, which is laid out the same way: a name
@@ -244,7 +265,12 @@ int main(int argc, char **argv)
     char  scope[SCOPE_LEN];
     float scope_copy[SCOPE_LEN];
 
-    const char *voice_names[32];
+    const char *voice_names[64];
+    /* Sorted alongside the names, so the dropdown index still selects the
+     * preset the label belongs to. Keeping the pointers rather than re-looking
+     * up by name also means two presets could share a name without the wrong
+     * one being chosen. */
+    const bm_voice *voice_list[64];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
     const char *fx_names[16];
     int   fx_count = 0, fx_index = 0, fx_open = 0;
@@ -284,8 +310,16 @@ int main(int argc, char **argv)
     effects = config.effects;
 
     for (i = 0; i < bm_voice_preset_count() &&
-                i < (int)(sizeof voice_names / sizeof voice_names[0]); i++) {
-        voice_names[voice_count++] = bm_voice_preset_at(i)->name;
+                i < (int)(sizeof voice_list / sizeof voice_list[0]); i++) {
+        voice_list[voice_count++] = bm_voice_preset_at(i);
+    }
+    qsort(voice_list, (size_t)voice_count, sizeof voice_list[0], by_name);
+    for (i = 0; i < voice_count; i++) voice_names[i] = voice_list[i]->name;
+
+    /* Start on whichever entry the default voice turned out to be, rather than
+     * on whatever sorts first - the dropdown has to agree with the sliders. */
+    for (i = 0; i < voice_count; i++) {
+        if (voice_list[i]->name == voice.name) { voice_index = i; break; }
     }
     for (i = 0; i < bm_effects_preset_count() &&
                 i < (int)(sizeof fx_names / sizeof fx_names[0]); i++) {
@@ -716,7 +750,7 @@ int main(int argc, char **argv)
             b = (Rectangle){ BM_PAD + 60, y, 220, 28 };
             if (bm_dropdown(&ui, b, voice_names, voice_count, &voice_index,
                             &voice_open)) {
-                voice = *bm_voice_preset_at(voice_index);
+                voice = *voice_list[voice_index];
                 bm_engine_set_voice(g_engine, &voice);
                 snprintf(status, sizeof status, "voice: %s", voice.name);
                 status_color = BM_DIM;

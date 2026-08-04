@@ -78,6 +78,14 @@ typedef struct bm_ui {
     int         pop_count;
     int         pop_sel;
 
+    /* A dropdown with more entries than fit scrolls. Only one is ever open, so
+     * the scroll offset lives here rather than being a parameter every caller
+     * would have to declare a variable for and none would want to think about.
+     * pop_first is the index at the top of the visible window; pop_rows is how
+     * many of them there is room to draw. */
+    int         pop_first;
+    int         pop_rows;
+
     /* Context menu, which belongs to whichever text box opened it. */
     int   menu_open;
     int   menu_owner;
@@ -139,6 +147,10 @@ int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
                 int enabled);
 int   bm_slider(const bm_ui *ui, Rectangle r, const char *label,
                 float *value, float lo, float hi, const char *fmt);
+/* Scrolls when the list is taller than the space beneath it: the mouse wheel
+ * moves it and a bar on the right says where you are. Opening it scrolls the
+ * current selection into view, because a list that opens at the top when the
+ * selection is at the bottom looks like it has forgotten. */
 int   bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
                   int *index, int *open);
 

@@ -367,6 +367,7 @@ int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
     Vector2 m = GetMousePosition();
     int changed = 0, i;
     int free_ = mouse_free(ui);
+    int was_open = *open;
 
     bm_panel(r);
     bm_text(ui, BM_FONT_SMALL, items[*index], r.x + 8,
@@ -381,18 +382,43 @@ int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
     }
 
     if (*open) {
-        Rectangle list = { r.x, r.y + r.height + 1, r.width,
-                           (float)count * r.height };
+        float top = r.y + r.height + 1;
+        /* However many rows fit between the control and the bottom edge, with
+         * a margin so the last one is not flush against it. Computed rather
+         * than fixed: the window is resizable, and a constant that is right at
+         * 780 px tall is wrong at 1400. */
+        int   rows = (int)((float)GetScreenHeight() - top - 12.0f) /
+                     (int)r.height;
+        Rectangle list;
+
+        if (rows > count) rows = count;
+        if (rows < 3) rows = 3;
+
+        if (!was_open) {
+            /* Opening: put the selection in view. Centred rather than at the
+             * top, so there is context either side of it. */
+            ui->pop_first = *index - rows / 2;
+        }
+        if (count > rows) {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0.0f) ui->pop_first -= (int)wheel;
+        } else {
+            ui->pop_first = 0;
+        }
+        if (ui->pop_first > count - rows) ui->pop_first = count - rows;
+        if (ui->pop_first < 0) ui->pop_first = 0;
+
+        list = (Rectangle){ r.x, top, r.width, (float)rows * r.height };
 
         /* Input here, drawing in bm_ui_overlay. The list is on top, so it takes
          * the mouse first - and publishing its rectangle is what stops the
          * sliders underneath from being dragged through it. */
-        for (i = 0; i < count; i++) {
+        for (i = 0; i < rows; i++) {
             Rectangle item = { list.x, list.y + (float)i * r.height,
                                list.width, r.height };
             if (CheckCollisionPointRec(m, item) &&
                 IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-                *index = i;
+                *index = ui->pop_first + i;
                 *open = 0;
                 changed = 1;
             }
@@ -408,6 +434,7 @@ int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
             ui->pop_rect  = list;
             ui->pop_items = items;
             ui->pop_count = count;
+            ui->pop_rows  = rows;
             ui->pop_sel   = *index;
             ui->block     = list;
             ui->blocking  = 1;
@@ -1044,20 +1071,44 @@ void bm_ui_overlay(bm_ui *ui)
 
     if (ui->pop_kind == 1) {
         Rectangle list = ui->pop_rect;
-        float ih = list.height / (float)ui->pop_count;
+        int   rows = (ui->pop_rows > 0) ? ui->pop_rows : ui->pop_count;
+        float ih = list.height / (float)rows;
+        int   scrolls = ui->pop_count > rows;
 
         /* Drawn as one card with a shadow, so it reads as being above the
          * layout rather than punched into it. */
         DrawRectangle((int)list.x + 3, (int)list.y + 3, (int)list.width,
                       (int)list.height, (Color){ 0, 0, 0, 110 });
-        for (i = 0; i < ui->pop_count; i++) {
+        for (i = 0; i < rows; i++) {
+            int       k = ui->pop_first + i;
             Rectangle item = { list.x, list.y + (float)i * ih, list.width, ih };
             int over = CheckCollisionPointRec(m, item);
+
+            if (k < 0 || k >= ui->pop_count) continue;
             DrawRectangleRec(item, over ? BM_EDGE : BM_PANEL);
             DrawRectangleLinesEx(item, 1, BM_BORDER);
-            bm_text(ui, BM_FONT_SMALL, ui->pop_items[i], item.x + 8,
+            bm_text(ui, BM_FONT_SMALL, ui->pop_items[k], item.x + 8,
                     item.y + (item.height - BM_FONT_SMALL) * 0.5f,
-                    i == ui->pop_sel ? BM_ACCENT : BM_TEXT);
+                    k == ui->pop_sel ? BM_ACCENT : BM_TEXT);
+        }
+
+        /* Where you are in a list you cannot see all of. Drawn inside the
+         * right edge rather than beside it, so the card stays one rectangle. */
+        if (scrolls) {
+            float track_h = list.height - 8.0f;
+            float th = track_h * (float)rows / (float)ui->pop_count;
+            float t  = (ui->pop_count > rows)
+                     ? (float)ui->pop_first / (float)(ui->pop_count - rows)
+                     : 0.0f;
+
+            if (th < 16.0f) th = 16.0f;
+            DrawRectangleRounded(
+                (Rectangle){ list.x + list.width - 9.0f, list.y + 4.0f,
+                             5.0f, track_h }, 0.5f, 4, BM_BG);
+            DrawRectangleRounded(
+                (Rectangle){ list.x + list.width - 9.0f,
+                             list.y + 4.0f + (track_h - th) * t,
+                             5.0f, th }, 0.5f, 4, BM_ACCENT);
         }
     }
 

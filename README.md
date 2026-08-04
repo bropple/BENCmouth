@@ -218,7 +218,7 @@ bm "hello world" -o - > /tmp/x.wav && afplay /tmp/x.wav   # macOS
 
 ## Voices
 
-Thirteen presets ship in the binary:
+Fifteen presets ship in the binary:
 
 | Voice | Character |
 |---|---|
@@ -235,6 +235,8 @@ Thirteen presets ship in the binary:
 | `Rattled` | the one that came loose |
 | `Frantic` | fast, high and unstable — far too much of something |
 | `Grizzled` | old and worn: heavy flutter and a leaky glottis, not just a low pitch |
+| `Frederick` | the ordinary default male voice the novelty ones were novelties against |
+| `Princess` | light and high — breathier than `Operator`, and quicker |
 
 The last six are the **classic set**, aimed at the voices desktop machines shipped with in
 the eighties and early nineties. They are tuned toward those archetypes from the published
@@ -287,6 +289,14 @@ Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`
 `whisper` and `vibrato` are worth calling out because each is easily confused with a
 neighbour:
 
+- **`source` decides what excites the tract**, 0..2: vocal folds, a harmonic pipe
+  stack, or the inharmonic partials of a struck bell — crossfading, so 1.5 is a pipe
+  with a bell's inharmonicity creeping in. The tract is untouched either way, so a
+  bell-sourced voice still has formants and still says the words. That is what the
+  classic instrument voices were: not an instrument playing instead of speech, but an
+  instrument doing the speaking. The bell ratios are a real church bell's, and the
+  tierce at 1.19 — a minor third, and a harmonic of nothing — is why it reads as a bell
+  rather than a detuned chord.
 - **`flatten` is what "monotone" actually needs.** `f0_range` is documented as
   "0 = monotone robot" and for a voice using the phrase planner it is — but a voice with
   `prosody` at 0 uses the older contour, which read `f0_range` not at all and applied its
@@ -395,11 +405,12 @@ Six presets ship:
 | `Enforcer` | the aggressive one; drive carries it |
 
 Several `.voice` files pair a voice with a chain, since what makes something sound like
-a particular character is usually both together — `Aggressor` and `Sentry` for the two
-above, plus `Emissary` (ring-modulated, flattened, not from here), `Diver` (burbling,
-from inside something), and `Foreman` (a site announcement through fifteen-year-old
-outdoor speakers). A `.voice` file can carry an `effects = NAME` line and any of the
-keys above.
+a particular character is usually both together: `Aggressor` and `Sentry` for the two
+above, `Zarvox` (ring modulation over a completely flattened voice), `Emissary` (the
+same idea done politely), `Diver` (burbling, from inside something), `Foreman` (a site
+announcement through fifteen-year-old outdoor speakers), and `Carillon` / `Harmonium`,
+which use the excitation source below. A `.voice` file can carry an `effects = NAME`
+line and any of the keys above.
 
 **Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:
 `drive` is a threshold effect, and a drive stage that saw an untrimmed signal would
@@ -588,9 +599,10 @@ for a 90 Hz voice with a little vibrato sounds wrong out of a 200 Hz voice with 
 bm -S songs/daisy.bmsong -a
 bm -S songs/bad-news.bmsong -a      # the announcement nobody wants
 bm -S songs/good-news.bmsong -a
+bm -S songs/boing.bmsong -a         # a word dropped down a stairwell
 ```
 
-`bad-news` and `good-news` exist to make a point CLASSIC-VOICES.md makes in prose: some
+`bad-news`, `good-news` and `boing` exist to make a point CLASSIC-VOICES.md makes in prose: some
 of the classic novelty *voices* were never voices at all. There is no setting that makes
 a synthesizer sing a fixed melody — a melody is a score, and a score is a file. Nothing
 in either voice block is doing the work.

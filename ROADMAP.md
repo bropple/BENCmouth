@@ -257,6 +257,67 @@ that need an actual decision when we get there:
       off stack up the way a flutter-free voice does - so CI now fails if any shipped
       voice or song clips.
 
+## The excitation stops being fixed
+
+- [x] **`bm_voice.source`** (0..2: folds, pipe, bell). CLASSIC-VOICES.md listed every
+      instrument-source novelty voice as unreachable, and the reason was one line of
+      architecture: `bm_glottis.c` produced the glottal flow derivative and nothing
+      else. It now crossfades into two additive stacks.
+
+      The bell table is a church bell's measured partials, and the tierce at 1.19 - a
+      minor third, and a harmonic of nothing - is what makes it read as a bell.
+      Measured at a steady 150 Hz, energy at 0.5x and 1.19x f0 goes from 14 and 25 dB
+      on the glottal source to 58 and 61 dB on the bell. The pipe stays harmonic at
+      both, which is the control.
+
+      Two things that were not obvious:
+
+      - The partials need their own phase accumulators. `sin(2*pi * phase * ratio)`
+        looks equivalent and is not: `phase` wraps at 1, so a non-integer ratio steps
+        discontinuously at every wrap - a click at the fundamental frequency, which is
+        a buzz exactly where the source is supposed to be smooth.
+      - They start spread around the cycle. Six sines starting in phase sum to one
+        large spike on the first sample, which is a tick at the start of every
+        utterance.
+
+      Level-matched to within 0.1% RMS by measurement rather than by summing the
+      amplitude columns - six sines are not as loud as their coefficients suggest, and
+      the glottal pulse is a sparse spike train whose RMS is nothing like its peak.
+
+      Default 0. Retro's reference is unmoved.
+
+- [x] **The roster filled in.** `Frederick` and `Princess` as presets; `Zarvox`,
+      `Carillon` (bell) and `Harmonium` (pipe) as `.voice` files; `songs/boing.bmsong`,
+      which is the third member of the "this was never a voice" set - a bouncing pitch
+      envelope written down is a score.
+
+      Still out of range and still written down: a detuned chorus needs several engines
+      summed, and the bell sustains rather than decaying because the source cannot see
+      phoneme onsets.
+
+- [x] **The voice dropdown sorts and scrolls.** Fifteen presets in declaration order
+      ran off the bottom of the window. Alphabetical for display only - nothing else
+      depends on preset order, because everything else looks them up by name - and the
+      visible row count is computed from the space below the control rather than
+      fixed, since the window is resizable.
+
+## Known, and recorded rather than fixed
+
+- **The default voices engage the limiter on long sentences.** On "The quick brown fox
+  jumps over the lazy dog." with the dictionary compiled in, `BENCmouth` peaks at 1.367
+  and `BENCmouth Retro` at 1.165 against a limiter threshold of 0.85. Found by the
+  clipping check added for the songs, and confirmed present at the commit before it -
+  this is long-standing, not a regression.
+
+  Retro's `gain` cannot be lowered: it is pinned, and lowering it would move the one
+  voice the golden reference exists to hold still. The soft limiter absorbs it, which is
+  what a soft limiter is for, so this is a level-headroom observation rather than
+  distortion. CI reports it for those two and fails for everything else.
+
+  The real fix, if one is wanted, is a look-ahead normalisation pass in the host layer
+  rather than a per-voice trim - peak level is a property of the sentence as much as of
+  the voice, and no constant gain is right for both a word and a paragraph.
+
 ## Releases
 
 Tagging is **paused** until the release pipeline is finished. The runners already build

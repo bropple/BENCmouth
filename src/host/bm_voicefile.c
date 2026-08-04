@@ -152,6 +152,7 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
     fprintf(f, "f0_flutter     = %.6g\n", (double)voice->f0_flutter);
     fprintf(f, "vibrato        = %.6g\n", (double)voice->vibrato);
     fprintf(f, "vibrato_rate   = %.6g\n", (double)voice->vibrato_rate);
+    fprintf(f, "source         = %.6g\n", (double)voice->source);
     fprintf(f, "speed          = %.6g\n\n", (double)voice->speed);
     fprintf(f, "throat         = %.6g\n", (double)voice->throat);
     fprintf(f, "mouth          = %.6g\n\n", (double)voice->mouth);

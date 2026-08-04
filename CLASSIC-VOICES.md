@@ -83,25 +83,52 @@ is byte-for-byte unchanged. That is the contract, and it held.
 Grouped by cause, because the causes are different and only some of them are
 interesting.
 
-### 1. Voices whose source is a musical instrument
+### 1. Voices whose source is a musical instrument — **now reachable**
 
-The classic novelty set includes voices that speak through bells, bowed strings, a
-pipe organ, and a struck-spring *boing*. BENCmouth cannot make any of them, and the
-reason is one line of architecture:
+*This section used to say the excitation was fixed and that a bell was therefore out of
+range. It is not fixed any more.*
 
-> The excitation source is fixed. `bm_glottis.c` produces the derivative of glottal
-> volume velocity and nothing else.
+The problem was real and it was one line of architecture: `bm_glottis.c` produced the
+derivative of glottal volume velocity and nothing else. A bell is not a glottal pulse
+train under any setting of open quotient or tilt.
 
-That choice is load-bearing rather than incidental — it is why there is no separate
-lip-radiation stage anywhere in the synthesizer, because differentiating the flow
-folds the radiation characteristic in for free. A bell is not a glottal pulse train
-under any setting of open quotient or tilt; it is an inharmonic partial series with a
-long decay. No combination of the seventeen voice parameters approaches it.
+`bm_voice.source` selects it, 0..2 — folds, pipe, bell — and **crossfades**, because
+the interesting settings turn out to be between the corners. A discrete three-way
+switch would have been easier to write and worse to use.
 
-**What it would take:** a pluggable source — a function pointer or a small enum in
-`bm_frame` selecting among glottal pulse, harmonic stack, and noise-burst-plus-ring.
-Perhaps 150 lines, and it changes the shape of the public API rather than adding to
-it. Not a tuning problem.
+The bell table is the measured partial series of a church bell:
+
+| ratio | name | |
+|---|---|---|
+| 0.50 | hum | an octave below the strike note |
+| 1.00 | prime | |
+| 1.19 | tierce | a minor third — **not a harmonic of anything** |
+| 1.50 | quint | |
+| 2.00 | nominal | what you think the pitch is |
+| 2.66 | superquint | |
+
+The tierce is why it reads as a bell rather than as a detuned chord, and the
+inharmonicity is the whole mechanism: with no resolvable fundamental the ear hears a
+strike instead of a pitch. Measured at a steady 150 Hz, energy at 0.5× and 1.19× the
+fundamental rises from 14 and 25 dB on the glottal source to 58 and 61 dB on the bell —
+a 44 dB shift into frequencies a harmonic source cannot produce at all. The pipe stays
+harmonic at both, which is the control.
+
+All three sources are level-matched to within 0.1% RMS, measured rather than derived:
+six sines summed are not as loud as their coefficients suggest, and the glottal pulse
+they have to match is a sparse spike train whose RMS is nothing like its peak.
+
+**The vocal tract is untouched.** A bell-sourced voice still has formants and still says
+the words, which is exactly what the classic instrument voices were — not an instrument
+playing instead of speech, but an instrument doing the speaking. `voices/Carillon.voice`
+and `voices/Harmonium.voice`.
+
+Two details worth recording. The partials need their own phase accumulators rather than
+being derived from the fundamental's: `sin(2π · phase · ratio)` looks equivalent and is
+not, because `phase` wraps at 1 and a non-integer ratio then steps discontinuously at
+every wrap — a click at the fundamental frequency, which is a buzz exactly where the
+source is meant to be smooth. And they start spread around the cycle rather than all at
+zero, because six sines starting in phase sum to one large spike on the first sample.
 
 ### 2. Voices whose character is modulation — **now reachable**
 
@@ -246,6 +273,22 @@ classic voices": the *formant* ones, yes, to the extent that any two independent
 tuned formant synthesizers can sound alike. The recorded ones, no, and no amount of
 parameter work changes it.
 
+### Still out of range
+
+**A detuned chorus.** One `bm_engine` renders one voice, and a chorus is several
+slightly-detuned copies of the same utterance summed. A comb filter is a fixed delay and
+sounds like a tube, not like three singers. This remains a host-layer job: three engines,
+three copies of the voice a few hertz apart, three `bm_read()` calls summed — the engine
+allocates nothing and holds all its state in caller-supplied storage precisely so that
+having three of them is unremarkable. Roughly 30 lines, none of it in core, not yet
+written.
+
+**Struck decay.** The bell source sustains for as long as the phoneme does. A real bell
+is struck and decays, and getting that would mean an envelope retriggered per syllable —
+which the source cannot see, because it is handed a pitch and an amplitude and knows
+nothing about phonemes. The per-phoneme amplitude envelope gives each syllable an onset,
+which carries some of it.
+
 ## Summary
 
 | Classic voice family | Reachable | Why not / how |
@@ -253,10 +296,10 @@ parameter work changes it.
 | Small formant voices — male, female, child, deep | **Yes** | Six presets, shipped |
 | Whisper | **Yes** | Needed a new `whisper` parameter |
 | Unstable / wobbling | **Yes** | Needed `vibrato`; flutter alone was not enough |
-| Instrument-source (bells, strings, organ) | No | Source is fixed to the glottal model; needs a pluggable source |
+| Instrument-source (bells, organ) | **Yes** | `source` selects folds, pipe or bell, and crossfades |
 | Ring-modulated robot | **Yes** | `bm_effects`, kept separate from `bm_voice` so effects compose with voices |
 | Aggressive / distorted | **Yes** | `drive`; the harmonics it invents are what "aggressive" is |
-| Detuned chorus | **Yes, in the host** | Sum three engines; core needs nothing |
+| Detuned chorus | Not shipped | Still needs several engines summed; one engine renders one voice |
 | Fixed-melody announcements | **Yes** | It is a `.bmsong`, not a voice |
 | Concatenative / recorded | No | Different kind of program entirely |
 

@@ -1,0 +1,46 @@
+# BENCmouth voice
+# Speech through a rank of pipes.
+#
+# `source = 1` swaps the vocal folds for a harmonic stack at drawbar ratios -
+# fundamental, octave, twelfth, two octaves, nineteenth. Unlike the bell it is
+# strictly harmonic, so it keeps a clear pitch; what it loses is the closure.
+# A glottal pulse is a sharp discontinuity once per period and that edge is
+# most of what makes a voice sound like a voice, so removing it leaves
+# something that is unmistakably sustained rather than articulated.
+#
+# Slow and flat on purpose. An organ does not hurry and does not inflect.
+#
+#   ./bm -f voices/Harmonium.voice -a "let us begin"
+
+name           = Harmonium
+
+f0_base        = 116
+f0_range       = 2
+f0_flutter     = 0
+vibrato        = 0.22
+vibrato_rate   = 4.5
+source         = 1
+speed          = 0.8
+
+throat         = 0.94
+mouth          = 1
+
+breathiness    = 0
+tilt           = 2
+open_quotient  = 0.5
+whisper        = 0
+gain           = 1.15
+
+coarticulation = 0.35
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.6
+flatten        = 1
+
+ring           = 0
+ring_hz        = 0
+comb           = 0.35
+comb_hz        = 105
+drive          = 0
+crush          = 0
+level          = 1

@@ -1,0 +1,51 @@
+# BENCmouth song
+#
+# A word dropped down a stairwell.
+#
+# Third of the "this was never a voice" set, with bad-news and good-news. The
+# classic bouncing novelty voice is a pitch envelope, and a pitch envelope
+# written down is a score: the same syllable on a falling sequence of notes,
+# each shorter than the last, which is what a bouncing object does. There is no
+# voice setting that produces it and there should not be.
+#
+#   make bm && ./bm -S songs/boing.bmsong -a
+
+title          = Boing
+voice          = BENCmouth
+tempo          = 120
+
+f0_base        = 130
+f0_range       = 4
+f0_flutter     = 0.15
+vibrato        = 0
+vibrato_rate   = 0
+source         = 0
+speed          = 1
+throat         = 1
+mouth          = 1.05
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.46
+whisper        = 0
+gain           = 0.9
+coarticulation = 0.5
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.8
+flatten        = 0
+
+comb           = 0.35
+comb_hz        = 260
+drive          = 0.15
+level          = 1
+
+score =
+# Each bounce is lower and shorter, and the gaps close up - which is the whole
+# shape of a thing losing energy.
+[note G4][hold 300] B OY1 NG [pause 260]
+[note E4][hold 240] B OY1 NG [pause 200]
+[note C4][hold 190] B OY1 NG [pause 150]
+[note A3][hold 150] B OY1 NG [pause 110]
+[note F3][hold 120] B OY1 NG [pause 80]
+[note D3][hold 100] B OY1 NG [pause 60]
+[note C3][hold 90]  B OY1 NG

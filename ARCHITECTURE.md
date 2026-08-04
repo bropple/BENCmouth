@@ -46,7 +46,7 @@ src/core/                no stdio, no stdlib, no malloc, no libm
   bm_engine.c            public API, lifecycle, storage, the pull loop
   bm_resonator.c         two-pole resonator and antiresonator primitives
   bm_glottis.c           voiced source: pulse shape, open quotient, tilt, flutter,
-                         vibrato
+                         vibrato, and the pipe/bell partial stacks
   bm_noise.c             aspiration and frication source (xorshift, not rand())
   bm_synth.c             cascade + parallel topology, the DSP top level
   bm_effects.c           ring / comb / drive / crush, after the synthesizer

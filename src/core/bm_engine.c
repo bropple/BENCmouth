@@ -96,6 +96,7 @@ bm_result bm_engine_init(bm_engine_storage *storage, const bm_config *config,
     bm_synth_init(&e->synth, (float)cfg.sample_rate);
     bm_synth_set_flutter(&e->synth, cfg.voice.f0_flutter);
     bm_synth_set_vibrato(&e->synth, cfg.voice.vibrato, cfg.voice.vibrato_rate);
+    bm_synth_set_source(&e->synth, cfg.voice.source);
     bm_synth_set_gain(&e->synth, cfg.voice.gain);
     bm_synth_set_effects(&e->synth, &cfg.effects);
     bm_frame_gen_init(&e->gen, (float)cfg.frame_rate, &cfg.voice);
@@ -126,6 +127,7 @@ bm_result bm_engine_set_voice(bm_engine *engine, const bm_voice *voice)
     engine->config.voice = *voice;
     bm_synth_set_flutter(&engine->synth, voice->f0_flutter);
     bm_synth_set_vibrato(&engine->synth, voice->vibrato, voice->vibrato_rate);
+    bm_synth_set_source(&engine->synth, voice->source);
     bm_synth_set_gain(&engine->synth, voice->gain);
 
     /* The frame generator holds its own copy, so hand it the new one. Anything

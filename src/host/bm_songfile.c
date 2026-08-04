@@ -255,6 +255,7 @@ int bm_song_save(const char *path, const bm_song *song, const char *score)
     fprintf(f, "f0_flutter     = %.6g\n", (double)v->f0_flutter);
     fprintf(f, "vibrato        = %.6g\n", (double)v->vibrato);
     fprintf(f, "vibrato_rate   = %.6g\n", (double)v->vibrato_rate);
+    fprintf(f, "source         = %.6g\n", (double)v->source);
     fprintf(f, "speed          = %.6g\n", (double)v->speed);
     fprintf(f, "throat         = %.6g\n", (double)v->throat);
     fprintf(f, "mouth          = %.6g\n", (double)v->mouth);

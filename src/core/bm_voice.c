@@ -34,7 +34,7 @@ static const bm_voice BM_PRESETS[] = {
      * land, this is the entry that changes. */
     { "BENCmouth",
       118.0f, 4.0f, 0.30f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.0f,
       1.0f, 1.0f,
       0.0f, 6.0f, 0.50f, 0.0f, 1.0f,
@@ -51,6 +51,7 @@ static const bm_voice BM_PRESETS[] = {
       0.30f,    /* f0_flutter    */
       0.0f,     /* vibrato       - a 1982 machine did not have one */
       0.0f,     /* vibrato_rate  */
+      0.0f,     /* source        - vocal folds, not a pipe or a bell */
       1.0f,     /* speed         */
       1.0f,     /* throat        */
       1.0f,     /* mouth         */
@@ -81,7 +82,7 @@ static const bm_voice BM_PRESETS[] = {
      * 0.55. */
     { "BENCmouth Monotone",
       120.0f, 0.0f, 0.0f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.0f,
       1.0f, 1.0f,
       0.0f, 4.0f, 0.50f, 0.0f, 0.62f,
@@ -97,7 +98,7 @@ static const bm_voice BM_PRESETS[] = {
      * Only the BENCmouth Retro family keeps them at zero. */
     { "Deep",
       100.0f, 4.5f, 0.35f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       0.93f,
       0.78f, 0.84f,
       0.0f, 9.0f, 0.58f, 0.0f, 1.0f,
@@ -107,7 +108,7 @@ static const bm_voice BM_PRESETS[] = {
      * spectral tilt. */
     { "Bright",
       168.0f, 5.5f, 0.30f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.05f,
       1.10f, 1.16f,
       0.0f, 3.0f, 0.46f, 0.0f, 1.0f,
@@ -135,7 +136,7 @@ static const bm_voice BM_PRESETS[] = {
      * things it does not do. */
     { "Compact",
       122.0f, 3.0f, 0.10f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.10f,
       1.02f, 1.06f,
       0.0f, 2.0f, 0.42f, 0.0f, 0.92f,
@@ -146,7 +147,7 @@ static const bm_voice BM_PRESETS[] = {
      * here than the pitch does. */
     { "Announcer",
       88.0f, 5.0f, 0.30f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       0.88f,
       0.74f, 0.80f,
       1.5f, 10.0f, 0.60f, 0.0f, 1.0f,
@@ -158,7 +159,7 @@ static const bm_voice BM_PRESETS[] = {
      * impression than the pitch alone does. */
     { "Operator",
       200.0f, 6.0f, 0.28f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.0f,
       1.14f, 1.18f,
       4.0f, 6.0f, 0.58f, 0.0f, 0.95f,
@@ -169,7 +170,7 @@ static const bm_voice BM_PRESETS[] = {
      * otherwise land somewhere between "child" and "adult on helium". */
     { "Cadet",
       255.0f, 7.0f, 0.35f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       1.08f,
       1.26f, 1.32f,
       3.0f, 3.0f, 0.50f, 0.0f, 0.72f,
@@ -181,7 +182,7 @@ static const bm_voice BM_PRESETS[] = {
      * whisper back down lands somewhere sensible. */
     { "Whisper",
       130.0f, 3.0f, 0.20f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       0.95f,
       1.0f, 1.04f,
       0.0f, 4.0f, 0.55f, 1.0f, 1.0f,
@@ -193,7 +194,7 @@ static const bm_voice BM_PRESETS[] = {
      * modulation alone reads as singing, and it takes both to sound unwell. */
     { "Rattled",
       130.0f, 9.0f, 0.85f,
-      1.6f, 8.5f,
+      1.6f, 8.5f, 0.0f,
       1.15f,
       0.95f, 1.10f,
       0.0f, 1.5f, 0.40f, 0.0f, 0.85f,
@@ -214,7 +215,7 @@ static const bm_voice BM_PRESETS[] = {
      * has come loose, this one has had far too much of something. */
     { "Frantic",
       190.0f, 9.0f, 0.55f,
-      0.90f, 7.5f,
+      0.90f, 7.5f, 0.0f,
       1.35f,
       1.12f, 1.20f,
       0.0f, 2.0f, 0.42f, 0.0f, 0.80f,
@@ -228,11 +229,37 @@ static const bm_voice BM_PRESETS[] = {
      * younger person sound larger. */
     { "Grizzled",
       78.0f, 3.5f, 0.68f,
-      0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f,
       0.90f,
       0.86f, 0.92f,
       6.0f, 7.0f, 0.64f, 0.0f, 1.0f,
-      0.60f, 0.85f, 1.0f, 0.80f, 0.0f }
+      0.60f, 0.85f, 1.0f, 0.80f, 0.0f },
+
+    /* The one everybody actually remembers: the default male voice a desktop
+     * machine spoke with for most of a decade. Nothing extreme anywhere, which
+     * is the whole character - it is the reference the novelty voices were
+     * novelties against. Mid pitch, neutral tract, moderate everything, and
+     * naturalness controls only part-way up, because it was recognisably
+     * synthetic and pretending otherwise would miss it. */
+    { "Frederick",
+      112.0f, 4.5f, 0.24f,
+      0.0f, 0.0f, 0.0f,
+      1.02f,
+      0.98f, 1.0f,
+      0.0f, 4.5f, 0.48f, 0.0f, 1.0f,
+      0.45f, 0.60f, 0.70f, 0.60f, 0.0f },
+
+    /* The light one. Higher and shorter-tracted than Operator, and breathier -
+     * a smaller larynx closes less completely, and the aspiration that escapes
+     * is what makes a high voice sound light rather than merely high. Faster
+     * too: it is a bright delivery, not a careful one. */
+    { "Princess",
+      248.0f, 8.0f, 0.30f,
+      0.25f, 5.5f, 0.0f,
+      1.06f,
+      1.20f, 1.26f,
+      6.0f, 4.0f, 0.62f, 0.0f, 0.85f,
+      0.60f, 0.95f, 1.0f, 0.80f, 0.0f }
 };
 
 #define BM_PRESET_COUNT ((int)(sizeof BM_PRESETS / sizeof BM_PRESETS[0]))
@@ -377,6 +404,9 @@ void bm_voice_random(bm_voice *voice, uint32_t seed)
     voice->vibrato       = 0.0f;
     voice->vibrato_rate  = 0.0f;
     voice->whisper       = 0.0f;
+    /* Not drawn either: a random speaker is a speaker, and a bell that has
+     * turned up by accident is a bug report rather than a discovery. */
+    voice->source        = 0.0f;
 
     voice->throat        = rnd_range(&st, 0.74f, 1.22f);
     voice->mouth         = rnd_range(&st, 0.80f, 1.26f);
@@ -423,6 +453,7 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
     else if (key_equals("f0_flutter",     key, key_len)) voice->f0_flutter = value;
     else if (key_equals("vibrato",        key, key_len)) voice->vibrato = value;
     else if (key_equals("vibrato_rate",   key, key_len)) voice->vibrato_rate = value;
+    else if (key_equals("source",         key, key_len)) voice->source = value;
     else if (key_equals("speed",          key, key_len)) voice->speed = value;
     else if (key_equals("throat",         key, key_len)) voice->throat = value;
     else if (key_equals("mouth",          key, key_len)) voice->mouth = value;

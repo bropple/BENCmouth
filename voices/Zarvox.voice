@@ -1,0 +1,47 @@
+# BENCmouth voice
+# Asked for by name, so it keeps the name.
+#
+# The recipe is ring modulation over a completely flattened voice, and both
+# halves matter. The ring carrier at 92 Hz is close to the 104 Hz fundamental,
+# so the sidebands land near it and beat rather than scattering - that is the
+# hard metallic buzz rather than a shimmer. The flattening is what stops it
+# sounding like a person with a pedal: intonation is a human signal, and a
+# machine that inflects has given itself away.
+#
+# Distinct from Emissary, which is the same idea done politely. This one is
+# louder, closer, and has a comb on it.
+#
+#   ./bm -f voices/Zarvox.voice -a "your attention is required"
+
+name           = Zarvox
+
+f0_base        = 104
+f0_range       = 0
+f0_flutter     = 0
+vibrato        = 0
+vibrato_rate   = 0
+source         = 0
+speed          = 0.9
+
+throat         = 0.9
+mouth          = 1.06
+
+breathiness    = 0
+tilt           = 1
+open_quotient  = 0.4
+whisper        = 0
+gain           = 0.85
+
+coarticulation = 0
+prosody        = 0
+formant_glide  = 0
+bandwidth_track= 0
+flatten        = 1
+
+ring           = 0.95
+ring_hz        = 92
+comb           = 0.45
+comb_hz        = 168
+drive          = 0.35
+crush          = 0.2
+level          = 1.15

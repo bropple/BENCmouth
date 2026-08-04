@@ -1,0 +1,52 @@
+# BENCmouth voice
+# A bell that has been made to speak.
+#
+# This one was listed as unreachable until the excitation became selectable.
+# The vocal folds are gone entirely: `source = 2` replaces them with the
+# measured partial series of a church bell - hum at 0.5 of the strike note,
+# prime at 1, tierce at 1.19, quint at 1.5, nominal at 2. The tierce is the
+# reason it reads as a bell rather than as a detuned chord; a minor third above
+# the prime is not a harmonic of anything, and having no resolvable
+# fundamental is what makes the ear hear a strike instead of a pitch.
+#
+# The vocal tract is untouched. It still has formants and still says the words,
+# which is exactly what the classic instrument voices were - not an instrument
+# playing instead of speech, but an instrument doing the speaking.
+#
+#   ./bm -f voices/Carillon.voice -a "the hour is late"
+
+name           = Carillon
+
+f0_base        = 168
+f0_range       = 3
+f0_flutter     = 0
+vibrato        = 0
+vibrato_rate   = 0
+source         = 2
+speed          = 0.82
+
+throat         = 1
+mouth          = 1.04
+
+breathiness    = 0
+# Low: the partials are the sound, and tilting them off is throwing away the
+# thing that makes it a bell.
+tilt           = 1.5
+open_quotient  = 0.5
+whisper        = 0
+gain           = 0.85
+
+coarticulation = 0.3
+prosody        = 0
+formant_glide  = 1
+bandwidth_track= 0.5
+# Bells do not have intonation.
+flatten        = 1
+
+ring           = 0
+ring_hz        = 0
+comb           = 0.3
+comb_hz        = 190
+drive          = 0
+crush          = 0
+level          = 1

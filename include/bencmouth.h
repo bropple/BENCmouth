@@ -106,6 +106,32 @@ typedef struct bm_voice {
     float vibrato;       /* semitones of peak deviation; 0 = off */
     float vibrato_rate;  /* Hz; 0 selects the default, about 5.5 */
 
+    /* What excites the vocal tract, 0..2.
+     *
+     * The excitation was fixed for a long time, and CLASSIC-VOICES.md listed
+     * every instrument-source novelty voice as unreachable because of it. This
+     * is that limitation lifted:
+     *
+     *   0   the glottal flow derivative - a pair of vocal folds
+     *   1   a harmonic stack - drawbar ratios, sustained, no closure
+     *   2   an inharmonic stack - the partials of a struck bell
+     *
+     * Continuous rather than a three-way switch, and it crossfades: 0.5 is half
+     * folds and half pipe, 1.5 is a pipe with a bell's inharmonicity creeping
+     * in. A discrete selector would have been easier to implement and worse to
+     * use, because the interesting settings turn out to be between the corners.
+     *
+     * The bell ratios are the measured partials of a church bell - hum at 0.5,
+     * prime at 1, tierce at 1.19, quint at 1.5, nominal at 2 - which is what
+     * makes the result read as a bell rather than as a detuned chord. Being
+     * inharmonic is the whole point: there is no fundamental for the ear to
+     * resolve, so it hears a strike instead of a pitch.
+     *
+     * The tract does not change. A bell-sourced voice still has formants and
+     * still says words; it is a bell being made to speak, which is exactly what
+     * the classic novelty voices were. */
+    float source;
+
     float speed;         /* phoneme duration multiplier; 1.0 = nominal */
 
     /* Vocal tract shape, as multipliers on formant frequencies.

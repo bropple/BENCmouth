@@ -276,7 +276,8 @@ static void test_every_field_has_a_key(void)
     /* In struct order: the round-trip below indexes the voice positionally, so
      * this list is also an assertion about the layout. */
     static const char *KEYS[] = {
-        "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate", "speed",
+        "f0_base", "f0_range", "f0_flutter", "vibrato", "vibrato_rate",
+        "source", "speed",
         "throat", "mouth",
         "breathiness", "tilt", "open_quotient", "whisper", "gain",
         "coarticulation", "prosody", "formant_glide", "bandwidth_track",
@@ -490,6 +491,84 @@ static void test_whisper(void)
     }
 
     check(bm_voice_preset("retro")->whisper == 0.0f, "Retro does not whisper");
+}
+
+/* Goertzel energy at one frequency, in dB. */
+static double bin_db(const float *x, size_t n, double hz)
+{
+    double w = 2.0 * 3.14159265358979 * hz / (double)FS;
+    double cf = 2.0 * cos(w), s1 = 0.0, s2 = 0.0;
+    size_t i;
+    double e;
+
+    for (i = 0; i < n; i++) {
+        double s0 = (double)x[i] + cf * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    e = s1 * s1 + s2 * s2 - cf * s1 * s2;
+    return 10.0 * log10(e > 1e-9 ? e : 1e-9);
+}
+
+/* The excitation source, tested where it can actually be seen: in the spectrum
+ * of the source itself, driven at a steady pitch, with no tract in the way. */
+static void test_source(void)
+{
+    static float buf[16384];
+    const size_t N = sizeof buf / sizeof buf[0];
+    const double f0 = 150.0;
+    /* Two ratios a harmonic source cannot produce and a bell must. */
+    const double INHARMONIC[2] = { 0.50, 1.19 };
+    double rms[3], inh[3][2];
+    int    k, j;
+
+    printf("excitation source\n");
+
+    for (k = 0; k < 3; k++) {
+        bm_glottis g;
+        size_t     i;
+        double     sq = 0.0;
+
+        bm_glottis_init(&g, FS);
+        bm_glottis_set(&g, (float)f0, 0.5f, 0.0f, 0.0f);
+        bm_glottis_set_source(&g, (float)k);
+
+        for (i = 0; i < N; i++) {
+            buf[i] = bm_glottis_tick(&g);
+            sq += (double)buf[i] * (double)buf[i];
+        }
+        rms[k] = sqrt(sq / (double)N);
+        for (j = 0; j < 2; j++) inh[k][j] = bin_db(buf, N, f0 * INHARMONIC[j]);
+    }
+
+    printf("    RMS: folds %.4f  pipe %.4f  bell %.4f\n",
+           rms[0], rms[1], rms[2]);
+    printf("    at 0.50x f0: %.0f / %.0f / %.0f dB\n",
+           inh[0][0], inh[1][0], inh[2][0]);
+    printf("    at 1.19x f0: %.0f / %.0f / %.0f dB\n",
+           inh[0][1], inh[1][1], inh[2][1]);
+
+    /* A knob that changes the timbre must not change the volume, which is the
+     * same rule the effects presets are held to. */
+    check(rms[1] > rms[0] * 0.8 && rms[1] < rms[0] * 1.25,
+          "the pipe is level-matched to the folds");
+    check(rms[2] > rms[0] * 0.8 && rms[2] < rms[0] * 1.25,
+          "so is the bell");
+
+    /* The claim being tested is inharmonicity, not difference. A harmonic
+     * source has essentially nothing at half the fundamental or at a minor
+     * third above it; a bell has both, and that is what a bell *is*. */
+    for (j = 0; j < 2; j++) {
+        check(inh[2][j] > inh[0][j] + 25.0,
+              j == 0 ? "the bell has a hum partial the folds do not"
+                     : "and a tierce, which is not a harmonic of anything");
+        check(inh[1][j] < inh[0][j] + 15.0,
+              j == 0 ? "the pipe stays harmonic at 0.50x"
+                     : "the pipe stays harmonic at 1.19x");
+    }
+
+    check(bm_voice_preset("retro")->source == 0.0f,
+          "Retro is excited by vocal folds and nothing else");
 }
 
 /* Intervals between glottal closures, which is the pitch period sample by
@@ -733,6 +812,7 @@ int main(void)
     printf("\nBENCmouth voice tests\n\n");
     test_formant_glide();
     test_bandwidth_tracking();
+    test_source();
     test_flatten();
     test_whisper();
     test_vibrato();

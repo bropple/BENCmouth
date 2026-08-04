@@ -122,6 +122,9 @@ void bm_synth_set_flutter(bm_synth *s, float flutter);
  * Hz where 0 selects the default. Persists across frames. */
 void bm_synth_set_vibrato(bm_synth *s, float semitones, float rate_hz);
 
+/* Selects the excitation, 0..2: folds, pipe, bell. See bm_voice.source. */
+void bm_synth_set_source(bm_synth *s, float source);
+
 /* Sets the effects chain. Persists across frames and across resets. */
 void bm_synth_set_effects(bm_synth *s, const bm_effects *effects);
 
