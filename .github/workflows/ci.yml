@@ -301,7 +301,10 @@ jobs:
           echo "self-contained"
       # Built here as well as at release time, so a broken bundle shows up on a
       # push rather than on a tag.
-      - name: The .app bundle and disk image build
+      # Split into its own steps so a failure names itself: without a log the
+      # step name is the only signal, and "the bundle and the image and the
+      # checks" as one step says nothing about which of them broke.
+      - name: The .app bundle builds
         run: |
           BM_VERSION=0.0.0 ./tools/macos-app.sh bencmouth-gui BENCmouth.app
           test -f BENCmouth.app/Contents/Resources/BENCmouth.icns
@@ -313,18 +316,31 @@ jobs:
                     BENCmouth.app/Contents/Info.plist)" = BENCmouth
           test "$(plutil -extract CFBundlePackageType raw \
                     BENCmouth.app/Contents/Info.plist)" = APPL
-          ./tools/macos-dmg.sh BENCmouth.app test.dmg BENCmouthTest
-          # And that the image really contains a draggable pair, with the
-          # styling actually applied - a .DS_Store is what carries the window
-          # layout, so an image without one opens as a plain list and the
-          # background nobody sees might as well not exist.
+
+      # In a venv rather than `pip install --user`: a runner's system Python is
+      # externally managed and refuses the latter outright.
+      - name: dmgbuild
+        run: |
+          python3 -m venv /tmp/dmgvenv
+          /tmp/dmgvenv/bin/pip install --quiet dmgbuild
+          /tmp/dmgvenv/bin/dmgbuild --help >/dev/null
+
+      - name: The disk image builds
+        run: DMGBUILD=/tmp/dmgvenv/bin/dmgbuild ./tools/macos-dmg.sh \
+               BENCmouth.app test.dmg BENCmouthTest
+
+      # That it is draggable, and that the styling was actually applied. The
+      # layout lives in a .DS_Store; an image without one opens as a plain list
+      # and the background nobody sees might as well not be there.
+      - name: The disk image is styled and draggable
+        run: |
           hdiutil attach test.dmg -nobrowse -mountpoint /tmp/dmg
           ls -la /tmp/dmg
           test -d /tmp/dmg/BENCmouth.app
           test -L /tmp/dmg/Applications
           test -f /tmp/dmg/.DS_Store
           test -f /tmp/dmg/.VolumeIcon.icns
-          ls /tmp/dmg/.background/
+          ls -l /tmp/dmg/.background/
           hdiutil detach /tmp/dmg
 
       - uses: actions/upload-artifact@v4

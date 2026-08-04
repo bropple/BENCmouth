@@ -35,6 +35,13 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/raylib/build -j2
           cmake --install /tmp/raylib/build
+      # Writes the disk image's .DS_Store directly. Driving Finder over
+      # AppleScript, which is the usual way, needs an interactive session and
+      # cannot work on a runner.
+      - name: dmgbuild
+        run: |
+          python3 -m venv /tmp/dmgvenv
+          /tmp/dmgvenv/bin/pip install --quiet dmgbuild
       - name: Build
         run: |
           make dict
@@ -106,8 +113,14 @@ jobs:
           BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui BENCmouth.app
           # No version in the volume name: it becomes the mounted disk's name,
           # and "BENCmouth" is what belongs on a desktop.
-          ./tools/macos-dmg.sh BENCmouth.app "bencmouth-gui-$V-macos-$A.dmg" \
-            BENCmouth
+          DMGBUILD=/tmp/dmgvenv/bin/dmgbuild \
+            ./tools/macos-dmg.sh BENCmouth.app \
+              "bencmouth-gui-$V-macos-$A.dmg" BENCmouth
+          # A release must not quietly ship the unstyled fallback.
+          hdiutil attach "bencmouth-gui-$V-macos-$A.dmg" -nobrowse -mountpoint /tmp/dmg
+          test -f /tmp/dmg/.DS_Store
+          test -L /tmp/dmg/Applications
+          hdiutil detach /tmp/dmg
           ls -l ./*.dmg
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
