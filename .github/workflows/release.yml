@@ -117,9 +117,12 @@ jobs:
             ./tools/macos-dmg.sh BENCmouth.app \
               "bencmouth-gui-$V-macos-$A.dmg" BENCmouth
           # A release must not quietly ship the unstyled fallback.
+          mkdir -p /tmp/dmg
           hdiutil attach "bencmouth-gui-$V-macos-$A.dmg" -nobrowse -mountpoint /tmp/dmg
+          ls -la /tmp/dmg
           test -f /tmp/dmg/.DS_Store
           test -L /tmp/dmg/Applications
+          test -d /tmp/dmg/BENCmouth.app
           hdiutil detach /tmp/dmg
           ls -l ./*.dmg
           ls -l ./*.tar.gz
