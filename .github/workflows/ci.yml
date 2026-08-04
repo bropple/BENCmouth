@@ -317,6 +317,17 @@ jobs:
           test "$(plutil -extract CFBundlePackageType raw \
                     BENCmouth.app/Contents/Info.plist)" = APPL
 
+      # The check that would have caught shipping a bundle macOS calls
+      # "damaged": a signature that does not validate against the bundle it is
+      # in. Ad-hoc identifies nobody, but it has to verify.
+      - name: The bundle's signature validates
+        run: |
+          codesign --verify --deep --strict --verbose=2 BENCmouth.app
+          codesign -dvv BENCmouth.app 2>&1 | head -20
+          # Informational: unnotarized software is rejected here by design, and
+          # that rejection is the "unidentified developer" prompt, not "damaged".
+          spctl -a -t exec -vv BENCmouth.app || true
+
       # In a venv rather than `pip install --user`: a runner's system Python is
       # externally managed and refuses the latter outright.
       - name: dmgbuild

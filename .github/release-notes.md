@@ -27,12 +27,22 @@ because nobody double-clicks a console program. The GUI is a separate download.
 a bare Mach-O executable has nothing to attach one to and GLFW's Cocoa backend ignores
 the request. The bundle is a thin wrapper; `Contents/MacOS` holds one file.
 
-macOS builds are unsigned, so Gatekeeper blocks them on first launch. Right-click the
-app and choose Open, or clear the flag the browser attached:
+macOS binaries here are unsigned in the sense that matters to Apple — there is no
+Developer ID and no notarization — so Gatekeeper will stop the first launch. The app *is*
+ad-hoc signed, which is what keeps the message honest: you should see "Apple could not
+verify..." with an Open Anyway button under System Settings → Privacy & Security, not
+"damaged and can't be opened".
+
+If you do see **damaged**, the signature failed to validate rather than merely being
+untrusted, and either of these fixes it:
 
 ```
-xattr -dr com.apple.quarantine BENCmouth.app     # or ./bm
+xattr -dr com.apple.quarantine /Applications/BENCmouth.app   # drop the download flag
+codesign --force --sign - /Applications/BENCmouth.app        # or re-sign it yourself
 ```
+
+Both work on the CLI too (`./bm`). Nothing here can remove the prompt entirely — that
+needs a paid Developer ID and notarization through Apple.
 
 **The GUI is a single self-contained executable.** The font, the window icon, the
 wordmark and the licence texts are compiled into it, so it can be put anywhere and

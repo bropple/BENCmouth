@@ -115,6 +115,8 @@ jobs:
           # exactly what happened to the first person who tried. A .dmg mounts
           # as a window with the app on one side and Applications on the other.
           BM_VERSION="${V#v}" ./tools/macos-app.sh bencmouth-gui BENCmouth.app
+          # A release must not ship a bundle macOS will call damaged.
+          codesign --verify --deep --strict --verbose=2 BENCmouth.app
           # No version in the volume name: it becomes the mounted disk's name,
           # and "BENCmouth" is what belongs on a desktop.
           DMGBUILD=/tmp/dmgvenv/bin/dmgbuild \

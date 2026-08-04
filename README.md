@@ -501,12 +501,22 @@ backend ignores `glfwSetWindowIcon` entirely, because a bare Mach-O executable h
 Finder or Dock identity to hang one on. The bundle is a wrapper: `Contents/MacOS` holds
 a single file, because everything else is already inside it.
 
-macOS binaries here are unsigned, so Gatekeeper will refuse them on first launch. Either
-right-click the app and choose Open, or clear the quarantine flag the browser attached:
+macOS binaries here are unsigned in the sense that matters to Apple — there is no
+Developer ID and no notarization — so Gatekeeper will stop the first launch. The app *is*
+ad-hoc signed, which is what keeps the message honest: you should see "Apple could not
+verify..." with an Open Anyway button under System Settings → Privacy & Security, not
+"damaged and can't be opened".
+
+If you do see **damaged**, the signature failed to validate rather than merely being
+untrusted, and either of these fixes it:
 
 ```
-xattr -dr com.apple.quarantine BENCmouth.app     # or ./bm
+xattr -dr com.apple.quarantine /Applications/BENCmouth.app   # drop the download flag
+codesign --force --sign - /Applications/BENCmouth.app        # or re-sign it yourself
 ```
+
+Both work on the CLI too (`./bm`). Nothing here can remove the prompt entirely — that
+needs a paid Developer ID and notarization through Apple.
 
 The GUI executable is self-contained: the font, the window icon, the BENCO wordmark and
 the licence texts are all compiled into it. A file beside an executable is a file that

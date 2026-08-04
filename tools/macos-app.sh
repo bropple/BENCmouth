@@ -76,4 +76,27 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Ad-hoc sign the assembled bundle.
+#
+# This is not about trust - an ad-hoc signature identifies nobody - it is about
+# the signature being *valid*. The linker ad-hoc signs the executable on its
+# own, and that signature covers the executable alone. Once the same file sits
+# inside a bundle, macOS validates it against the bundle: Info.plist,
+# Resources, the lot. The standalone signature does not cover any of that, so
+# validation fails, and Gatekeeper reports a bundle that is perfectly intact as
+# "damaged and can't be opened" - with no option to open it anyway, because
+# that offer is for software it distrusts, not for software it thinks is
+# corrupt.
+#
+# Signing here, after everything is in place, makes the signature cover what it
+# is checked against. Gatekeeper then says what is actually true: unidentified
+# developer, open at your own risk.
+if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - --timestamp=none "$APP"
+    codesign --verify --deep --strict --verbose=2 "$APP"
+    echo "signed (ad-hoc) and verified"
+else
+    echo "warning: codesign not found - the bundle will be reported as damaged" >&2
+fi
+
 echo "built $APP"
