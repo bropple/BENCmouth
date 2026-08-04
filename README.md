@@ -409,8 +409,8 @@ condition, and it is there because Ben thought of it.
 
 The repository also contains third-party material with its own terms, listed in `NOTICE`:
 the CMU Pronouncing Dictionary is 2-clause BSD and its notice must be reproduced in binary
-redistributions, and the NRL letter-to-sound rules are US federal government work and
-therefore public domain. If you redistribute BENCmouth in any form, ship `NOTICE` alongside
+redistributions, the NRL letter-to-sound rules are US federal government work and therefore
+public domain, and the GUI bundles Terminus (TTF) under the SIL Open Font License. If you redistribute BENCmouth in any form, ship `NOTICE` alongside
 it and you have covered both.
 
 ---
@@ -459,10 +459,12 @@ audible immediately.
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 
-It looks for Terminess at a few standard paths and falls back to raylib's built-in font;
-the status line tells you which it found.
-
-Not yet: bundling the font. See ROADMAP.md.
+The font is Terminus (TTF), bundled in `assets/fonts/` under the SIL Open Font License —
+unmodified, because the licence reserves its name against modified versions. It is a
+bitmap design, so it is loaded at three native sizes with point filtering rather than
+scaled: crisp unantialiased text at fixed sizes *is* the terminal look, arrived at
+honestly rather than simulated. If the file is missing the GUI falls back to raylib's
+built-in font and says so.
 
 For a target without an FPU, `-DBM_FIXED_POINT=1` runs the sample loop in Q18 integer
 arithmetic — 52.9 dB SNR against the float reference, measured on a rendered sentence.

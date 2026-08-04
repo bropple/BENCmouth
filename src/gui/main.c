@@ -176,8 +176,8 @@ int main(void)
     }
 
     status_color = BM_DIM;
-    snprintf(status, sizeof status, "ready  -  %s",
-             ui.loaded ? "Terminess" : "built-in font (no Terminess found)");
+    snprintf(status, sizeof status, "ready  -  %s%s", ui.font_name,
+             ui.loaded ? "" : "  (no Terminus TTF found)");
 
     while (!WindowShouldClose()) {
         float W = (float)GetScreenWidth();

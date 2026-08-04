@@ -86,8 +86,22 @@ or decompilation of it. See ref/README.md for the sources deliberately not
 consulted, and why.
 
 ================================================================================
-4. Future additions
+4. Terminus (TTF)  (assets/fonts/TerminusTTF.ttf)
 ================================================================================
 
-The planned GUI would embed the Terminess font (SIL OFL 1.1 with Reserved Font
-Names). If that ships, the OFL text must be added here and to the distribution.
+Bundled with the GUI and therefore present in any binary built with `make gui`.
+Included unmodified; the full licence is assets/fonts/OFL.txt and must
+accompany any redistribution.
+
+    Copyright (c) 2010 Dimitar Toshkov Zhekov,
+    with Reserved Font Name "Terminus Font".
+
+    Copyright (c) 2011-2023 Tilman Blumenbach,
+    with Reserved Font Name "Terminus (TTF)".
+
+    This Font Software is licensed under the SIL Open Font License,
+    Version 1.1. <http://scripts.sil.org/OFL>
+
+The reserved names restrict *modified* versions from using them, which is why
+the file is shipped exactly as released. Do not subset or regenerate it: the
+saving is not worth reopening that question.

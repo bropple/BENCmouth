@@ -62,6 +62,11 @@ void bm_ui_init(bm_ui *ui)
     } else {
         ui->small = ui->body = ui->title = GetFontDefault();
     }
+
+    /* Report the file that was actually found rather than a hardcoded name.
+     * The status line said "Terminess" whichever font loaded, which is the
+     * kind of small untruth that makes you distrust the rest of a display. */
+    ui->font_name = ui->loaded ? GetFileNameWithoutExt(path) : "built-in font";
 }
 
 void bm_ui_free(bm_ui *ui)

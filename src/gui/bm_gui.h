@@ -47,6 +47,7 @@ typedef struct bm_ui {
     Font  body;
     Font  title;
     int   loaded;          /* nonzero if a real font file was found         */
+    const char *font_name; /* which one, for the status line                */
 
     /* One active text field at a time, identified by its rectangle's y. */
     int   focus;

@@ -118,9 +118,10 @@ that need an actual decision when we get there:
       The dependency is confined to `src/gui/`: `make`, `make test` and
       `make check-freestanding` all work with raylib absent.
 
-- [ ] Terminess is looked for at a few paths and falls back to raylib's built-in font.
-      Bundling it means shipping the OFL text alongside, which is a packaging decision
-      rather than a code one.
+- [x] **Terminus (TTF) bundled**, unmodified, with its OFL text in
+      `assets/fonts/OFL.txt` and an entry in NOTICE. The GUI still falls back to
+      raylib's built-in font if the file is missing, and the status line names whichever
+      it actually loaded rather than asserting one.
 
 ## Later / speculative
 
