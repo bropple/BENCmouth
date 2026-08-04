@@ -179,10 +179,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-linux
-          path: |
-            bencmouth-gui
-            assets/fonts/TerminusTTF.ttf
-            assets/fonts/OFL.txt
+          # Just the binary: the font, icon and licences are inside it.
+          path: bencmouth-gui
           if-no-files-found: error
 
       # Last, because it cleans - and by now the artifact is already uploaded.
@@ -264,10 +262,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-windows
-          path: |
-            bencmouth-gui.exe
-            assets/fonts/TerminusTTF.ttf
-            assets/fonts/OFL.txt
+          # Just the executable: the font, icon and licences are inside it.
+          path: bencmouth-gui.exe
           if-no-files-found: error
 
   gui-macos:
@@ -287,10 +283,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-macos
-          path: |
-            bencmouth-gui
-            assets/fonts/TerminusTTF.ttf
-            assets/fonts/OFL.txt
+          # Just the binary: the font, icon and licences are inside it.
+          path: bencmouth-gui
           if-no-files-found: error
 
   strict:

@@ -30,3 +30,7 @@ render/
 
 # Brand/style assets, kept out of the public repo
 style/
+
+# Generated from assets/ by tools/mkembed.c, like the dictionary data.
+src/gui/bm_embed.c
+mkembed

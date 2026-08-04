@@ -51,12 +51,9 @@ jobs:
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-linux-x86_64"
-          mkdir -p "$G/assets/fonts"
+          mkdir -p "$G"
           cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
-          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
-          mkdir -p "$G/assets/icon"
-          cp assets/icon/hex-64.png assets/icon/bencmouth.ico "$G/assets/icon"/
           tar czf "$G.tar.gz" "$G"
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
@@ -84,12 +81,9 @@ jobs:
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-macos-$A"
-          mkdir -p "$G/assets/fonts"
+          mkdir -p "$G"
           cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
-          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
-          mkdir -p "$G/assets/icon"
-          cp assets/icon/hex-64.png assets/icon/bencmouth.ico "$G/assets/icon"/
           tar czf "$G.tar.gz" "$G"
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
@@ -147,12 +141,9 @@ jobs:
           zip -qr "$D.zip" "$D"
           # The GUI, with the font it needs beside it.
           G="bencmouth-gui-$V-windows-x86_64"
-          mkdir -p "$G/assets/fonts"
+          mkdir -p "$G"
           cp bencmouth-gui.exe bm.exe README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
-          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
-          mkdir -p "$G/assets/icon"
-          cp assets/icon/hex-64.png assets/icon/bencmouth.ico "$G/assets/icon"/
           zip -qr "$G.zip" "$G"
           ls -l ./*.zip
       - uses: actions/upload-artifact@v4

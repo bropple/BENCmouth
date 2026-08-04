@@ -4,6 +4,7 @@
  */
 
 #include "bm_gui.h"
+#include "bm_embed.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -21,22 +22,73 @@ Color BM_AMBER  = { 0xe8, 0xb2, 0x3d, 255 };
 /* Terminus, if it can be found. Looked for rather than embedded: the OFL
  * requires the licence to ship with the font, and a build that silently
  * bundles one is a licence problem waiting to happen. Falling back to raylib's
- * built-in font keeps the application usable either way. */
-static const char *FONT_PATHS[] = {
+ * built-in font keeps the application usable either way.
+ *
+ * These are relative, and where they are relative *to* is the whole problem.
+ * Resolving them against the working directory only works when the working
+ * directory happens to be the one holding the binary, which is true when you
+ * double-click it and false for a shortcut, a terminal open somewhere else, or
+ * Run. The symptom is a program that silently loses its font depending on how
+ * it was started. So each of these is tried beside the executable first and
+ * against the working directory second - the same order the window icon
+ * uses, and for the same reason. */
+static const char *FONT_RELATIVE[] = {
     "assets/fonts/TerminessNerdFont-Regular.ttf",
     "assets/fonts/TerminusTTF.ttf",
-    "/usr/share/fonts/TTF/TerminessNerdFont-Regular.ttf",
-    "/usr/share/fonts/truetype/terminus/TerminusTTF.ttf",
-    "/Library/Fonts/TerminessNerdFont-Regular.ttf",
-    "C:/Windows/Fonts/TerminessNerdFont-Regular.ttf"
+    "TerminusTTF.ttf",            /* an archive unpacked flat */
+    "../assets/fonts/TerminusTTF.ttf"
 };
 
+/* Where a system package would have put it. Absolute, so they are used as-is. */
+static const char *FONT_SYSTEM[] = {
+    "/usr/share/fonts/TTF/TerminessNerdFont-Regular.ttf",
+    "/usr/share/fonts/TTF/TerminusTTF.ttf",
+    "/usr/share/fonts/truetype/terminus/TerminusTTF.ttf",
+    "/usr/local/share/fonts/TerminusTTF.ttf",
+    "/Library/Fonts/TerminessNerdFont-Regular.ttf",
+    "/Library/Fonts/TerminusTTF.ttf",
+    "C:/Windows/Fonts/TerminessNerdFont-Regular.ttf",
+    "C:/Windows/Fonts/TerminusTTF.ttf"
+};
+
+/* Returns a path that exists, or 0. `probe` holds the answer when the hit came
+ * from beside the executable, so it has to outlive this call. */
+static const char *find_font(char *probe, size_t cap)
+{
+    const char *dir = GetApplicationDirectory();
+    size_t i;
+
+    for (i = 0; i < sizeof FONT_RELATIVE / sizeof FONT_RELATIVE[0]; i++) {
+        snprintf(probe, cap, "%s%s", dir, FONT_RELATIVE[i]);
+        if (FileExists(probe)) return probe;
+    }
+    for (i = 0; i < sizeof FONT_RELATIVE / sizeof FONT_RELATIVE[0]; i++) {
+        if (FileExists(FONT_RELATIVE[i])) return FONT_RELATIVE[i];
+    }
+    for (i = 0; i < sizeof FONT_SYSTEM / sizeof FONT_SYSTEM[0]; i++) {
+        if (FileExists(FONT_SYSTEM[i])) return FONT_SYSTEM[i];
+    }
+    return 0;
+}
+
+/* Point filtering, not bilinear, in both loaders. Terminus is a bitmap design;
+ * smoothing it is how you get the mush this font exists to avoid. */
 static Font load_at(const char *path, int size, int *found)
 {
     Font f = LoadFontEx(path, size, 0, 0);
     if (f.texture.id != 0 && f.glyphCount > 0) {
-        /* Point filtering, not bilinear. Terminus is a bitmap design; smoothing
-         * it is how you get the mush this font exists to avoid. */
+        SetTextureFilter(f.texture, TEXTURE_FILTER_POINT);
+        *found = 1;
+        return f;
+    }
+    return GetFontDefault();
+}
+
+static Font load_embedded(int size, int *found)
+{
+    Font f = LoadFontFromMemory(".ttf", BM_FONT_TTF, (int)BM_FONT_TTF_LEN,
+                                size, 0, 0);
+    if (f.texture.id != 0 && f.glyphCount > 0) {
         SetTextureFilter(f.texture, TEXTURE_FILTER_POINT);
         *found = 1;
         return f;
@@ -46,27 +98,35 @@ static Font load_at(const char *path, int size, int *found)
 
 void bm_ui_init(bm_ui *ui)
 {
-    size_t i;
-    const char *path = 0;
+    static char probe[1024];
+    const char *path;
 
     memset(ui, 0, sizeof *ui);
 
-    for (i = 0; i < sizeof FONT_PATHS / sizeof FONT_PATHS[0]; i++) {
-        if (FileExists(FONT_PATHS[i])) { path = FONT_PATHS[i]; break; }
-    }
+    /* Disk first, so a different build of the face - Terminess Nerd Font, say -
+     * can be dropped in beside the binary without recompiling. The embedded
+     * copy is the floor, not the ceiling, and it is why there is no longer a
+     * path where the window comes up in raylib's fallback font. */
+    path = find_font(probe, sizeof probe);
 
     if (path != 0) {
         ui->small = load_at(path, BM_FONT_SMALL, &ui->loaded);
         ui->body  = load_at(path, BM_FONT_BODY,  &ui->loaded);
         ui->title = load_at(path, BM_FONT_TITLE, &ui->loaded);
-    } else {
-        ui->small = ui->body = ui->title = GetFontDefault();
     }
+    if (!ui->loaded) {
+        ui->small = load_embedded(BM_FONT_SMALL, &ui->loaded);
+        ui->body  = load_embedded(BM_FONT_BODY,  &ui->loaded);
+        ui->title = load_embedded(BM_FONT_TITLE, &ui->loaded);
+        path = 0;
+    }
+    if (!ui->loaded) ui->small = ui->body = ui->title = GetFontDefault();
 
-    /* Report the file that was actually found rather than a hardcoded name.
-     * The status line said "Terminess" whichever font loaded, which is the
-     * kind of small untruth that makes you distrust the rest of a display. */
-    ui->font_name = ui->loaded ? GetFileNameWithoutExt(path) : "built-in font";
+    /* Report the file that was actually used rather than a hardcoded name. The
+     * status line said "Terminess" whichever font loaded, which is the kind of
+     * small untruth that makes you distrust the rest of a display. */
+    ui->font_name = !ui->loaded ? "built-in font"
+                  : (path != 0 ? GetFileNameWithoutExt(path) : "Terminus (embedded)");
 }
 
 void bm_ui_free(bm_ui *ui)
@@ -155,6 +215,25 @@ int bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled)
                    r.y + (r.height - BM_FONT_SMALL) * 0.5f, text);
 
     return enabled && over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+}
+
+/* A lowercase i in a ring. Drawn rather than typeset: the mark is two
+ * rectangles and a circle, and asking the font where to put a glyph inside a
+ * ring never quite centres it at 16 px. */
+int bm_info_button(const bm_ui *ui, Rectangle r)
+{
+    Vector2 m   = GetMousePosition();
+    int     over = mouse_free(ui) && CheckCollisionPointRec(m, r);
+    float   cx  = r.x + r.width * 0.5f;
+    float   cy  = r.y + r.height * 0.5f;
+    float   rad = ((r.width < r.height) ? r.width : r.height) * 0.5f - 1.0f;
+    Color   c   = over ? BM_ACCENT : BM_DIM;
+
+    DrawCircleLines((int)cx, (int)cy, rad, c);
+    DrawRectangle((int)cx - 1, (int)(cy - rad * 0.50f), 2, 2, c);
+    DrawRectangle((int)cx - 1, (int)(cy - rad * 0.20f), 2, (int)(rad * 0.85f), c);
+
+    return over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
 int bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
@@ -296,6 +375,12 @@ int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
 static float char_w(const bm_ui *ui, int size, int c)
 {
     Font  f = font_for(ui, size);
+
+    /* Carriage returns take no space and are never drawn. Text that arrives
+     * from a file rather than from the keyboard can be CRLF - the embedded
+     * OFL is - and a font with no glyph for 0x0D renders one box per line. */
+    if (c == '\r') return 0.0f;
+
     int   i = GetGlyphIndex(f, c);
     float scale = (float)size / (float)f.baseSize;
     float adv;
@@ -351,6 +436,18 @@ static int wrap_text(const bm_ui *ui, int size, const char *s, float maxw,
     }
     if (n == 0) { start[0] = 0; end[0] = 0; n = 1; }
     return n;
+}
+
+/* Copies one wrapped line out of the buffer, leaving carriage returns behind. */
+static void copy_line(char *dst, size_t cap, const char *src, int from, int to)
+{
+    size_t n = 0;
+    int    i;
+
+    for (i = from; i < to && n + 1 < cap; i++) {
+        if (src[i] != '\r') dst[n++] = src[i];
+    }
+    dst[n] = '\0';
 }
 
 static int line_of(int caret, const int *start, int n)
@@ -790,9 +887,8 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             int   n = end[i] - start[i];
 
             if (ly + lh < inner.y || ly > inner.y + inner.height) continue;
-            if (n > (int)sizeof line - 1) n = (int)sizeof line - 1;
-            memcpy(line, buf + start[i], (size_t)n);
-            line[n] = '\0';
+            (void)n;
+            copy_line(line, sizeof line, buf, start[i], end[i]);
 
             if (b > a && b > start[i] && a < end[i]) {
                 int sa = a > start[i] ? a : start[i];
@@ -856,9 +952,8 @@ void bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c)
         int   n = end[i] - start[i];
 
         if (ly + lh < inner.y || ly > inner.y + inner.height) continue;
-        if (n > (int)sizeof line - 1) n = (int)sizeof line - 1;
-        memcpy(line, s + start[i], (size_t)n);
-        line[n] = '\0';
+        (void)n;
+        copy_line(line, sizeof line, s, start[i], end[i]);
         bm_text(ui, size, line, inner.x, ly, c);
     }
     EndScissorMode();

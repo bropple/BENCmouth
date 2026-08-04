@@ -65,7 +65,7 @@ test: $(LIB)
 clean:
 	rm -f $(CORE_OBJ) $(HOST_OBJ) $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d) \
 	      $(LIB) $(BIN) $(DEMO) $(SPEAK) bm_test
-	rm -f *.exe mkdict $(DICT_DATA) $(WASM_OUT) $(GUI) src/gui/*.res.o
+	rm -f *.exe mkdict mkembed $(DICT_DATA) $(EMBED) $(WASM_OUT) $(GUI) src/gui/*.res.o
 
 $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	@mkdir -p render
@@ -211,7 +211,12 @@ $(WASM_OUT): $(CORE_SRC) src/wasm/bm_wasm.c
 # ---------------------------------------------------------------------------
 
 GUI      := bencmouth-gui
-GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c
+# Assets live in the binary, not beside it - see src/gui/bm_embed.h.
+EMBED     := src/gui/bm_embed.c
+EMBED_IN  := assets/fonts/TerminusTTF.ttf assets/brand/BENCO_Logo_Terminal.png \
+             assets/icon/hex-64.png LICENSE NOTICE assets/fonts/OFL.txt
+
+GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c $(EMBED)
 
 # Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
 # it does not also open a console behind the window. Both apply to the GUI only -
@@ -293,6 +298,21 @@ gui-info:
 	@echo "  RL_LIBS  = $(if $(RL_LIBS),$(RL_LIBS),(empty - pkg-config found nothing))"
 	@echo "  RL_SYS   = $(RL_SYS)"
 	@echo "  GLFW     = $(if $(GLFW_LIB),$(firstword $(GLFW_LIB)) (found),none found - assuming raylib bundles it)"
+
+mkembed: tools/mkembed.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+# Makefile is a prerequisite because the list of symbols lives here: adding an
+# asset changes what the generated file must contain without changing any of
+# the files it is generated from, and make would otherwise call it up to date.
+$(EMBED): mkembed $(EMBED_IN) Makefile
+	./mkembed $@ \
+	  BM_FONT_TTF     assets/fonts/TerminusTTF.ttf \
+	  BM_LOGO_PNG     assets/brand/BENCO_Logo_Terminal.png \
+	  BM_ICON_PNG     assets/icon/hex-64.png \
+	  BM_LICENSE_MIT  LICENSE \
+	  BM_NOTICE       NOTICE \
+	  BM_LICENSE_OFL  assets/fonts/OFL.txt
 
 gui: $(GUI)
 

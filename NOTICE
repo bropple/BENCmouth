@@ -89,7 +89,8 @@ consulted, and why.
 4. Terminus (TTF)  (assets/fonts/TerminusTTF.ttf)
 ================================================================================
 
-Bundled with the GUI and therefore present in any binary built with `make gui`.
+Compiled into the GUI binary and therefore present in any binary built with
+`make gui`.
 Included unmodified; the full licence is assets/fonts/OFL.txt and must
 accompany any redistribution.
 
@@ -103,5 +104,45 @@ accompany any redistribution.
     Version 1.1. <http://scripts.sil.org/OFL>
 
 The reserved names restrict *modified* versions from using them, which is why
-the file is shipped exactly as released. Do not subset or regenerate it: the
+the file is embedded exactly as released. Do not subset or regenerate it: the
 saving is not worth reopening that question.
+
+The OFL permits bundling the font with software provided every copy carries the
+copyright notice and the licence "either as stand-alone text files,
+human-readable headers or in the appropriate machine-readable metadata fields
+within text or binary files as long as those fields can be easily viewed by the
+user." The GUI's information window - the (i) in the top right - shows this
+file and the full OFL text, both compiled into the binary, which is what makes
+shipping the executable on its own permissible.
+
+================================================================================
+5. raylib  (linked into the GUI only)
+================================================================================
+
+The GUI links raylib statically. It is not vendored into this repository - the
+build fetches or finds it - but it is present in any distributed GUI binary,
+so its notice belongs here.
+
+    raylib is licensed under an unmodified zlib/libpng license.
+    Copyright (c) 2013-2024 Ramon Santamaria (@raysan5)
+
+    This software is provided "as-is", without any express or implied
+    warranty. In no event will the authors be held liable for any damages
+    arising from the use of this software.
+
+    Permission is granted to anyone to use this software for any purpose,
+    including commercial applications, and to alter it and redistribute it
+    freely, subject to the following restrictions:
+
+      1. The origin of this software must not be misrepresented; you must not
+      claim that you wrote the original software. If you use this software in
+      a product, an acknowledgment in the product documentation would be
+      appreciated but is not required.
+
+      2. Altered source versions must be plainly marked as such, and must not
+      be misrepresented as being the original software.
+
+      3. This notice may not be removed or altered from any source
+      distribution.
+
+raylib is used unmodified. The core library and the CLI do not link it at all.

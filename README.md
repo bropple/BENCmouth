@@ -1,14 +1,6 @@
-```
-#####  #####  #   #  #####  #####
-#   #  #      ##  #  #      #   #
-#####  ####   # # #  #      #   #
-#   #  #      #  ##  #      #   #
-#####  #####  #   #  #####  #####
-
-  B E N C O   H O L D I N G S
-
-================================
-```
+<p align="center">
+  <img src="assets/brand/BENCO_Logo_README.png" alt="BENCO Holdings" width="420">
+</p>
 
 # BENCmouth
 
@@ -497,12 +489,24 @@ a missing helper program.
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 
-The font is Terminus (TTF), bundled in `assets/fonts/` under the SIL Open Font License —
-unmodified, because the licence reserves its name against modified versions. It is a
-bitmap design, so it is loaded at three native sizes with point filtering rather than
-scaled: crisp unantialiased text at fixed sizes *is* the terminal look, arrived at
-honestly rather than simulated. If the file is missing the GUI falls back to raylib's
-built-in font and says so.
+The GUI executable is self-contained: the font, the window icon, the BENCO wordmark and
+the licence texts are all compiled into it. A file beside an executable is a file that
+can go missing — unzip without the assets folder, make a shortcut, launch from a
+terminal somewhere else, and the window came up in a fallback font with no icon. Drop
+`bencmouth-gui` anywhere and it looks the way it is supposed to.
+
+The font is Terminus (TTF), embedded unmodified — the licence reserves its name against
+modified versions, so it is never subset or regenerated. It is a bitmap design, so it is
+loaded at three native sizes with point filtering rather than scaled: crisp unantialiased
+text at fixed sizes *is* the terminal look, arrived at honestly rather than simulated. A
+copy on disk beside the binary still wins, so a different build of the face can be
+dropped in without recompiling; the status line says which one loaded.
+
+Embedding the font is what the OFL allows *provided* every copy carries the copyright
+notice and the licence somewhere the user can easily view them. The ⓘ button in the top
+right opens a window with the program's name, copyright, the MIT licence, every
+third-party notice and the full OFL text — all read out of the binary. That window is
+the compliance, not a nicety.
 
 For a target without an FPU, `-DBM_FIXED_POINT=1` runs the sample loop in Q18 integer
 arithmetic — 52.9 dB SNR against the float reference, measured on a rendered sentence.

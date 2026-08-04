@@ -120,6 +120,9 @@ void  bm_label(const bm_ui *ui, const char *s, float x, float y);
 
 int   bm_button(const bm_ui *ui, Rectangle r, const char *label, int enabled);
 
+/* An information button: a lowercase i in a circle. */
+int   bm_info_button(const bm_ui *ui, Rectangle r);
+
 /* A button that stays pressed. Filled when on, outlined when off - the state
  * is the fill, so it reads at a glance rather than only from the label. */
 int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,

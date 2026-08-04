@@ -14,6 +14,7 @@
 
 #include "bencmouth.h"
 #include "bm_gui.h"
+#include "bm_embed.h"
 #include "bm_filedlg.h"
 #include "bm_voicefile.h"
 #include "bm_wav.h"
@@ -167,6 +168,10 @@ int main(int argc, char **argv)
     int   voice_count = 0, voice_index = 0, voice_open = 0;
     int   i, dirty = 1;
     int   have_dict = 0, use_dict = 1;
+    int   info_open = 0;
+    Texture2D logo = { 0, 0, 0, 0, 0 };
+    bm_edit info_st;
+    static char about[24576];
     bm_edit text_st, phon_st;
     Color status_color;
 
@@ -190,6 +195,10 @@ int main(int argc, char **argv)
         parse_size(argc, argv, &w, &h);
         InitWindow(w, h, "BENCmouth");
     }
+    /* ESC closes the information window and nothing else. raylib exits on it
+     * by default, which in a program built around a text field means one
+     * stray keystroke throws away what you were typing. */
+    SetExitKey(KEY_NULL);
     SetWindowMinSize(800, 680);
     SetTargetFPS(60);
     InitAudioDevice();
@@ -197,6 +206,38 @@ int main(int argc, char **argv)
     bm_ui_init(&ui);
     memset(&text_st, 0, sizeof text_st);
     memset(&phon_st, 0, sizeof phon_st);
+    memset(&info_st, 0, sizeof info_st);
+
+    /* The wordmark, from the binary rather than from disk for the same reason
+     * as the font. Bilinear here and nowhere else: it is a 1095 px image drawn
+     * at about a third of that, and point sampling a photograph-sized bitmap
+     * down by 3x is what aliasing looks like. The rule is "do not smooth the
+     * bitmap font", not "never filter anything". */
+    {
+        Image li = LoadImageFromMemory(".png", BM_LOGO_PNG, (int)BM_LOGO_PNG_LEN);
+        if (li.data != 0) {
+            logo = LoadTextureFromImage(li);
+            SetTextureFilter(logo, TEXTURE_FILTER_BILINEAR);
+            UnloadImage(li);
+        }
+    }
+
+    /* Assembled once, from the repository's own licence files as they were at
+     * build time, so what this window shows and what the archive ships cannot
+     * drift apart. */
+    snprintf(about, sizeof about,
+             "%s\n"
+             "================================================================\n"
+             "  THIRD-PARTY NOTICES\n"
+             "================================================================\n"
+             "%s\n"
+             "================================================================\n"
+             "  SIL OPEN FONT LICENSE 1.1  -  Terminus (TTF), embedded above\n"
+             "================================================================\n"
+             "%s\n",
+             (const char *)BM_LICENSE_MIT,
+             (const char *)BM_NOTICE,
+             (const char *)BM_LICENSE_OFL);
     text_st.caret = text_st.sel = (int)strlen(text);
 
     if (bm_engine_init(&g_storage, &config, &g_engine) != BM_OK) {
@@ -217,31 +258,14 @@ int main(int argc, char **argv)
      * with a single size, so on Windows this is left alone.
      *
      * Everywhere else there is no such thing as an executable resource, so the
-     * icon has to be loaded from disk - and from more than one place, because
-     * the program is as likely to be run from a menu as from its own
-     * directory. */
+     * icon comes out of the binary instead - it used to be searched for on
+     * disk, which meant the program lost its icon whenever it was started from
+     * somewhere other than its own directory. */
 #if !defined(_WIN32)
     {
-        char beside[1024];
-        const char *candidates[3];
-        size_t k;
-
-        /* Beside the executable first. Someone who unpacks the archive and
-         * launches it from a file manager gets whatever working directory the
-         * file manager felt like, which is rarely the one holding the assets. */
-        snprintf(beside, sizeof beside, "%sassets/icon/hex-64.png",
-                 GetApplicationDirectory());
-        candidates[0] = beside;
-        candidates[1] = "assets/icon/hex-64.png";
-        candidates[2] = "/usr/share/bencmouth/hex-64.png";
-
-        for (k = 0; k < sizeof candidates / sizeof candidates[0]; k++) {
-            if (FileExists(candidates[k])) {
-                Image icon = LoadImage(candidates[k]);
-                if (icon.data != 0) { SetWindowIcon(icon); UnloadImage(icon); }
-                break;
-            }
-        }
+        Image icon = LoadImageFromMemory(".png", BM_ICON_PNG,
+                                         (int)BM_ICON_PNG_LEN);
+        if (icon.data != 0) { SetWindowIcon(icon); UnloadImage(icon); }
     }
 #endif
 
@@ -269,6 +293,15 @@ int main(int argc, char **argv)
          * beyond this flag. Without it the status line went on reading
          * "speaking" over a silent engine - and a readout that is wrong about
          * the one thing it reports is worse than no readout at all. */
+        /* Modal. Published before any widget runs, so nothing underneath the
+         * scrim reacts to a click meant for the dialog. */
+        if (info_open) {
+            ui.blocking = 1;
+            ui.block = (Rectangle){ 0, 0, W, (float)GetScreenHeight() };
+            voice_open = 0;
+            ui.menu_open = 0;
+        }
+
         if (g_finished) {
             g_finished = 0;
             snprintf(status, sizeof status, "ready");
@@ -301,6 +334,12 @@ int main(int argc, char **argv)
 
             bm_text_spaced(&ui, BM_FONT_TITLE, "B E N C M O U T H", 56, BM_PAD + 2, BM_TEXT);
             bm_label(&ui, "formant speech synthesis", 58, BM_PAD + 30);
+
+            if (bm_info_button(&ui, (Rectangle){ W - BM_PAD - 26, BM_PAD + 4,
+                                                 26, 26 })) {
+                info_open = 1;
+                info_st.scroll = 0.0f;
+            }
         }
         bm_divider(BM_PAD, 58, W - 2 * BM_PAD);
 
@@ -523,6 +562,78 @@ int main(int argc, char **argv)
 
         bm_text(&ui, BM_FONT_SMALL, status, BM_PAD, y, status_color);
 
+        /* ---- information ---- */
+        if (info_open) {
+            float H = (float)GetScreenHeight();
+            float pw = W - 120.0f;
+            float ph = H - 80.0f;
+            Rectangle p;
+            float ly, cy;
+
+            if (pw > 760.0f) pw = 760.0f;
+            if (ph > 620.0f) ph = 620.0f;
+            p = (Rectangle){ (W - pw) * 0.5f, (H - ph) * 0.5f, pw, ph };
+
+            DrawRectangle(0, 0, (int)W, (int)H, (Color){ 0, 0, 0, 200 });
+            bm_panel(p);
+
+            /* The dialog's own controls are live again - the block rectangle
+             * above is there to stop the layout underneath, not this. */
+            ui.blocking = 0;
+
+            ly = p.y + 22.0f;
+            if (logo.id != 0) {
+                float lw = pw - 260.0f;
+                float lh;
+                if (lw > 300.0f) lw = 300.0f;
+                lh = lw * (float)logo.height / (float)logo.width;
+                DrawTexturePro(logo,
+                               (Rectangle){ 0, 0, (float)logo.width,
+                                            (float)logo.height },
+                               (Rectangle){ p.x + (pw - lw) * 0.5f, ly, lw, lh },
+                               (Vector2){ 0, 0 }, 0.0f, BM_TEXT);
+                ly += lh + 18.0f;
+            }
+
+            {
+                char line[128];
+                float tw;
+
+                snprintf(line, sizeof line, "BENCmouth %d.%d.%d",
+                         BM_VERSION_MAJOR, BM_VERSION_MINOR, BM_VERSION_PATCH);
+                tw = bm_text_measure(&ui, BM_FONT_BODY, line, 0.0f);
+                bm_text(&ui, BM_FONT_BODY, line, p.x + (pw - tw) * 0.5f, ly,
+                        BM_TEXT);
+                ly += 26.0f;
+
+                snprintf(line, sizeof line, "a formant speech synthesizer in C99");
+                tw = bm_text_measure(&ui, BM_FONT_SMALL, line, 0.0f);
+                bm_text(&ui, BM_FONT_SMALL, line, p.x + (pw - tw) * 0.5f, ly,
+                        BM_DIM);
+                ly += 24.0f;
+
+                snprintf(line, sizeof line, "Copyright (c) 2026 Ben Ropple");
+                tw = bm_text_measure(&ui, BM_FONT_SMALL, line, 0.0f);
+                bm_text(&ui, BM_FONT_SMALL, line, p.x + (pw - tw) * 0.5f, ly,
+                        BM_TEXT);
+                ly += 26.0f;
+            }
+
+            bm_divider(p.x + 20.0f, ly, pw - 40.0f);
+            ly += 10.0f;
+
+            cy = p.y + ph - 46.0f;
+            bm_textview(&ui, (Rectangle){ p.x + 20.0f, ly, pw - 40.0f,
+                                          cy - ly - 10.0f },
+                        about, &info_st, BM_DIM);
+
+            if (bm_button(&ui, (Rectangle){ p.x + pw - 116.0f, cy, 96, 30 },
+                          "CLOSE", 1) ||
+                IsKeyPressed(KEY_ESCAPE)) {
+                info_open = 0;
+            }
+        }
+
         /* Last, so a dropdown list or a context menu is above the layout it
          * covers rather than under it. */
         bm_ui_overlay(&ui);
@@ -533,6 +644,7 @@ int main(int argc, char **argv)
     g_speaking = 0;
     UnloadAudioStream(stream);
     CloseAudioDevice();
+    if (logo.id != 0) UnloadTexture(logo);
     bm_ui_free(&ui);
     CloseWindow();
     return 0;
