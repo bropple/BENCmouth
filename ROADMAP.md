@@ -447,6 +447,25 @@ that need an actual decision when we get there:
       modulator fed 1.0 hands back its own carrier - and counts zero crossings: 62.00 Hz
       throughout with drift off, and 82 / 44 / 66 Hz at three seconds apart with it on.
 
+- [x] **The read-only boxes are selectable.** Phonemes, the word translator's output, the
+      format reference and the licence text can be clicked into, swept, shift-selected,
+      Ctrl-A'd and copied - and cannot be typed into, backspaced or pasted over, because
+      each is derived from something else and an edit would vanish at the next keystroke.
+
+      Done by giving the text box an `editable` flag rather than writing a second widget.
+      The two differ in about twenty lines - insert, delete, cut, paste - and agree on
+      wrapping, the caret, selection, the scrollbar, the arrow keys, Home and End. A
+      separate read-only implementation would have been a second copy of all of that, and
+      the second copy is the one that stops matching.
+
+      Two consequences worth recording. The context menu drops to COPY and SELECT ALL
+      rather than greying two of four rows, which reads as "cannot be edited" instead of
+      "broken". And `bm_textview` takes a mutable pointer despite never changing the
+      string: copying a selection terminates it in place and puts the byte back, which
+      made the song panel's `REFERENCE` a `static char[]` instead of a string literal -
+      undefined behaviour for that one instant otherwise, even though the text is
+      identical either side of it.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

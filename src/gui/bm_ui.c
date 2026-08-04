@@ -955,14 +955,25 @@ static void clamp_scroll(bm_edit *st, float content, float view)
     if (st->scroll < 0.0f) st->scroll = 0.0f;
 }
 
-int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
+/* The text box and the selectable read-only view are one function.
+ *
+ * They differ in about twenty lines - insert, delete, cut, paste - and agree on
+ * everything else: wrapping, the caret, sweeping out a selection, the
+ * scrollbar, Ctrl-A, Ctrl-C, the arrow keys, Home and End. Writing the
+ * read-only one separately would have meant a second copy of all of that, and
+ * the second copy is the one that quietly stops matching.
+ *
+ * `editable` is what the whole distinction reduces to. Where it is 0 the buffer
+ * is never written, which is what makes it safe to hand this a string the
+ * caller regards as output only. */
+static int textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap,
+                   bm_edit *st, int size, Color col, int editable)
 {
     /* One text box is edited at a time, so these are scratch rather than
      * state - recomputed from the buffer every frame. */
     static int start[BM_MAXLINES], end[BM_MAXLINES];
 
     Vector2 m       = GetMousePosition();
-    int     size    = BM_FONT_BODY;
     float   lh      = (float)size + 4.0f;
     float   pad     = bm_textpad(r.height, lh);
     Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
@@ -984,11 +995,16 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
         case BM_MENU_COPY:
         case BM_MENU_CUT:
             if (b > a) {
+                /* Terminating in place and putting the byte back, rather than
+                 * copying the span out to a buffer that would have to be as
+                 * large as the largest thing anybody might select. In a
+                 * read-only view this is the only write that ever happens to
+                 * the caller's string, and it is undone on the next line. */
                 char save = buf[b];
                 buf[b] = '\0';
                 SetClipboardText(buf + a);
                 buf[b] = save;
-                if (ui->menu_action == BM_MENU_CUT) {
+                if (editable && ui->menu_action == BM_MENU_CUT) {
                     del_range(buf, a, b);
                     st->caret = st->sel = a;
                     changed = 1;
@@ -996,7 +1012,7 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             }
             break;
         case BM_MENU_PASTE: {
-            const char *clip = GetClipboardText();
+            const char *clip = editable ? GetClipboardText() : 0;
             if (clip != 0) {
                 int n;
                 if (b > a) { del_range(buf, a, b); st->caret = a; }
@@ -1075,9 +1091,11 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             Rectangle menu;
             ui->focus      = id;
             focused        = 1;
-            ui->menu_open  = 1;
-            ui->menu_owner = id;
-            menu = (Rectangle){ m.x, m.y, 148, 4 * 24 + 8 };
+            ui->menu_open     = 1;
+            ui->menu_owner    = id;
+            ui->menu_readonly = !editable;
+            menu = (Rectangle){ m.x, m.y, 148,
+                                (editable ? 4 : 2) * 24 + 8 };
             ui->pop_rect = menu;
             ui->blocking = 1;
             ui->block    = menu;
@@ -1099,14 +1117,14 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             buf[b] = '\0';
             SetClipboardText(buf + a);
             buf[b] = save;
-            if (IsKeyPressed(KEY_X)) {
+            if (editable && IsKeyPressed(KEY_X)) {
                 del_range(buf, a, b);
                 st->caret = st->sel = a;
                 changed = 1;
                 len = (int)strlen(buf);
             }
         }
-        if (ctrl && IsKeyPressed(KEY_V)) {
+        if (editable && ctrl && IsKeyPressed(KEY_V)) {
             const char *clip = GetClipboardText();
             if (clip != 0) {
                 int n;
@@ -1119,7 +1137,7 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             }
         }
 
-        if (!ctrl) {
+        if (editable && !ctrl) {
             while ((key = GetCharPressed()) != 0) {
                 if (key >= 32 && key < 127) {
                     a = st->sel < st->caret ? st->sel : st->caret;
@@ -1147,7 +1165,8 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             }
         }
 
-        if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) {
+        if (editable &&
+            (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))) {
             a = st->sel < st->caret ? st->sel : st->caret;
             b = st->sel < st->caret ? st->caret : st->sel;
             if (b > a)          { del_range(buf, a, b); st->caret = a; changed = 1; }
@@ -1156,7 +1175,8 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
             st->sel = st->caret;
             moved = 1;
         }
-        if (IsKeyPressed(KEY_DELETE) || IsKeyPressedRepeat(KEY_DELETE)) {
+        if (editable &&
+            (IsKeyPressed(KEY_DELETE) || IsKeyPressedRepeat(KEY_DELETE))) {
             a = st->sel < st->caret ? st->sel : st->caret;
             b = st->sel < st->caret ? st->caret : st->sel;
             len = (int)strlen(buf);
@@ -1273,10 +1293,13 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
                 DrawRectangle((int)(inner.x + x0), (int)ly,
                               (int)(x1 - x0) + 1, (int)lh, BM_EDGE);
             }
-            bm_text(ui, size, line, inner.x, ly, BM_TEXT);
+            bm_text(ui, size, line, inner.x, ly, col);
         }
 
-        if (focused && st->blink < 0.5f) {
+        /* No caret in a read-only view. A blinking bar is a promise that
+         * typing will land there, and here it will not - the selection
+         * highlight is the whole of the feedback this needs. */
+        if (editable && focused && st->blink < 0.5f) {
             int   line = line_of(st->caret, start, nlines);
             float cx = inner.x + span_w(ui, size, buf, start[line], st->caret);
             float cy = inner.y + (float)line * lh - st->scroll;
@@ -1288,57 +1311,29 @@ int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
     return changed;
 }
 
-void bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c)
+int bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st)
 {
-    static int start[BM_MAXLINES], end[BM_MAXLINES];
+    return textbox(ui, id, r, buf, cap, st, BM_FONT_BODY, BM_TEXT, 1);
+}
 
-    Vector2 m       = GetMousePosition();
-    int     size    = BM_FONT_SMALL;
-    float   lh      = (float)size + 4.0f;
-    float   pad     = bm_textpad(r.height, lh);
-    Rectangle inner = { r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad };
-    int     over    = mouse_free(ui) && CheckCollisionPointRec(m, r);
-    int     nlines, i;
-    float   textw, content;
-
-    bm_panel(r);
-
-    textw   = inner.width - 18.0f;
-    nlines  = wrap_text(ui, size, s, textw, start, end, BM_MAXLINES);
-    content = (float)nlines * lh;
-    if (content <= inner.height) {
-        textw   = inner.width;
-        nlines  = wrap_text(ui, size, s, textw, start, end, BM_MAXLINES);
-        content = (float)nlines * lh;
-    }
-
-    if (content > inner.height) {
-        scrollbar(r, content, inner.height, st, over);
-    } else {
-        st->scroll = 0.0f;
-    }
-    clamp_scroll(st, content, inner.height);
-
-    BeginScissorMode((int)inner.x, (int)inner.y, (int)inner.width,
-                     (int)inner.height);
-    for (i = 0; i < nlines; i++) {
-        float ly = inner.y + (float)i * lh - st->scroll;
-        char  line[1024];
-        int   n = end[i] - start[i];
-
-        if (ly + lh < inner.y || ly > inner.y + inner.height) continue;
-        (void)n;
-        copy_line(line, sizeof line, s, start[i], end[i]);
-        bm_text(ui, size, line, inner.x, ly, c);
-    }
-    EndScissorMode();
+int bm_textview(bm_ui *ui, int id, Rectangle r, char *s, bm_edit *st, Color c)
+{
+    /* `cap` is the length: nothing here can grow the buffer, so the only thing
+     * a capacity would be used for is bounds on an insert that cannot happen.
+     * Passing the length keeps the caret and the selection clamped correctly
+     * without asking every caller to hand over a size it may not have. */
+    return textbox(ui, id, r, s, (int)strlen(s) + 1, st, BM_FONT_SMALL, c, 0);
 }
 
 /* ------------------------------------------------------------------ */
 
 void bm_ui_overlay(bm_ui *ui)
 {
-    static const char *MENU[] = { "CUT", "COPY", "PASTE", "SELECT ALL" };
+    static const char *MENU[]  = { "CUT", "COPY", "PASTE", "SELECT ALL" };
+    /* A read-only view offers the two that do not write. Greying CUT and PASTE
+     * instead would be four rows of which two are always dead, which says
+     * "this is broken" rather than "this cannot be edited". */
+    static const int   READONLY[] = { BM_MENU_COPY, BM_MENU_ALL };
     Vector2 m = GetMousePosition();
     int i;
 
@@ -1393,15 +1388,16 @@ void bm_ui_overlay(bm_ui *ui)
         DrawRectangleRec(menu, BM_PANEL);
         DrawRectangleLinesEx(menu, 1, BM_BORDER);
 
-        for (i = 0; i < 4; i++) {
+        for (i = 0; i < (ui->menu_readonly ? 2 : 4); i++) {
+            int action = ui->menu_readonly ? READONLY[i] : BM_MENU_CUT + i;
             Rectangle item = { menu.x + 1, menu.y + 4 + (float)i * 24,
                                menu.width - 2, 24 };
             int over = CheckCollisionPointRec(m, item);
             if (over) DrawRectangleRec(item, BM_EDGE);
-            bm_text(ui, BM_FONT_SMALL, MENU[i], item.x + 10,
+            bm_text(ui, BM_FONT_SMALL, MENU[action - BM_MENU_CUT], item.x + 10,
                     item.y + (item.height - BM_FONT_SMALL) * 0.5f, BM_TEXT);
             if (over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-                ui->menu_action = BM_MENU_CUT + i;
+                ui->menu_action = action;
                 ui->menu_open = 0;
             }
         }

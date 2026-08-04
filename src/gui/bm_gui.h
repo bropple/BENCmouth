@@ -90,6 +90,7 @@ typedef struct bm_ui {
     int   menu_open;
     int   menu_owner;
     int   menu_action;
+    int   menu_readonly;   /* the owner cannot be edited: COPY and SELECT ALL */
 
     /* A slider readout being typed into. Shares `focus` with the text boxes,
      * which is what makes clicking from one to the other put the caret where
@@ -218,8 +219,14 @@ int   bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
  * among the boxes on screen - it is what focus is tracked by. */
 int   bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st);
 
-/* The same wrapping and scrolling, read-only. */
-void  bm_textview(bm_ui *ui, Rectangle r, const char *s, bm_edit *st, Color c);
+/* The same box with editing taken away: caret placement, drag and shift to
+ * select, Ctrl-A, Ctrl-C and a right-click COPY, but nothing that writes. Same
+ * `id` space as bm_textbox, since it is the same caret.
+ *
+ * Takes a mutable pointer despite never changing the string, because copying a
+ * selection terminates it in place and puts the byte back - the alternative is
+ * a scratch buffer sized for the largest thing anyone might select. */
+int   bm_textview(bm_ui *ui, int id, Rectangle r, char *s, bm_edit *st, Color c);
 
 /* Draws whatever popped up, above everything else. Call once, last, before
  * EndDrawing. */

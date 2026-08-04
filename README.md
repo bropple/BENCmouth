@@ -756,6 +756,15 @@ shift-arrow to select, Ctrl-A/C/X/V (Cmd on macOS), Ctrl-arrow by word, Home and
 and a right-click menu for the same. The phoneme readout follows the DICT button, so
 what you see is what SPEAK will say.
 
+The readouts — phonemes, the word translator's output, the format reference, the licence
+text — are **selectable but not editable**: click to place the caret, drag or shift-arrow
+to select, Ctrl-A and Ctrl-C, and a right-click menu offering the two operations that do
+not write. Typing, backspace and paste do nothing there, because what those boxes show is
+derived from something else and an edit would be overwritten by the next keystroke. It is
+the same widget as the text box with editing switched off rather than a second one, so
+the caret and the selection cannot drift apart between them. Lifting phonemes out of the
+readout is the natural way to start a score.
+
 Each slider is three controls. Drag the track for the coarse move; click the **number** to
 the right of it and type an exact one, with Enter or a click elsewhere to commit and Escape
 to put it back; or use the two small **arrows** beside it to step by whatever precision the

@@ -13,7 +13,9 @@
  * accidental reuse would carry the caret across a tab switch. */
 #define ID_SCORE 2
 #define ID_TITLE 3
-#define ID_WORD  4
+#define ID_WORD      4
+#define ID_WORD_OUT  5
+#define ID_REFERENCE 6
 
 /* Height of a one-line text box: one line of body text plus the inset a short
  * box gets. bm_textbox is a wrapping, scrolling editor - there is no
@@ -142,7 +144,10 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
         translate(s, use_dict);
         s->word_dirty = 0;
     }
-    bm_textview(ui, (Rectangle){ rx, y, rw, LINE_H }, s->word_out,
+    /* Selectable, so the phonemes a word translated to can be lifted straight
+     * out - the INSERT button puts them in the score, and this is for the times
+     * you want them somewhere else. */
+    bm_textview(ui, ID_WORD_OUT, (Rectangle){ rx, y, rw, LINE_H }, s->word_out,
                 &s->out_st, BM_TEXT);
     y += LINE_H + 8.0f;
 
@@ -176,7 +181,11 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
 
 /* ------------------------------------------------------------------ */
 
-static const char REFERENCE[] =
+/* Not const, because bm_textview terminates the selection in place to hand it
+ * to the clipboard and puts the byte straight back. A string literal would be
+ * undefined behaviour for that one instant even though the text is identical
+ * either side of it. */
+static char REFERENCE[] =
 "A score is ARPABET phonemes with bracketed commands threaded through them.\n"
 "Everything outside brackets is a phoneme; everything inside is an\n"
 "instruction that applies to every phoneme after it until changed.\n"
@@ -291,8 +300,9 @@ void bm_song_reference(bm_ui *ui, bm_song_ui *s, float w, float h)
     bm_divider(p.x + 20.0f, p.y + 46.0f, pw - 40.0f);
 
     cy = p.y + ph - 46.0f;
-    bm_textview(ui, (Rectangle){ p.x + 20.0f, p.y + 56.0f, pw - 40.0f,
-                                 cy - (p.y + 56.0f) - 10.0f },
+    bm_textview(ui, ID_REFERENCE,
+                (Rectangle){ p.x + 20.0f, p.y + 56.0f, pw - 40.0f,
+                             cy - (p.y + 56.0f) - 10.0f },
                 REFERENCE, &s->ref_st, BM_DIM);
 
     if (bm_button(ui, (Rectangle){ p.x + pw - 116.0f, cy, 96.0f, 30.0f },

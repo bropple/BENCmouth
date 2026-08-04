@@ -49,10 +49,12 @@
  * readouts alike, because there is one caret. Two schemes would let a slider
  * and a text box both be lit at once, and both take the same keystroke.
  *
- * 1 is this file's text box; 2 to 4 are the song panel's, in bm_song_ui.c. The
+ * 1 is this file's text box; 2 to 6 are the song panel's, in bm_song_ui.c. The
  * sliders start well clear of those and take a block each, so adding a
  * parameter costs nothing here. */
 #define ID_TEXT          1
+#define ID_PHONEMES      7
+#define ID_ABOUT         8
 #define ID_VOICE_SLIDER  100
 #define ID_FX_SLIDER     200
 
@@ -601,8 +603,14 @@ int main(int argc, char **argv)
                            text, TEXT_CAP, &text_st)) {
                 dirty = 1;
             }
-            bm_textview(&ui, (Rectangle){ BM_PAD, y + PANEL_H - 58,
-                                          W - 2 * BM_PAD, 58 },
+            /* Selectable and copyable, but not typable: what it says is
+             * derived from the text above it and from the DICT button, so an
+             * edit here would be overwritten on the next keystroke and would
+             * have looked like the box losing what you told it. Lifting the
+             * phonemes out, though, is the natural way to start a score. */
+            bm_textview(&ui, ID_PHONEMES,
+                        (Rectangle){ BM_PAD, y + PANEL_H - 58,
+                                     W - 2 * BM_PAD, 58 },
                         phonemes, &phon_st, BM_DIM);
         } else {
             int act = bm_song_panel(&ui, &song,
@@ -1161,8 +1169,9 @@ int main(int argc, char **argv)
             ly += 10.0f;
 
             cy = p.y + ph - 46.0f;
-            bm_textview(&ui, (Rectangle){ p.x + 20.0f, ly, pw - 40.0f,
-                                          cy - ly - 10.0f },
+            bm_textview(&ui, ID_ABOUT,
+                        (Rectangle){ p.x + 20.0f, ly, pw - 40.0f,
+                                     cy - ly - 10.0f },
                         about, &info_st, BM_DIM);
 
             if (bm_button(&ui, (Rectangle){ p.x + pw - 116.0f, cy, 96, 30 },
