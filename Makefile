@@ -224,18 +224,31 @@ src/gui/bencmouth.res.o: src/gui/bencmouth.rc assets/icon/bencmouth.ico
 # That is a guess, and it is only correct when raylib was built against a system
 # GLFW rather than its bundled copy - which is why pkg-config is tried first
 # rather than being the afterthought.
+# Whether a separate GLFW is needed depends on how raylib was built, and there
+# is no way to know from here except to look.
+#
+# raylib bundles GLFW: build it from source and those objects end up inside
+# libraylib.a, so `-lraylib` alone links. A distro package may instead build
+# against the system GLFW, leaving libraylib.a with dangling __imp_glfw*
+# imports that something else has to satisfy - which is the failure this
+# guards against.
+#
+# `$(CC) -print-file-name=X` answers the only question that matters: it returns
+# a path when the library exists and echoes the bare name when it does not. So
+# the flag is added when it can be, and omitted when adding it would fail with
+# "cannot find -lglfw3" instead - trading one link error for another.
+glfw_exists = $(if $(findstring /,$(shell $(CC) -print-file-name=lib$(1).a 2>/dev/null)),-l$(1),)
+GLFW_LIB := $(strip $(call glfw_exists,glfw3)$(call glfw_exists,glfw))
+
 ifdef RAYLIB
   RL_CFLAGS := -I$(RAYLIB)/include
   RL_LIBS   := -L$(RAYLIB)/lib -lraylib
 else
   RL_CFLAGS := $(shell pkg-config --cflags raylib 2>/dev/null)
+  # --static emits Libs.private, where raylib declares GLFW and friends.
   RL_LIBS   := $(shell pkg-config --libs --static raylib 2>/dev/null)
   ifeq (,$(RL_LIBS))
-    ifneq (,$(WINDOWS))
-      RL_LIBS := -lraylib -lglfw3
-    else
-      RL_LIBS := -lraylib
-    endif
+    RL_LIBS := -lraylib $(firstword $(GLFW_LIB))
   endif
 endif
 
@@ -260,6 +273,7 @@ gui-info:
 	@echo "  RL_CFLAGS= $(RL_CFLAGS)"
 	@echo "  RL_LIBS  = $(if $(RL_LIBS),$(RL_LIBS),(empty - pkg-config found nothing))"
 	@echo "  RL_SYS   = $(RL_SYS)"
+	@echo "  GLFW     = $(if $(GLFW_LIB),$(firstword $(GLFW_LIB)) (found),none found - assuming raylib bundles it)"
 
 gui: $(GUI)
 

@@ -104,17 +104,26 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-raylib
-            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-cmake
+            git
             mingw-w64-ucrt-x86_64-pkg-config
             make zip
+      - name: Build raylib from source
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -G "MinGW Makefiles" \
+            -DCMAKE_INSTALL_PREFIX=/tmp/rl -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j2
+          cmake --install /tmp/raylib/build
+          ls -l /tmp/rl/lib
       - name: Build the CLI
         run: |
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
       - name: Build the GUI
-        run: make gui
+        run: RAYLIB=/tmp/rl make gui
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"

@@ -206,21 +206,28 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-raylib
-            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-cmake
+            git
             mingw-w64-ucrt-x86_64-pkg-config
             make
-
-      # Printed before building: when a link fails on GLFW symbols the first
-      # question is always what pkg-config actually returned.
-      - name: What the build decided
+      - name: Build raylib from source
         run: |
-          make gui-info
-          echo "pkg-config --libs        : $(pkg-config --libs raylib || echo '(failed)')"
-          echo "pkg-config --libs --static: $(pkg-config --libs --static raylib || echo '(failed)')"
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -G "MinGW Makefiles" \
+            -DCMAKE_INSTALL_PREFIX=/tmp/rl -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j2
+          cmake --install /tmp/raylib/build
+          ls -l /tmp/rl/lib
+
+      # raylib is built from source above, so RAYLIB= is set and pkg-config is
+      # not consulted at all. Printed anyway: this is the output to read first
+      # when a Windows link fails, and it should not take a code change to get.
+      - name: What the build decided
+        run: RAYLIB=/tmp/rl make gui-info
 
       - name: Build the GUI
-        run: make gui
+        run: RAYLIB=/tmp/rl make gui
 
       # A missing resource is not a link error - windres simply not running
       # leaves an iconless binary that builds and works - so this checks for the
@@ -264,7 +271,7 @@ jobs:
       - name: raylib
         run: brew install raylib pkg-config
       - name: Build the GUI
-        run: make gui
+        run: RAYLIB=/tmp/rl make gui
       - uses: actions/upload-artifact@v4
         with:
           name: bencmouth-gui-macos
