@@ -34,6 +34,14 @@ typedef struct bm_effects_state {
     float    comb_fb;
     float    comb_wet;      /* the mix */
     float    comb_norm;     /* 1 - feedback: brings the teeth back to unity */
+
+    float    chorus_buf[BM_CHORUS_LEN];
+    unsigned chorus_at;
+    float    chorus_phase;  /* LFO, 0..1 */
+    float    chorus_inc;    /* LFO advance per sample */
+    float    chorus_wet;
+    float    chorus_base;   /* centre delay, samples */
+    float    chorus_depth;  /* sweep either side of it, samples */
 #endif
 
     float ring_trim;

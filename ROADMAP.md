@@ -158,7 +158,7 @@ that need an actual decision when we get there:
 
 ## Voices of other machines
 
-- [x] **The classic set** - `Compact`, `Announcer`, `Operator`, `Cadet`, `Whisper`,
+- [x] **The classic set** - `Compact`, `Announcer`, `Operator`, `Cadet`, `Hushed`,
       `Rattled`. Tuned toward the archetypes of the voices desktop machines shipped with
       in the eighties and early nineties, from the published acoustics of the voice types
       involved. Nothing was disassembled or lifted from a shipped synthesizer.
@@ -286,7 +286,7 @@ that need an actual decision when we get there:
 
       Default 0. Retro's reference is unmoved.
 
-- [x] **The roster filled in.** `Frederick` and `Princess` as presets; `Zarvox`,
+- [x] **The roster filled in.** `Frederick` and `Duchess` as presets; `Zarvek`,
       `Carillon` (bell) and `Harmonium` (pipe) as `.voice` files; `songs/boing.bmsong`,
       which is the third member of the "this was never a voice" set - a bouncing pitch
       envelope written down is a score.
@@ -300,6 +300,35 @@ that need an actual decision when we get there:
       depends on preset order, because everything else looks them up by name - and the
       visible row count is computed from the space below the control rather than
       fixed, since the window is resizable.
+
+## Chorus
+
+- [x] **`chorus` / `chorus_hz`.** The detuned-chorus voice was listed as out of range
+      twice - first as needing several engines summed, then again after the comb
+      arrived and turned out not to help. A comb is a *fixed* delay: its copies are in
+      unison, nothing is detuned, and what you hear is a tube.
+
+      A swept delay is a pitch shift, which is what the Doppler effect is, so three taps
+      swept a third of an LFO cycle apart really are three different pitches. Measured:
+      energy either side of the fundamental relative to the fundamental itself goes from
+      0.007 dry to 0.356 - spread across a band rather than copied, which is the
+      difference between a chorus and an echo.
+
+      Three things that were not free:
+
+      - The taps have to be interpolated. A delay that steps by whole samples as it
+        sweeps is a train of discontinuities where the smooth shift should be.
+      - Divide by sqrt(taps), not by taps. Detuned copies sum incoherently, so three are
+        sqrt(3) louder than one; dividing by 3 measured 6.4 dB down against dry.
+      - Chorus before drive. Modulation after distortion smears the harmonics the
+        distortion just made.
+
+      `Trinode` as an effects preset and as a `.voice` file.
+
+- [x] **Near-miss names.** Where a preset aims at a voice with a well-known name it now
+      carries a near-miss rather than the name: `Zarvek`, `Duchess`, `Hushed`. Same rule
+      the parameter tables already followed - close enough to say what it is reaching
+      for, far enough not to be a copy. `Frederick` is the deliberate exception.
 
 ## Known, and recorded rather than fixed
 

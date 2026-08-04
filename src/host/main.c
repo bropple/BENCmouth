@@ -110,10 +110,10 @@ int main(int argc, char **argv)
             int k;
             for (k = 0; k < bm_effects_preset_count(); k++) {
                 const bm_effects *x = bm_effects_preset_at(k);
-                printf("  -e %-12s ring %.2f @%5.0f Hz  comb %.2f @%5.0f Hz"
+                printf("  -e %-12s ring %.2f  comb %.2f  chorus %.2f"
                        "  drive %.2f  crush %.2f\n",
-                       x->name, (double)x->ring, (double)x->ring_hz,
-                       (double)x->comb, (double)x->comb_hz,
+                       x->name, (double)x->ring, (double)x->comb,
+                       (double)x->chorus,
                        (double)x->drive, (double)x->crush);
             }
             printf("\n");

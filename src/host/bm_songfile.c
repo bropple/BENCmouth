@@ -271,11 +271,14 @@ int bm_song_save(const char *path, const bm_song *song, const char *score)
     fprintf(f, "flatten        = %.6g\n", (double)v->flatten);
 
     if (song->effects.ring > 0.0f || song->effects.comb > 0.0f ||
+        song->effects.chorus > 0.0f ||
         song->effects.drive > 0.0f || song->effects.crush > 0.0f) {
         fprintf(f, "\nring           = %.6g\n", (double)song->effects.ring);
         fprintf(f, "ring_hz        = %.6g\n", (double)song->effects.ring_hz);
         fprintf(f, "comb           = %.6g\n", (double)song->effects.comb);
         fprintf(f, "comb_hz        = %.6g\n", (double)song->effects.comb_hz);
+        fprintf(f, "chorus         = %.6g\n", (double)song->effects.chorus);
+        fprintf(f, "chorus_hz      = %.6g\n", (double)song->effects.chorus_hz);
         fprintf(f, "drive          = %.6g\n", (double)song->effects.drive);
         fprintf(f, "crush          = %.6g\n", (double)song->effects.crush);
     }

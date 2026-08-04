@@ -231,12 +231,12 @@ Fifteen presets ship in the binary:
 | `Announcer` | deep and resonant |
 | `Operator` | the professional female voice of the era |
 | `Cadet` | a child |
-| `Whisper` | no voicing at all — turbulence through the formants |
+| `Hushed` | no voicing at all — turbulence through the formants |
 | `Rattled` | the one that came loose |
 | `Frantic` | fast, high and unstable — far too much of something |
 | `Grizzled` | old and worn: heavy flutter and a leaky glottis, not just a low pitch |
 | `Frederick` | the ordinary default male voice the novelty ones were novelties against |
-| `Princess` | light and high — breathier than `Operator`, and quicker |
+| `Duchess` | light and high — breathier than `Operator`, and quicker |
 
 The last six are the **classic set**, aimed at the voices desktop machines shipped with in
 the eighties and early nineties. They are tuned toward those archetypes from the published
@@ -383,17 +383,20 @@ bm -v cadet -e metal "resistance is useless"
 |---|---|---|
 | `ring` / `ring_hz` | multiply by a sine carrier | inharmonic sidebands — the metallic, inhuman edge |
 | `comb` / `comb_hz` | feedback comb, evenly spaced resonances | speaking through a metal tube, literally |
+| `chorus` / `chorus_hz` | three delay taps swept by an LFO | three detuned copies — a *moving* delay is a pitch shift, a fixed one is not |
 | `drive` | cubic soft clip with pre-gain | harmonics that were not there — this is what *aggressive* is |
 | `crush` | hold every Nth sample | aliasing; the sound of a converter that could not keep up |
 | `level` | output gain | see below |
 
-The chain runs **ring → comb → drive → crush**, and the order is deliberate: ring
-modulation on the clean voice keeps its sidebands distinct, the comb adds the
-resonance, and the drive then saturates everything above it — which is what makes a
-robot sound angry rather than merely mechanical. Crush is last because it is the
-digital layer, applied to a finished sound.
+The chain runs **ring → comb → chorus → drive → crush**, and the order is deliberate:
+ring modulation on the clean voice keeps its sidebands distinct, the comb adds the
+resonance, the chorus multiplies whatever has been built into several detuned copies,
+and the drive then saturates the lot — which is what makes a robot sound angry rather
+than merely mechanical. Crush is last because it is the digital layer, applied to a
+finished sound. Chorus goes *before* drive because modulation after distortion smears
+the harmonics the distortion just made; every guitar rig is wired the same way.
 
-Six presets ship:
+Seven presets ship:
 
 | Preset | |
 |---|---|
@@ -403,13 +406,14 @@ Six presets ship:
 | `Crushed` | sample-rate reduction alone |
 | `Sentinel` | the metallic sentry — inhuman rather than angry |
 | `Enforcer` | the aggressive one; drive carries it |
+| `Trinode` | three detuned copies of the same voice |
 
 Several `.voice` files pair a voice with a chain, since what makes something sound like
 a particular character is usually both together: `Aggressor` and `Sentry` for the two
-above, `Zarvox` (ring modulation over a completely flattened voice), `Emissary` (the
+above, `Zarvek` (ring modulation over a completely flattened voice), `Emissary` (the
 same idea done politely), `Diver` (burbling, from inside something), `Foreman` (a site
 announcement through fifteen-year-old outdoor speakers), and `Carillon` / `Harmonium`,
-which use the excitation source below. A `.voice` file can carry an `effects = NAME`
+which use the excitation source below, and `Trinode`, which is three of itself. A `.voice` file can carry an `effects = NAME`
 line and any of the keys above.
 
 **Why `level` exists.** Voice `gain` is applied *before* the chain, which is correct:

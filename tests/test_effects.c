@@ -272,10 +272,73 @@ static void test_comb_resonates(void)
     check(peak_bin > notch_bin * 3.0, "energy piles up on the comb's teeth");
 }
 
+/* A chorus has to *detune*, not merely delay. The comb already delays, and it
+ * sounds like a tube for exactly that reason - so the thing to measure is that
+ * the fundamental has been smeared across a band rather than copied.
+ *
+ * Measured as the energy at the fundamental relative to a pair of bins a few
+ * cents either side of it. A dry steady tone is concentrated: the neighbours
+ * are far below the peak. Three copies at slowly-moving delays are three
+ * slightly different pitches, so the peak drops and the neighbours rise. */
+static void test_chorus_detunes(void)
+{
+    bm_voice   v;
+    bm_effects fx;
+    size_t     n;
+    double     dry_c, dry_s, wet_c, wet_s, dry_ratio, wet_ratio;
+    const double f0 = 110.0;
+    /* About 40 cents either side - wider than the sweep, so a pure delay would
+     * leave these empty. */
+    const double LO = f0 * 0.977, HI = f0 * 1.023;
+
+    printf("chorus\n");
+
+    bm_voice_default(&v);
+    v.f0_flutter = 0.0f;
+    v.prosody = 0.0f;
+
+    /* [note A2] is exactly 110 Hz and carries no declination, so the bin below
+     * is on the fundamental rather than near it. Measuring at f0_base instead
+     * put the centre bin off-pitch, and the "sidebands" then held more energy
+     * than the "centre" before any chorus was applied at all. */
+    bm_effects_default(&fx);
+    n = render(&v, &fx, "[note A2][hold 600] AA1 AA1 AA1", a, sizeof a / sizeof a[0]);
+    if (n < 20000) { check(0, "renders"); return; }
+    dry_c = bin(a + n / 3, 8192, f0);
+    dry_s = bin(a + n / 3, 8192, LO) + bin(a + n / 3, 8192, HI);
+
+    fx.chorus = 1.0f;
+    fx.chorus_hz = 0.5f;
+    n = render(&v, &fx, "[note A2][hold 600] AA1 AA1 AA1", b, sizeof b / sizeof b[0]);
+    wet_c = bin(b + n / 3, 8192, f0);
+    wet_s = bin(b + n / 3, 8192, LO) + bin(b + n / 3, 8192, HI);
+
+    dry_ratio = dry_s / (dry_c > 0.0 ? dry_c : 1.0);
+    wet_ratio = wet_s / (wet_c > 0.0 ? wet_c : 1.0);
+    printf("    sideband/centre energy: dry %.4f, chorused %.4f\n",
+           dry_ratio, wet_ratio);
+
+    check(wet_ratio > dry_ratio * 3.0,
+          "the fundamental is spread across a band, not copied");
+
+    /* And the taps must be interpolated. Without it the delay steps by whole
+     * samples as it sweeps, which is a train of small discontinuities - it
+     * shows up as broadband junk far from the fundamental. */
+    {
+        double junk_dry = bin(a + n / 3, 8192, 5000.0);
+        double junk_wet = bin(b + n / 3, 8192, 5000.0);
+        printf("    energy at 5 kHz: dry %.3e, chorused %.3e\n",
+               junk_dry, junk_wet);
+        check(junk_wet < junk_dry * 50.0,
+              "and the sweep does not introduce broadband noise");
+    }
+}
+
 static void test_presets_and_params(void)
 {
     static const char *KEYS[] = {
-        "ring", "ring_hz", "comb", "comb_hz", "drive", "crush", "level"
+        "ring", "ring_hz", "comb", "comb_hz", "chorus", "chorus_hz",
+        "drive", "crush", "level"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, bad = 0;
@@ -388,6 +451,7 @@ int main(void)
     test_drive_adds_harmonics_not_level();
     test_crush_holds_samples();
     test_comb_resonates();
+    test_chorus_detunes();
     test_presets_and_params();
     test_presets_are_level_matched();
 #endif

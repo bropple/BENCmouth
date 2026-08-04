@@ -317,11 +317,17 @@ float bm_voice_formant_scale(const bm_voice *voice, int index);
  * dropdown apart instead of being two more entries in a preset table that would
  * otherwise have to hold every combination.
  *
- * The chain runs ring -> comb -> drive -> crush, and that order is deliberate:
- * ring modulation on the clean voice keeps its sidebands distinct, the comb
- * adds the resonance, and the drive then saturates everything above it - which
+ * The chain runs ring -> comb -> chorus -> drive -> crush, and that order is
+ * deliberate: ring modulation on the clean voice keeps its sidebands distinct,
+ * the comb adds the resonance, the chorus multiplies whatever has been built so
+ * far into several detuned copies, and the drive then saturates the lot - which
  * is what makes a robot sound angry rather than merely mechanical. Crush is
  * last because it is the digital layer, applied to a finished sound.
+ *
+ * Chorus before drive rather than after, because a chorus after distortion
+ * smears the harmonics the distortion just made and the result is mud; every
+ * guitar rig in existence puts modulation ahead of the amp for the same
+ * reason.
  *
  * Compile with -DBM_WITH_EFFECTS=0 to remove the stage entirely. That is worth
  * doing on a microcontroller: it drops the code *and* the comb delay line,
@@ -342,6 +348,14 @@ float bm_voice_formant_scale(const bm_voice *voice, int index);
 #define BM_COMB_LEN 2048
 #endif
 
+/* Chorus delay line, same rules. Shorter because a chorus wants tens of
+ * milliseconds rather than the comb's hundreds: 1024 samples is 46 ms at
+ * 22050 Hz and 21 ms at 48 kHz, and both comfortably clear the ~20 ms a
+ * three-tap chorus needs. */
+#ifndef BM_CHORUS_LEN
+#define BM_CHORUS_LEN 1024
+#endif
+
 typedef struct bm_effects {
     const char *name;
 
@@ -357,6 +371,22 @@ typedef struct bm_effects {
      * through a metal tube" is, physically and here. */
     float comb;          /* 0..1 wet mix; also sets the feedback */
     float comb_hz;       /* spacing between resonances */
+
+    /* Three copies of the signal, each read from a delay line whose length is
+     * being swept by an LFO, and each swept a third of a cycle out of step with
+     * the others.
+     *
+     * A moving delay is a pitch shift - that is what the Doppler effect is - so
+     * three of them moving differently really are three detuned voices, which
+     * a fixed delay is not. The comb above sounds like a tube for exactly that
+     * reason: it does not move, so nothing is detuned and the copies stay in
+     * unison.
+     *
+     * This is what the detuned-chorus novelty voice needed. It had been noted
+     * as a host-layer job - sum three engines - and doing it here means it
+     * composes with everything else and lives in a file. */
+    float chorus;        /* 0..1 wet mix; also sets the sweep depth */
+    float chorus_hz;     /* LFO rate; 0 selects the default, about 0.5 */
 
     /* Waveshaping. A cubic soft clip with pre-gain, so quiet parts pass and
      * loud parts fold - which generates harmonics that were not there and is

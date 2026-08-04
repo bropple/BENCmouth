@@ -21,7 +21,7 @@ fi
 
 mkdir -p "$OUT"
 
-for v in Compact Announcer Operator Cadet Whisper Rattled; do
+for v in Compact Announcer Operator Cadet Hushed Rattled; do
     ./bm -v "$v" "$LINE" -o "$OUT/classic-$v.wav"
 done
 

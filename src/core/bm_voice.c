@@ -180,7 +180,7 @@ static const bm_voice BM_PRESETS[] = {
      * fundamental at all and f0_base only decides what the pitch *would* be -
      * it is left at a plausible value rather than zero so that turning the
      * whisper back down lands somewhere sensible. */
-    { "Whisper",
+    { "Hushed",
       130.0f, 3.0f, 0.20f,
       0.0f, 0.0f, 0.0f,
       0.95f,
@@ -253,7 +253,7 @@ static const bm_voice BM_PRESETS[] = {
      * a smaller larynx closes less completely, and the aspiration that escapes
      * is what makes a high voice sound light rather than merely high. Faster
      * too: it is a bright delivery, not a careful one. */
-    { "Princess",
+    { "Duchess",
       248.0f, 8.0f, 0.30f,
       0.25f, 5.5f, 0.0f,
       1.06f,

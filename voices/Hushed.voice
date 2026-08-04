@@ -1,5 +1,5 @@
 # BENCmouth voice
-name           = Whisper
+name           = Hushed
 
 f0_base        = 130
 f0_range       = 3

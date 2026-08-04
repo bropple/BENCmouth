@@ -1,0 +1,56 @@
+# BENCmouth voice
+# Three of it, slightly out with each other.
+#
+# This one was listed as out of range twice: first as needing several engines
+# summed, then again after the comb arrived and turned out not to help. A comb
+# is a *fixed* delay, so its copies are in unison and what you hear is a tube.
+# The chorus sweeps its delays, and a moving delay is a pitch shift - that is
+# what the Doppler effect is - so three taps swept a third of a cycle apart
+# really are three detuned voices.
+#
+# Measured: energy either side of the fundamental, relative to the fundamental
+# itself, goes from 0.007 dry to 0.356 with the chorus on. The pitch has been
+# spread across a band rather than copied, which is the difference between a
+# chorus and an echo.
+#
+# The voice underneath is deliberately plain. Three copies of something already
+# strange is soup.
+#
+#   ./bm -f voices/Trinode.voice -a "we are of one mind"
+
+name           = Trinode
+
+f0_base        = 124
+f0_range       = 3
+f0_flutter     = 0.12
+vibrato        = 0
+vibrato_rate   = 0
+source         = 0
+speed          = 0.94
+
+throat         = 0.98
+mouth          = 1.04
+
+breathiness    = 0
+tilt           = 3
+open_quotient  = 0.5
+whisper        = 0
+gain           = 1
+
+coarticulation = 0.4
+prosody        = 0.3
+formant_glide  = 1
+bandwidth_track= 0.7
+# Mostly flat. Three voices that all inflect identically sound like one voice
+# with an effect on; three that barely inflect at all sound like a committee.
+flatten        = 0.7
+
+ring           = 0
+ring_hz        = 0
+comb           = 0
+comb_hz        = 0
+chorus         = 0.85
+chorus_hz      = 0.42
+drive          = 0.1
+crush          = 0
+level          = 1.4

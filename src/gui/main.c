@@ -149,6 +149,8 @@ static const param_row FX_PARAMS[] = {
     { "ring_hz", "ring freq",  0.0f, 400.0f,  "%.0f Hz" },
     { "comb",    "comb",       0.0f,   1.0f,  "%.2f"    },
     { "comb_hz", "comb freq", 40.0f, 900.0f,  "%.0f Hz" },
+    { "chorus",  "chorus",     0.0f,   1.0f,  "%.2f"    },
+    { "chorus_hz","chor. rate",0.0f,   3.0f,  "%.2f Hz" },
     { "drive",   "drive",      0.0f,   1.0f,  "%.2f"    },
     { "crush",   "crush",      0.0f,   1.0f,  "%.2f"    },
     /* Bottom of the range is 0.1, not 0. In the file format a level of 0 means

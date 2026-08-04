@@ -14,8 +14,14 @@ phonation, measured vibrato rates.
 
 Nothing was disassembled, decompiled, or measured out of a shipped synthesizer, and no
 parameter table was lifted from one. That is the same rule the rest of this project
-follows — papers and published data in, other people's source code out — and it is
-also why the presets carry their own names rather than anybody else's.
+follows — papers and published data in, other people's source code out.
+
+**The names follow the same rule.** Where a preset is aiming at a voice that has a
+well-known name, it gets a near-miss rather than the name itself: `Zarvek`, not the
+alien one everybody remembers; `Duchess`, not the light royal one; `Hushed`, not the
+plain noun. Close enough to say what it is reaching for, far enough not to be a copy of
+somebody else's. `Frederick` is the exception and was chosen deliberately, being a
+whole name where the original is a short one.
 
 ## What the engine reaches
 
@@ -28,7 +34,7 @@ files under `voices/`.
 | **Announcer** | The deep one | `throat 0.74 / mouth 0.80` lengthens the tract; `tilt 10.0` is what turns a low voice from a buzz into a rumble, and does more work here than the pitch. |
 | **Operator** | The professional female voice | A female tract is roughly 15% shorter, and measurably breathier — Klatt & Klatt (1990) found both open quotient and aspiration higher. `breathiness 4.0` carries more of the impression than `f0_base 200` does. |
 | **Cadet** | The child | `throat 1.26 / mouth 1.32`, further than any adult setting, because a child's tract really is that much shorter. Pitch alone lands somewhere between "child" and "adult on helium". |
-| **Whisper** | The whisper | `whisper 1.0` — voicing fully traded for turbulence. See below. |
+| **Hushed** | The whisper | `whisper 1.0` — voicing fully traded for turbulence. See below. |
 | **Rattled** | The one that came loose | `f0_flutter 0.85` *and* `vibrato 1.6 st @ 8.5 Hz`. Both, because aperiodic drift alone reads as a bad recording and periodic modulation alone reads as singing. |
 
 Measured formant placement for /a/, last frame of `AA1 AA1 AA1`:
@@ -273,15 +279,39 @@ classic voices": the *formant* ones, yes, to the extent that any two independent
 tuned formant synthesizers can sound alike. The recorded ones, no, and no amount of
 parameter work changes it.
 
-### Still out of range
+### 3. The detuned chorus — **now reachable**
 
-**A detuned chorus.** One `bm_engine` renders one voice, and a chorus is several
-slightly-detuned copies of the same utterance summed. A comb filter is a fixed delay and
-sounds like a tube, not like three singers. This remains a host-layer job: three engines,
-three copies of the voice a few hertz apart, three `bm_read()` calls summed — the engine
-allocates nothing and holds all its state in caller-supplied storage precisely so that
-having three of them is unremarkable. Roughly 30 lines, none of it in core, not yet
-written.
+*Listed as out of range twice: first as needing several engines summed, then again after
+the comb arrived and turned out not to help.*
+
+The comb does not help because a comb is a **fixed** delay. Its copies are in unison, so
+nothing is detuned and what you hear is a tube. The fix is to make the delay *move*: a
+delay changing by D samples per sample shifts pitch by a factor of (1 − D), which is
+what the Doppler effect is. Three taps swept a third of an LFO cycle apart really are
+three slightly different pitches.
+
+`chorus` and `chorus_hz`, and `voices/Trinode.voice`. Measured: energy either side of
+the fundamental, relative to the fundamental itself, goes from **0.007 dry to 0.356**
+with the chorus on — the pitch has been spread across a band rather than copied, which
+is exactly the difference between a chorus and an echo.
+
+Three details that were not free:
+
+- **The taps must be interpolated.** A delay that steps by whole samples as it sweeps
+  produces a train of small discontinuities where the smooth pitch shift is supposed to
+  be. The test watches for broadband junk at 5 kHz for that reason.
+- **Divide by √taps, not by taps.** The copies are detuned, so they sum incoherently —
+  three of them are √3 louder than one, not 3. Dividing by 3 measured 6.4 dB down
+  against dry, which is a volume control wearing a timbre knob's label.
+- **Chorus before drive.** Modulation after distortion smears the harmonics the
+  distortion just made. Every guitar rig puts modulation ahead of the amp for the same
+  reason.
+
+The host-layer answer — three engines, three voices a few hertz apart, three `bm_read()`
+calls summed — is still the more literal one and is still about 30 lines. It is no
+longer the *only* one.
+
+### Still out of range
 
 **Struck decay.** The bell source sustains for as long as the phoneme does. A real bell
 is struck and decays, and getting that would mean an envelope retriggered per syllable —
@@ -299,7 +329,7 @@ which carries some of it.
 | Instrument-source (bells, organ) | **Yes** | `source` selects folds, pipe or bell, and crossfades |
 | Ring-modulated robot | **Yes** | `bm_effects`, kept separate from `bm_voice` so effects compose with voices |
 | Aggressive / distorted | **Yes** | `drive`; the harmonics it invents are what "aggressive" is |
-| Detuned chorus | Not shipped | Still needs several engines summed; one engine renders one voice |
+| Detuned chorus | **Yes** | `chorus` — a swept delay is a pitch shift; a fixed one is not |
 | Fixed-melody announcements | **Yes** | It is a `.bmsong`, not a voice |
 | Concatenative / recorded | No | Different kind of program entirely |
 

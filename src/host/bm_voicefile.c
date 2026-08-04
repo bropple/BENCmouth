@@ -174,12 +174,15 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
      * every voice file that will never use one. */
     if (effects != 0 &&
         (effects->ring > 0.0f || effects->comb > 0.0f ||
+         effects->chorus > 0.0f ||
          effects->drive > 0.0f || effects->crush > 0.0f)) {
         fprintf(f, "\n# effects; applied after the voice, see CLASSIC-VOICES.md\n");
         fprintf(f, "ring           = %.6g\n", (double)effects->ring);
         fprintf(f, "ring_hz        = %.6g\n", (double)effects->ring_hz);
         fprintf(f, "comb           = %.6g\n", (double)effects->comb);
         fprintf(f, "comb_hz        = %.6g\n", (double)effects->comb_hz);
+        fprintf(f, "chorus         = %.6g\n", (double)effects->chorus);
+        fprintf(f, "chorus_hz      = %.6g\n", (double)effects->chorus_hz);
         fprintf(f, "drive          = %.6g\n", (double)effects->drive);
         fprintf(f, "crush          = %.6g\n", (double)effects->crush);
     }

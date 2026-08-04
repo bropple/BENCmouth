@@ -20,20 +20,20 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
     /* The bypass. Present as a named entry so a dropdown has something to
      * return to, and so "no effects" is a choice rather than the absence of
      * one. */
-    { "None",      0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
+    { "None",      0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
 
     /* Ring modulation alone, at a carrier low enough that the sidebands stay
      * inside the formants rather than scattering above them. This is the one
      * to listen to first: it is the effect that most obviously is not a
      * person. */
-    { "Metal",     0.85f, 62.0f,  0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
+    { "Metal",     0.85f, 62.0f,  0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f },
 
     /* Drive alone, so the waveshaper can be heard without anything else
      * happening. Loud in character and not in level - the trim compensates. */
-    { "Overdrive", 0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f,  0.0f },
+    { "Overdrive", 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f,  0.0f },
 
     /* Sample-rate reduction alone. The aliasing is the sound. */
-    { "Crushed",   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.62f, 0.0f },
+    { "Crushed",   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.62f, 0.0f },
 
     /* The metallic sentry. Ring modulation for the inharmonic edge, a comb
      * tuned low for the sense of a voice coming out of a chest cavity, and
@@ -44,14 +44,22 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * where the dry and wet paths partly cancel, and stacking a comb on top of
      * it put the whole thing 3.7 dB down - far enough that selecting it in a
      * dropdown read as a fault. 1.5 brings it back to within 0.2 dB. */
-    { "Sentinel",  0.62f, 108.0f, 0.55f, 150.0f, 0.30f, 0.22f, 1.5f },
+    { "Sentinel",  0.62f, 108.0f, 0.55f, 150.0f, 0.0f, 0.0f,   0.30f, 0.22f, 1.5f },
 
     /* The aggressive one. Drive carries it - harmonics that were not in the
      * voice are what the ear reads as force - with a tight comb for the metal
      * and only a trace of ring, because too much of it turns menace into
      * novelty. Crush left off: it makes a thing sound old, and this is not
      * supposed to sound old. */
-    { "Enforcer",  0.22f, 47.0f,  0.42f, 240.0f, 0.88f, 0.0f,  0.0f }
+    { "Enforcer",  0.22f, 47.0f,  0.42f, 240.0f, 0.0f, 0.0f,   0.88f, 0.0f,  0.0f },
+
+    /* Three of it. A modulated delay is a pitch shift, so three taps swept a
+     * third of a cycle apart really are three detuned copies - which a fixed
+     * comb is not, and is why the comb sounds like a tube instead. Slow rate:
+     * above about 1 Hz a chorus stops sounding like several voices and starts
+     * sounding like one voice being wobbled, which is a different effect and
+     * already available as vibrato. */
+    { "Trinode",   0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  1.4f }
 };
 
 #define BM_EFFECT_COUNT \
@@ -137,6 +145,8 @@ bm_result bm_effects_set_param(bm_effects *effects, const char *key,
     else if (key_equals("ring_hz", key, key_len)) effects->ring_hz = value;
     else if (key_equals("comb",    key, key_len)) effects->comb = value;
     else if (key_equals("comb_hz", key, key_len)) effects->comb_hz = value;
+    else if (key_equals("chorus",  key, key_len)) effects->chorus = value;
+    else if (key_equals("chorus_hz",key, key_len)) effects->chorus_hz = value;
     else if (key_equals("drive",   key, key_len)) effects->drive = value;
     else if (key_equals("crush",   key, key_len)) effects->crush = value;
     else if (key_equals("level",   key, key_len)) effects->level = value;
@@ -160,6 +170,26 @@ bm_result bm_effects_set_param(bm_effects *effects, const char *key,
  * being unintelligible. */
 #define BM_CRUSH_MAX_HOLD 12u
 
+/* Chorus geometry, in milliseconds.
+ *
+ * The centre delay has to be long enough that the copies are heard as separate
+ * voices rather than as comb filtering of one - below about 10 ms the ear
+ * fuses them and what is left is a flanger. The sweep either side is what does
+ * the detuning: a delay changing by D samples per sample shifts pitch by a
+ * factor of (1 - D), so 3 ms of sweep at half a hertz is a few cents, which is
+ * what a section of singers is out by. */
+#define BM_CHORUS_BASE_MS  16.0f
+#define BM_CHORUS_DEPTH_MS  3.2f
+#define BM_CHORUS_DEFAULT_HZ 0.5f
+
+/* Three, which is what makes this the detuned-chorus voice rather than a
+ * generic wobble. Spread evenly around the LFO cycle so no two are ever at the
+ * same delay. */
+#define BM_CHORUS_TAPS 3
+
+/* 1/sqrt(BM_CHORUS_TAPS) - see the comment where it is used. */
+#define BM_CHORUS_NORM 0.5774f
+
 void bm_effects_state_init(bm_effects_state *s, float sample_rate)
 {
     if (s == 0) return;
@@ -176,6 +206,10 @@ void bm_effects_state_init(bm_effects_state *s, float sample_rate)
     s->comb_fb = 0.0f;
     s->comb_wet = 0.0f;
     s->comb_norm = 1.0f;
+    s->chorus_wet = 0.0f;
+    s->chorus_base = 1.0f;
+    s->chorus_depth = 0.0f;
+    s->chorus_inc = 0.0f;
 #endif
     bm_effects_state_reset(s);
 }
@@ -193,6 +227,9 @@ void bm_effects_state_reset(bm_effects_state *s)
         int i;
         for (i = 0; i < BM_COMB_LEN; i++) s->comb_buf[i] = 0.0f;
         s->comb_at = 0u;
+        for (i = 0; i < BM_CHORUS_LEN; i++) s->chorus_buf[i] = 0.0f;
+        s->chorus_at = 0u;
+        s->chorus_phase = 0.0f;
     }
 #endif
 }
@@ -207,8 +244,10 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
     s->p.comb    = bm_clampf(s->p.comb, 0.0f, 1.0f);
     s->p.drive   = bm_clampf(s->p.drive, 0.0f, 1.0f);
     s->p.crush   = bm_clampf(s->p.crush, 0.0f, 1.0f);
+    s->p.chorus  = bm_clampf(s->p.chorus, 0.0f, 1.0f);
     s->p.ring_hz = bm_clampf(s->p.ring_hz, 0.0f, s->sample_rate * 0.45f);
     s->p.comb_hz = bm_clampf(s->p.comb_hz, 0.0f, s->sample_rate * 0.45f);
+    s->p.chorus_hz = bm_clampf(s->p.chorus_hz, 0.0f, 12.0f);
 
 #if BM_WITH_EFFECTS
     /* Delay in samples for the requested resonance spacing. Clamped to the
@@ -239,6 +278,30 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
     s->comb_fb  = s->p.comb * 0.78f;
     s->comb_wet = s->p.comb;
     s->comb_norm = 1.0f - s->comb_fb;
+
+    /* One knob again, for the same reason: depth without mix is inaudible and
+     * mix without depth is three copies of the same delay, which is a comb.
+     * The base delay is fixed - it decides whether the copies are heard as
+     * separate voices, and that is not a taste setting. */
+    {
+        float base  = BM_CHORUS_BASE_MS  * 0.001f * s->sample_rate;
+        float depth = BM_CHORUS_DEPTH_MS * 0.001f * s->sample_rate * s->p.chorus;
+
+        /* Keep the deepest excursion inside the line, with a sample spare for
+         * the interpolator to read behind. */
+        if (base + depth > (float)(BM_CHORUS_LEN - 2)) {
+            base = (float)(BM_CHORUS_LEN - 2) - depth;
+        }
+        if (base < 2.0f) base = 2.0f;
+        if (depth > base - 2.0f) depth = base - 2.0f;
+
+        s->chorus_base  = base;
+        s->chorus_depth = depth;
+        s->chorus_wet   = s->p.chorus;
+        s->chorus_inc   = ((s->p.chorus_hz > 0.0f) ? s->p.chorus_hz
+                                                   : BM_CHORUS_DEFAULT_HZ)
+                        / s->sample_rate;
+    }
 #endif
 
     /* Ring modulation spreads a component into two sidebands, which costs
@@ -276,6 +339,7 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
 
     s->active = (s->p.ring > 0.0f && s->p.ring_hz > 0.0f) ||
                 (s->p.comb > 0.0f && s->p.comb_hz > 0.0f) ||
+                (s->p.chorus > 0.0f) ||
                 (s->p.drive > 0.0f) ||
                 (s->crush_step > 1u) ||
                 (s->out_level != 1.0f);
@@ -322,6 +386,53 @@ float bm_effects_tick(bm_effects_state *s, float x)
         s->comb_at = (s->comb_at + 1u) & (unsigned)(BM_COMB_LEN - 1);
 
         y = y + (v * s->comb_norm - y) * s->comb_wet;
+    }
+
+    /* ---- chorus ----
+     *
+     * Before the drive: modulation after distortion smears the harmonics the
+     * distortion just made, which is mud. Every guitar rig puts modulation
+     * ahead of the amp for the same reason. */
+    if (s->chorus_wet > 0.0f) {
+        float sum = 0.0f;
+        int   t;
+
+        s->chorus_buf[s->chorus_at] = y;
+
+        for (t = 0; t < BM_CHORUS_TAPS; t++) {
+            /* Evenly spread around the cycle, so no two taps ever sit at the
+             * same delay and the copies stay distinct. */
+            float ph = s->chorus_phase + (float)t / (float)BM_CHORUS_TAPS;
+            float d, frac;
+            unsigned i0, i1;
+            int      w;
+
+            while (ph >= 1.0f) ph -= 1.0f;
+            d = s->chorus_base + s->chorus_depth * bm_sinf(BM_TWO_PI * ph);
+
+            /* Interpolated, and this is not optional: a delay that jumps whole
+             * samples as it sweeps produces a zipper of small discontinuities
+             * where the smooth pitch shift is supposed to be. */
+            w    = (int)d;
+            frac = d - (float)w;
+            i0 = (s->chorus_at - (unsigned)w)       & (unsigned)(BM_CHORUS_LEN - 1);
+            i1 = (s->chorus_at - (unsigned)(w + 1)) & (unsigned)(BM_CHORUS_LEN - 1);
+
+            sum += s->chorus_buf[i0] +
+                   (s->chorus_buf[i1] - s->chorus_buf[i0]) * frac;
+        }
+
+        s->chorus_at = (s->chorus_at + 1u) & (unsigned)(BM_CHORUS_LEN - 1);
+        s->chorus_phase += s->chorus_inc;
+        if (s->chorus_phase >= 1.0f) s->chorus_phase -= 1.0f;
+
+        /* Divided by the square root of the tap count, not by the tap count.
+         * The copies are detuned, so they sum incoherently - three of them are
+         * sqrt(3) louder than one, not 3 times - and dividing by 3 measured
+         * 6.4 dB down against dry, which is a volume control wearing a timbre
+         * knob's label. */
+        sum *= BM_CHORUS_NORM;
+        y = y + (sum - y) * s->chorus_wet;
     }
 
     /* ---- drive ---- */
