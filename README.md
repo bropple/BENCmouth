@@ -487,6 +487,13 @@ what you see is what SPEAK will say. Every slider is bound to a `.voice` file ke
 what you tune and what SAVE writes cannot drift apart. Audio streams from `bm_read()`
 into the audio callback, so moving a slider mid-sentence is audible immediately.
 
+SAVE WAV and SAVE ask where to put the file, through whatever dialog the system
+already has: the standard Windows save dialog, the Cocoa save panel on macOS, and
+zenity or kdialog on Unix. Nothing is bundled to do it — those are all either part of
+the OS or already installed. On a bare X session with neither helper the file goes to
+the working directory and the status line says where; that beats refusing to save over
+a missing helper program.
+
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 

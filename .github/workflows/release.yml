@@ -51,7 +51,7 @@ jobs:
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-linux-x86_64"
-          mkdir -p "$G/assets/fonts" "$G/render"
+          mkdir -p "$G/assets/fonts"
           cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
           cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
@@ -84,7 +84,7 @@ jobs:
           cp -r voices "$D"/
           tar czf "$D.tar.gz" "$D"
           G="bencmouth-gui-$V-macos-$A"
-          mkdir -p "$G/assets/fonts" "$G/render"
+          mkdir -p "$G/assets/fonts"
           cp bencmouth-gui bm README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
           cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/
@@ -147,7 +147,7 @@ jobs:
           zip -qr "$D.zip" "$D"
           # The GUI, with the font it needs beside it.
           G="bencmouth-gui-$V-windows-x86_64"
-          mkdir -p "$G/assets/fonts" "$G/render"
+          mkdir -p "$G/assets/fonts"
           cp bencmouth-gui.exe bm.exe README.md LICENSE NOTICE "$G"/
           cp -r voices "$G"/
           cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$G/assets/fonts"/

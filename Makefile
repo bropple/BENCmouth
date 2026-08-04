@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding gui-dict
+.PHONY: all lib demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding gui-dict
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -72,7 +72,9 @@ $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $< $(HOST_NOMAIN) $(LIB) $(LDFLAGS) -lm
 
 # The CLI links every host object including main.c.
-bm: $(BIN)
+# No `bm: $(BIN)` alias here: BIN is literally "bm", so the rule read
+# `bm: bm` and make said so on every build. The $(BIN) rule below is the
+# target, and `make bm` finds it by name.
 
 ifneq (,$(WINDOWS))
   BIN_LINK := -static
@@ -99,8 +101,23 @@ $(BIN): $(HOST_OBJ) $(LIB)
 DICT_SRC  := ref/cmudict-0.7b.txt
 DICT_DATA := src/core/bm_dict_data.c
 
-mkdict: tools/mkdict.c $(LIB)
-	$(CC) $(CFLAGS) -Isrc/core -o $@ $< $(LIB) $(LDFLAGS) -lm
+# Built from the core sources rather than from libbencmouth.a, which looks like
+# the long way round and is not. The library contains bm_dict_data.o once the
+# dictionary has been generated, so linking mkdict against it makes the
+# generated file depend on itself:
+#
+#   bm_dict_data.c -> mkdict -> libbencmouth.a -> bm_dict_data.o -> bm_dict_data.c
+#
+# make drops the cycle, and then compiles bm_dict_data.o with no input file.
+# The tree hid it: `make clean` removes the generated file, so a first build
+# always worked and only a second `make dict` failed.
+#
+# mkdict needs the phoneme table, not the dictionary - it is what generates the
+# dictionary - so the generated file is exactly what to leave out.
+MKDICT_SRC := $(filter-out $(DICT_DATA),$(CORE_SRC))
+
+mkdict: tools/mkdict.c $(MKDICT_SRC)
+	$(CC) $(CFLAGS) -Isrc/core -o $@ tools/mkdict.c $(MKDICT_SRC) $(LDFLAGS) -lm
 
 $(DICT_DATA): mkdict $(DICT_SRC)
 	./mkdict $(DICT_SRC) $@
@@ -194,7 +211,7 @@ $(WASM_OUT): $(CORE_SRC) src/wasm/bm_wasm.c
 # ---------------------------------------------------------------------------
 
 GUI      := bencmouth-gui
-GUI_SRC  := src/gui/main.c src/gui/bm_ui.c
+GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c
 
 # Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
 # it does not also open a console behind the window. Both apply to the GUI only -
@@ -205,7 +222,9 @@ ifneq (,$(WINDOWS))
   # -mwindows: no console behind the window.
   # -static:   a downloaded binary must not need MSYS2's DLLs on PATH, and
   #            that includes libgcc and libwinpthread, not just raylib.
-  GUI_LINK := -mwindows -static
+  # comdlg32 is the standard save dialog. Part of Windows, not a new
+  # dependency - mingw has had the import library forever.
+  GUI_LINK := -mwindows -static -lcomdlg32
 else
   GUI_RES  :=
   GUI_LINK :=
@@ -291,7 +310,6 @@ gui-dict: $(DICT_DATA)
 	$(MAKE) gui OPT="$(OPT) -DBM_WITH_DICT=1"
 
 $(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
-	@mkdir -p render
 	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui $(RL_CFLAGS) \
 	  -o $@ $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB) \
 	  $(RL_LIBS) $(RL_SYS) $(GUI_LINK) -lm

@@ -14,6 +14,7 @@
 
 #include "bencmouth.h"
 #include "bm_gui.h"
+#include "bm_filedlg.h"
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
@@ -342,39 +343,59 @@ int main(int argc, char **argv)
             }
             b.x += 104; b.width = 116;
             if (bm_button(&ui, b, "SAVE WAV", 1)) {
-                bm_engine_storage s2;
-                bm_engine *e2 = 0;
-                bm_config c2 = config;
-                float *pcm = 0;
-                size_t cap = 0, len = 0;
+                char path[1024];
+                int  dlg = bm_save_dialog(GetWindowHandle(), "Save WAV",
+                                          "bencmouth.wav", "WAV audio", "wav",
+                                          path, sizeof path);
 
-                c2.voice = voice;
-                c2.use_dict = use_dict;
-                if (bm_engine_init(&s2, &c2, &e2) == BM_OK &&
-                    bm_speak_text(e2, text, 0) == BM_OK) {
-                    while (bm_is_speaking(e2)) {
-                        size_t got;
-                        if (len + 4096 > cap) {
-                            cap = cap ? cap * 2 : 65536;
-                            pcm = (float *)realloc(pcm, cap * sizeof *pcm);
-                            if (pcm == 0) break;
-                        }
-                        got = bm_read(e2, pcm + len, 4096);
-                        if (got == 0) break;
-                        len += got;
-                    }
+                /* No dialog available - a bare X session with neither zenity
+                 * nor kdialog. Writing to the working directory and saying so
+                 * is better than refusing over a missing helper program. */
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(path, sizeof path, "bencmouth.wav");
+                    dlg = BM_DLG_OK;
                 }
-                if (pcm != 0 && len > 0 &&
-                    bm_wav_write("render/gui.wav", pcm, len, SAMPLE_RATE, 0) == 0) {
-                    snprintf(status, sizeof status, "wrote render/gui.wav  (%.2f s)",
-                             (double)len / SAMPLE_RATE);
-                    status_color = BM_ACCENT;
+
+                if (dlg != BM_DLG_OK) {
+                    snprintf(status, sizeof status, "save cancelled");
+                    status_color = BM_DIM;
                 } else {
-                    snprintf(status, sizeof status,
-                             "could not write render/gui.wav - does render/ exist?");
-                    status_color = BM_ALERT;
+                    bm_engine_storage s2;
+                    bm_engine *e2 = 0;
+                    bm_config c2 = config;
+                    float *pcm = 0;
+                    size_t cap = 0, len = 0;
+
+                    c2.voice = voice;
+                    c2.use_dict = use_dict;
+                    if (bm_engine_init(&s2, &c2, &e2) == BM_OK &&
+                        bm_speak_text(e2, text, 0) == BM_OK) {
+                        while (bm_is_speaking(e2)) {
+                            size_t got;
+                            if (len + 4096 > cap) {
+                                cap = cap ? cap * 2 : 65536;
+                                pcm = (float *)realloc(pcm, cap * sizeof *pcm);
+                                if (pcm == 0) break;
+                            }
+                            got = bm_read(e2, pcm + len, 4096);
+                            if (got == 0) break;
+                            len += got;
+                        }
+                    }
+                    if (pcm != 0 && len > 0 &&
+                        bm_wav_write(path, pcm, len, SAMPLE_RATE, 0) == 0) {
+                        snprintf(status, sizeof status, "wrote %.120s  (%.2f s)",
+                                 GetFileName(path), (double)len / SAMPLE_RATE);
+                        status_color = BM_ACCENT;
+                    } else {
+                        /* An explicit precision: a path can be longer than the status
+                         * line, and saying so beats letting snprintf decide. */
+                        snprintf(status, sizeof status,
+                                 "could not write %.150s", path);
+                        status_color = BM_ALERT;
+                    }
+                    free(pcm);
                 }
-                free(pcm);
             }
         }
         y += 42;
@@ -395,11 +416,28 @@ int main(int argc, char **argv)
             }
             b = (Rectangle){ BM_PAD + 292, y, 76, 28 };
             if (bm_button(&ui, b, "SAVE", 1)) {
-                if (bm_voicefile_save("render/gui.voice", &voice) == 0) {
-                    snprintf(status, sizeof status, "wrote render/gui.voice");
+                char path[1024];
+                int  dlg = bm_save_dialog(GetWindowHandle(), "Save voice",
+                                          "bencmouth.voice",
+                                          "BENCmouth voice", "voice",
+                                          path, sizeof path);
+
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(path, sizeof path, "bencmouth.voice");
+                    dlg = BM_DLG_OK;
+                }
+
+                if (dlg != BM_DLG_OK) {
+                    snprintf(status, sizeof status, "save cancelled");
+                    status_color = BM_DIM;
+                } else if (bm_voicefile_save(path, &voice) == 0) {
+                    snprintf(status, sizeof status, "wrote %.150s", GetFileName(path));
                     status_color = BM_ACCENT;
                 } else {
-                    snprintf(status, sizeof status, "could not write the voice file");
+                    /* An explicit precision: a path can be longer than the status
+                         * line, and saying so beats letting snprintf decide. */
+                        snprintf(status, sizeof status,
+                                 "could not write %.150s", path);
                     status_color = BM_ALERT;
                 }
             }
