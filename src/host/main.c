@@ -13,6 +13,7 @@
 #include "bm_voicefile.h"
 #include "bm_wav.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -297,9 +298,19 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(outpath, "-") != 0) {
-        fprintf(stderr, "%s  %.2f s  peak %.3f%s  [%s]\n",
+        /* Peak as a fraction and loudness in decibels, which is not an
+         * inconsistency: peak is read against the limiter, so the useful form
+         * is "how close am I to 1", while loudness is only ever compared with
+         * another loudness and that comparison is done in dB. Rendering a
+         * dozen voices through the same sentence and reading down the column
+         * is what this is for - and it is how the effects presets were found
+         * to be level-matched while looking four to one apart on peak. */
+        fprintf(stderr, "%s  %.2f s  peak %.3f  rms %.1f dB%s  [%s]\n",
                 outpath, (double)len / (double)config.sample_rate,
-                (double)report.peak, report.limited ? "  LIMITED" : "",
+                (double)report.peak,
+                report.rms > 0.0f
+                    ? 20.0 * log10((double)report.rms) : -99.9,
+                report.limited ? "  LIMITED" : "",
                 voice.name ? voice.name : "voice");
     }
 

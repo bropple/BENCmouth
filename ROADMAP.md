@@ -405,6 +405,14 @@ that need an actual decision when we get there:
       writes zeros, and a mean that included those would walk toward silence for as long
       as the window stayed open - a maximum does not care, a mean cares a great deal.
 
+      The CLI reports it too, from `bm_wav_report.rms`, because rendering a batch of
+      voices through one sentence and reading down the column is where the comparison
+      actually gets made - it is how the mismatch above was found. Appended rather than
+      inserted, so `LIMITED` stays where anything grepping for it expects. Accumulated
+      in double: a long utterance is a few million squares of numbers below one, and a
+      float running total stops noticing them once it has grown, which is the classic
+      way a mean over a large set comes out quietly wrong.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

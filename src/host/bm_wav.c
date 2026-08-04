@@ -64,6 +64,11 @@ int bm_wav_write(const char *path, const float *samples, size_t count,
     size_t   i;
     uint32_t data_bytes;
     float    peak = 0.0f;
+    /* Accumulated in double. A long utterance is a few million squares of
+     * numbers below one, and in float the running total stops noticing them
+     * once it has grown enough - the classic way a mean over a large set comes
+     * out quietly wrong. */
+    double   sum_sq = 0.0;
     int      engaged = 0;
     int      to_stdout;
 
@@ -99,6 +104,7 @@ int bm_wav_write(const char *path, const float *samples, size_t count,
         unsigned char pcm[2];
 
         if (mag > peak) peak = mag;
+        sum_sq += (double)samples[i] * (double)samples[i];
 
         put_u16(pcm, (uint16_t)bm_pcm_sample(samples[i], &engaged));
         if (fwrite(pcm, 1, 2, f) != 2) {
@@ -115,6 +121,10 @@ int bm_wav_write(const char *path, const float *samples, size_t count,
 
     if (report != 0) {
         report->peak = peak;
+        /* Over every sample written, including the pauses. That is what makes
+         * two voices on the same sentence comparable: trimming the silence
+         * would reward whichever voice happened to leave less of it. */
+        report->rms = (float)sqrt(sum_sq / (double)count);
         report->limited = engaged;
     }
     return 0;

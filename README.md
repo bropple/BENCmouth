@@ -142,6 +142,19 @@ bm -S songs/daisy.bmsong -a                # sing a song
 bm -v deep -e enforcer "you have thirty seconds to comply"
 ```
 
+Each render reports on stderr:
+
+```
+out.wav  3.00 s  peak 0.414  rms -19.3 dB  [BENCmouth]
+```
+
+Both level figures, because they answer different questions and this synthesizer makes
+them disagree. Peak is against the limiter, which engages at 0.85 and adds `LIMITED` to
+that line when it does. RMS is loudness. `Aggressor` peaks at 0.124 where `Gravel` peaks
+at 0.527 — four to one — and is *one decibel quieter*, because drive and crush collapse
+the crest factor. Render a dozen voices through the same sentence and read down the
+column; the peak column will lie to you and the rms column will not.
+
 ### Inline markup
 
 Off unless you ask for it with `-m`, because with it off `[pitch 70]` is ordinary text

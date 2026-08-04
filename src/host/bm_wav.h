@@ -12,6 +12,13 @@
 
 typedef struct bm_wav_report {
     float peak;        /* largest |sample| seen before limiting */
+    /* Root mean square over the same samples, which is a different question
+     * and often a differently-answered one. Drive and crush raise loudness
+     * while collapsing the crest factor, so the loudest voices in this
+     * synthesizer are routinely the ones with the lowest peaks - Aggressor
+     * peaks at a quarter of Gravel and is a decibel quieter, not four times
+     * quieter. Peak says how close the limiter is; this says how loud it is. */
+    float rms;
     int   limited;     /* nonzero if the soft limiter engaged */
 } bm_wav_report;
 
