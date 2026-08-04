@@ -27,7 +27,7 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib bm demo speak dict audio wasm gui clean-objs clean test check-freestanding
+.PHONY: all lib bm demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding
 
 # The bm CLI has no main yet; until it does, the demo is what you run.
 all: lib bm demo speak
@@ -74,8 +74,15 @@ $(SPEAK): tools/speak_demo.c $(HOST_NOMAIN) $(LIB)
 # The CLI links every host object including main.c.
 bm: $(BIN)
 
+ifneq (,$(WINDOWS))
+  BIN_LINK := -static
+else
+  BIN_LINK :=
+endif
+
 $(BIN): $(HOST_OBJ) $(LIB)
-	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $(HOST_OBJ) $(LIB) $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) -Isrc/core -Isrc/host -o $@ $(HOST_OBJ) $(LIB) \
+	  $(LDFLAGS) $(BIN_LINK) -lm
 
 # ---------------------------------------------------------------------------
 # Optional CMU dictionary.
@@ -114,7 +121,13 @@ clean-objs:
 # and ALSA headers are a package a first-time builder should not have to find.
 # ---------------------------------------------------------------------------
 
-UNAME := $(shell uname -s)
+UNAME  := $(shell uname -s)
+
+# What the compiler is actually targeting. More reliable than uname - uname
+# describes the shell you are standing in, not the object format you are
+# producing - and it stays correct when cross-compiling.
+TRIPLE := $(shell $(CC) -dumpmachine 2>/dev/null)
+WINDOWS := $(findstring mingw,$(TRIPLE))
 
 ifeq ($(UNAME),Darwin)
   AUDIO_FLAGS := -DBM_AUDIO_COREAUDIO
@@ -186,10 +199,13 @@ GUI_SRC  := src/gui/main.c src/gui/bm_ui.c
 # Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
 # it does not also open a console behind the window. Both apply to the GUI only -
 # bm.exe is a console program by design and carries no icon.
-ifneq (,$(findstring MINGW,$(UNAME))$(findstring MSYS,$(UNAME)))
+ifneq (,$(WINDOWS))
   WINDRES  ?= windres
   GUI_RES  := src/gui/bencmouth.res.o
-  GUI_LINK := -mwindows
+  # -mwindows: no console behind the window.
+  # -static:   a downloaded binary must not need MSYS2's DLLs on PATH, and
+  #            that includes libgcc and libwinpthread, not just raylib.
+  GUI_LINK := -mwindows -static
 else
   GUI_RES  :=
   GUI_LINK :=
@@ -216,6 +232,15 @@ else ifneq (,$(findstring MSYS,$(UNAME)))
 else
   RL_SYS := -lGL -lm -lpthread -ldl -lrt -lX11
 endif
+
+# Prints what the build decided. `make gui-info` is the first thing to run when
+# a Windows binary comes out without an icon.
+gui-info:
+	@echo "  CC       = $(CC)"
+	@echo "  triple   = $(TRIPLE)"
+	@echo "  windows  = $(if $(WINDOWS),yes,no)"
+	@echo "  GUI_RES  = $(if $(GUI_RES),$(GUI_RES),(none - no icon will be embedded))"
+	@echo "  GUI_LINK = $(GUI_LINK)"
 
 gui: $(GUI)
 

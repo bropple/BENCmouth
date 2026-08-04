@@ -213,15 +213,30 @@ jobs:
       - name: Build the GUI
         run: make gui
 
-      # The icon comes from a .rc, so if windres never ran the link succeeds
-      # silently and you get an iconless binary. Checking the size grew by
-      # roughly the .ico is the cheap way to notice.
+      # A missing resource is not a link error - windres simply not running
+      # leaves an iconless binary that builds and works - so this checks for the
+      # thing itself.
+      #
+      # It used to assert a minimum file size, which was a guess calibrated
+      # against a statically linked Linux build and failed on a perfectly good
+      # Windows one. Look for the .rsrc section instead: it exists only if
+      # resources were linked, and it does not care how big anything is.
       - name: The icon is really in there
         run: |
+          make gui-info
           ls -l bencmouth-gui.exe
-          size=$(stat -c %s bencmouth-gui.exe)
-          echo "binary is $size bytes"
-          test "$size" -gt 700000 || { echo "too small - icon resource missing?"; exit 1; }
+          objdump -h bencmouth-gui.exe | grep -q '\.rsrc' \
+            || { echo "no .rsrc section - the icon was not linked"; exit 1; }
+          echo "resource section present"
+
+      # Static, so a downloaded binary does not need MSYS2's DLLs on PATH.
+      - name: No MSYS2 DLL dependencies
+        run: |
+          if objdump -p bencmouth-gui.exe | grep -iE 'DLL Name:.*(raylib|libgcc|libwinpthread|msys)'; then
+            echo "links a DLL that will not be present on a user's machine"
+            exit 1
+          fi
+          echo "self-contained"
 
       - uses: actions/upload-artifact@v4
         with:
