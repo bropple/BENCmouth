@@ -24,8 +24,13 @@ public-domain 1976 US Naval Research Laboratory report. See `ref/README.md` for 
 provenance.
 
 **No dynamic allocation. No libm in the core. No I/O below the host layer.** The engine
-holds about 8.5 KB of state in caller-supplied storage, which means it drops into a
+holds about 15 KB of state in caller-supplied storage, which means it drops into a
 microcontroller, an audio callback, or a WASM module unchanged.
+
+![the BENCmouth GUI](render/gui-screenshot.png)
+
+**[Download a build](https://github.com/bropple/BENCmouth/releases/latest)** for Linux,
+macOS, Windows or the browser — or `make` it, which takes about two seconds.
 
 ---
 
@@ -404,11 +409,13 @@ render/               generated audio; gitignored
 
 ## Prebuilt binaries
 
-Every push builds on Linux, macOS and Windows and keeps the result. Grab one from the
-[latest run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — each job
-attaches its `bm` (with live audio and the dictionary compiled in), plus `bencmouth.wasm`
-and the Linux GUI. They are build artifacts rather than releases, so they expire; for
-anything permanent, build it.
+**[Releases](https://github.com/bropple/BENCmouth/releases)** carry tagged builds for
+Linux, macOS, Windows and the browser, each with live audio and CMUdict compiled in. The
+Linux archive includes the GUI and its font.
+
+Every push also builds on all three platforms and attaches the result to its
+[workflow run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — useful
+for testing an unreleased commit, but those expire after 90 days.
 
 ---
 
@@ -458,8 +465,6 @@ const pcm = bm.say('hello world');         // or just the Float32Array
 make gui          # or: RAYLIB=/some/prefix make gui
 ./bencmouth-gui              # optionally: ./bencmouth-gui 1400x580
 ```
-
-![the BENCmouth GUI](render/gui-screenshot.png)
 
 Type, and the phoneme readout under the field updates as you go. Every slider is bound to
 a `.voice` file key, so what you tune and what SAVE writes cannot drift apart. Audio

@@ -1,0 +1,147 @@
+name: release
+
+# Tag-triggered. CI artifacts expire after 90 days and live on a run page
+# nobody thinks to visit; a release is permanent and sits on the repo front
+# page, which is where someone looking for a binary actually looks.
+#
+#   git tag -a v0.1.0 -m "..." && git push origin v0.1.0
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist)'
+        required: true
+
+permissions:
+  contents: write        # needed to create the release
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev \
+            libxi-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev
+      - name: raylib
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -DCMAKE_INSTALL_PREFIX=/tmp/rl \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j2
+          cmake --install /tmp/raylib/build
+      - name: Build
+        run: |
+          make dict
+          make clean-objs
+          make audio OPT="-O2 -DBM_WITH_DICT=1"
+          RAYLIB=/tmp/rl make gui
+          ./bm -l && ./bm "release build" -o /dev/null || true
+      - name: Package
+        run: |
+          V="${GITHUB_REF_NAME:-dev}"
+          D="bencmouth-$V-linux-x86_64"
+          mkdir -p "$D"
+          cp bm bencmouth-gui README.md LICENSE NOTICE ROADMAP.md "$D"/
+          cp -r voices "$D"/
+          mkdir -p "$D/assets/fonts"
+          cp assets/fonts/TerminusTTF.ttf assets/fonts/OFL.txt "$D/assets/fonts"/
+          tar czf "$D.tar.gz" "$D"
+          ls -l "$D.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with: { name: pkg-linux, path: '*.tar.gz', if-no-files-found: error }
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          make dict
+          make clean-objs
+          make audio OPT="-O2 -DBM_WITH_DICT=1"
+      - name: Package
+        run: |
+          V="${GITHUB_REF_NAME:-dev}"
+          D="bencmouth-$V-macos-$(uname -m)"
+          mkdir -p "$D"
+          cp bm README.md LICENSE NOTICE "$D"/
+          cp -r voices "$D"/
+          tar czf "$D.tar.gz" "$D"
+          ls -l "$D.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with: { name: pkg-macos, path: '*.tar.gz', if-no-files-found: error }
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc make zip
+      - name: Build
+        run: |
+          make dict
+          make clean-objs
+          make audio OPT="-O2 -DBM_WITH_DICT=1"
+      - name: Package
+        run: |
+          V="${GITHUB_REF_NAME:-dev}"
+          D="bencmouth-$V-windows-x86_64"
+          mkdir -p "$D"
+          cp bm.exe README.md LICENSE NOTICE "$D"/
+          cp -r voices "$D"/
+          zip -r "$D.zip" "$D"
+          ls -l "$D.zip"
+      - uses: actions/upload-artifact@v4
+        with: { name: pkg-windows, path: '*.zip', if-no-files-found: error }
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang lld
+      - name: Build and verify
+        run: |
+          make wasm
+          node src/wasm/test_wasm.mjs bencmouth.wasm
+      - name: Package
+        run: |
+          V="${GITHUB_REF_NAME:-dev}"
+          D="bencmouth-$V-wasm"
+          mkdir -p "$D"
+          cp bencmouth.wasm src/wasm/bencmouth.js src/wasm/test_wasm.mjs \
+             README.md LICENSE NOTICE "$D"/
+          tar czf "$D.tar.gz" "$D"
+          ls -l "$D.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with: { name: pkg-wasm, path: '*.tar.gz', if-no-files-found: error }
+
+  publish:
+    needs: [linux, macos, windows, wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - run: ls -lR dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          gh release create "$V" dist/* \
+            --title "BENCmouth $V" \
+            --notes-file .github/release-notes.md \
+            --verify-tag || \
+          gh release upload "$V" dist/* --clobber
