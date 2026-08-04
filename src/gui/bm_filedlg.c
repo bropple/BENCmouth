@@ -22,6 +22,40 @@
 #include <windows.h>
 #include <commdlg.h>
 
+/* The filter is a run of NUL-terminated strings ending in a second NUL, which
+ * is why it is assembled by hand rather than with one snprintf. */
+static void build_filter(char *filter, size_t cap, const char *desc,
+                         const char *ext)
+{
+    size_t n = 0;
+    n += (size_t)snprintf(filter + n, cap - n, "%s (*.%s)", desc, ext);
+    filter[n++] = '\0';
+    n += (size_t)snprintf(filter + n, cap - n, "*.%s", ext);
+    filter[n++] = '\0';
+    n += (size_t)snprintf(filter + n, cap - n, "All files (*.*)");
+    filter[n++] = '\0';
+    n += (size_t)snprintf(filter + n, cap - n, "*.*");
+    filter[n++] = '\0';
+    filter[n++] = '\0';
+}
+
+static void init_ofn(OPENFILENAMEA *ofn, void *owner, const char *title,
+                     const char *filter, char *path, size_t path_cap,
+                     const char *ext)
+{
+    memset(ofn, 0, sizeof *ofn);
+    ofn->lStructSize = sizeof *ofn;
+    ofn->hwndOwner   = (HWND)owner;
+    ofn->lpstrFilter = filter;
+    ofn->lpstrFile   = path;
+    ofn->nMaxFile    = (DWORD)path_cap;
+    ofn->lpstrTitle  = title;
+    ofn->lpstrDefExt = ext;
+    /* NOCHANGEDIR because a file dialog that moves the process's working
+     * directory turns every later relative path into a different path. */
+    ofn->Flags       = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+}
+
 int bm_save_dialog(void *owner, const char *title, const char *default_name,
                    const char *filter_desc, const char *filter_ext,
                    char *out, size_t cap)
@@ -29,37 +63,37 @@ int bm_save_dialog(void *owner, const char *title, const char *default_name,
     OPENFILENAMEA ofn;
     char path[1024];
     char filter[128];
-    size_t n = 0;
 
     if (out == 0 || cap < 2) return BM_DLG_CANCELLED;
 
-    /* The filter is a run of NUL-terminated strings ending in a second NUL,
-     * which is why it is assembled by hand rather than with snprintf. */
-    n += (size_t)snprintf(filter + n, sizeof filter - n, "%s (*.%s)",
-                          filter_desc, filter_ext);
-    filter[n++] = '\0';
-    n += (size_t)snprintf(filter + n, sizeof filter - n, "*.%s", filter_ext);
-    filter[n++] = '\0';
-    n += (size_t)snprintf(filter + n, sizeof filter - n, "All files (*.*)");
-    filter[n++] = '\0';
-    n += (size_t)snprintf(filter + n, sizeof filter - n, "*.*");
-    filter[n++] = '\0';
-    filter[n++] = '\0';
-
+    build_filter(filter, sizeof filter, filter_desc, filter_ext);
     snprintf(path, sizeof path, "%s", default_name);
-
-    memset(&ofn, 0, sizeof ofn);
-    ofn.lStructSize  = sizeof ofn;
-    ofn.hwndOwner    = (HWND)owner;
-    ofn.lpstrFilter  = filter;
-    ofn.lpstrFile    = path;
-    ofn.nMaxFile     = (DWORD)sizeof path;
-    ofn.lpstrTitle   = title;
-    ofn.lpstrDefExt  = filter_ext;
-    ofn.Flags        = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST |
-                       OFN_NOCHANGEDIR;
+    init_ofn(&ofn, owner, title, filter, path, sizeof path, filter_ext);
+    ofn.Flags |= OFN_OVERWRITEPROMPT;
 
     if (!GetSaveFileNameA(&ofn)) return BM_DLG_CANCELLED;
+
+    snprintf(out, cap, "%s", path);
+    return BM_DLG_OK;
+}
+
+int bm_open_dialog(void *owner, const char *title, const char *start_dir,
+                   const char *filter_desc, const char *filter_ext,
+                   char *out, size_t cap)
+{
+    OPENFILENAMEA ofn;
+    char path[1024];
+    char filter[128];
+
+    if (out == 0 || cap < 2) return BM_DLG_CANCELLED;
+
+    build_filter(filter, sizeof filter, filter_desc, filter_ext);
+    path[0] = '\0';
+    init_ofn(&ofn, owner, title, filter, path, sizeof path, filter_ext);
+    ofn.lpstrInitialDir = start_dir;
+    ofn.Flags |= OFN_FILEMUSTEXIST;
+
+    if (!GetOpenFileNameA(&ofn)) return BM_DLG_CANCELLED;
 
     snprintf(out, cap, "%s", path);
     return BM_DLG_OK;
@@ -125,6 +159,46 @@ int bm_save_dialog(void *owner, const char *title, const char *default_name,
                  "kdialog --title '%s' --getsavefilename '%s' '*.%s|%s' "
                  "2>/dev/null",
                  title, default_name, filter_ext, filter_desc);
+        return read_line(cmd, out, cap) ? BM_DLG_OK : BM_DLG_CANCELLED;
+    }
+    return BM_DLG_UNAVAILABLE;
+#endif
+}
+
+int bm_open_dialog(void *owner, const char *title, const char *start_dir,
+                   const char *filter_desc, const char *filter_ext,
+                   char *out, size_t cap)
+{
+    char cmd[1024];
+
+    (void)owner;
+    if (out == 0 || cap < 2) return BM_DLG_CANCELLED;
+    if (start_dir == 0) start_dir = ".";
+
+#if defined(__APPLE__)
+    (void)filter_desc;
+    /* `of type` takes extensions, so the panel greys out everything else the
+     * way a native application's open panel does. */
+    snprintf(cmd, sizeof cmd,
+             "osascript -e 'POSIX path of (choose file with prompt \"%s\" "
+             "of type {\"%s\"} default location POSIX file \"%s\")' "
+             "2>/dev/null",
+             title, filter_ext, start_dir);
+    return read_line(cmd, out, cap) ? BM_DLG_OK : BM_DLG_CANCELLED;
+#else
+    if (have("zenity")) {
+        snprintf(cmd, sizeof cmd,
+                 "zenity --file-selection --title='%s' --filename='%s/' "
+                 "--file-filter='%s | *.%s' --file-filter='All files | *' "
+                 "2>/dev/null",
+                 title, start_dir, filter_desc, filter_ext);
+        return read_line(cmd, out, cap) ? BM_DLG_OK : BM_DLG_CANCELLED;
+    }
+    if (have("kdialog")) {
+        snprintf(cmd, sizeof cmd,
+                 "kdialog --title '%s' --getopenfilename '%s' '*.%s|%s' "
+                 "2>/dev/null",
+                 title, start_dir, filter_ext, filter_desc);
         return read_line(cmd, out, cap) ? BM_DLG_OK : BM_DLG_CANCELLED;
     }
     return BM_DLG_UNAVAILABLE;

@@ -45,4 +45,9 @@ int bm_save_dialog(void *owner, const char *title, const char *default_name,
                    const char *filter_desc, const char *filter_ext,
                    char *out, size_t cap);
 
+/* Asks which file to open. Same contract; the returned path exists. */
+int bm_open_dialog(void *owner, const char *title, const char *start_dir,
+                   const char *filter_desc, const char *filter_ext,
+                   char *out, size_t cap);
+
 #endif /* BM_FILEDLG_H */

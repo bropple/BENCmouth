@@ -171,6 +171,7 @@ int main(int argc, char **argv)
     int   info_open = 0;
     Texture2D logo = { 0, 0, 0, 0, 0 };
     bm_edit info_st;
+    char  voice_name_buf[64] = "";
     static char about[24576];
     bm_edit text_st, phon_st;
     Color status_color;
@@ -454,6 +455,58 @@ int main(int argc, char **argv)
                 status_color = BM_DIM;
             }
             b = (Rectangle){ BM_PAD + 292, y, 76, 28 };
+            if (bm_button(&ui, b, "LOAD", 1)) {
+                char path[1024];
+                char start[1024];
+                int  dlg;
+
+                /* Start in the voices folder that ships beside the binary,
+                 * which is where the presets are and where SAVE's suggestions
+                 * are most likely to be wanted. */
+                snprintf(start, sizeof start, "%svoices",
+                         GetApplicationDirectory());
+                if (!DirectoryExists(start)) {
+                    snprintf(start, sizeof start, "%s", "voices");
+                    if (!DirectoryExists(start)) snprintf(start, sizeof start, ".");
+                }
+
+                dlg = bm_open_dialog(GetWindowHandle(), "Load voice", start,
+                                     "BENCmouth voice", "voice",
+                                     path, sizeof path);
+
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    /* Unlike saving, there is no sensible default to fall back
+                     * on: nothing here knows which file was wanted. */
+                    snprintf(status, sizeof status,
+                             "no file dialog available - install zenity or kdialog");
+                    status_color = BM_ALERT;
+                } else if (dlg == BM_DLG_OK) {
+                    /* Loaded over a copy, so a file that fails halfway through
+                     * cannot leave the live voice half-changed. Over the
+                     * current voice rather than over defaults, which is what
+                     * `bm -f` does - a file that sets only two keys is an edit,
+                     * not a whole voice. */
+                    bm_voice next = voice;
+                    char err[192];
+
+                    if (bm_voicefile_load(path, &next, voice_name_buf,
+                                          sizeof voice_name_buf,
+                                          err, sizeof err) == 0) {
+                        voice = next;
+                        voice.name = voice_name_buf[0] != '\0'
+                                         ? voice_name_buf : "loaded";
+                        bm_engine_set_voice(g_engine, &voice);
+                        snprintf(status, sizeof status, "loaded %.120s",
+                                 GetFileName(path));
+                        status_color = BM_ACCENT;
+                    } else {
+                        snprintf(status, sizeof status, "%.150s", err);
+                        status_color = BM_ALERT;
+                    }
+                }
+            }
+
+            b.x += 84;
             if (bm_button(&ui, b, "SAVE", 1)) {
                 char path[1024];
                 int  dlg = bm_save_dialog(GetWindowHandle(), "Save voice",

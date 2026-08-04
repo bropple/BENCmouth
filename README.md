@@ -476,11 +476,15 @@ sentence. The text box is a real text box: click to put the caret anywhere, drag
 shift-arrow to select, Ctrl-A/C/X/V (Cmd on macOS), Ctrl-arrow by word, Home and End,
 and a right-click menu for the same. The phoneme readout follows the DICT button, so
 what you see is what SPEAK will say. Every slider is bound to a `.voice` file key, so
-what you tune and what SAVE writes cannot drift apart. Audio streams from `bm_read()`
+what you tune and what SAVE writes cannot drift apart, and LOAD reads the same files
+back — the presets in `voices/`, or anything you saved. A file is applied over the
+current voice, the way `bm -f` does, so one that sets two keys is an edit rather than a
+whole voice; it is parsed into a copy first, so a file that fails halfway cannot leave
+you with a half-changed voice. Audio streams from `bm_read()`
 into the audio callback, so moving a slider mid-sentence is audible immediately.
 
-SAVE WAV and SAVE ask where to put the file, through whatever dialog the system
-already has: the standard Windows save dialog, the Cocoa save panel on macOS, and
+LOAD, SAVE and SAVE WAV ask where the file goes or comes from, through whatever dialog
+the system already has: the standard Windows save dialog, the Cocoa save panel on macOS, and
 zenity or kdialog on Unix. Nothing is bundled to do it — those are all either part of
 the OS or already installed. On a bare X session with neither helper the file goes to
 the working directory and the status line says where; that beats refusing to save over
