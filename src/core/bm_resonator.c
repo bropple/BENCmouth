@@ -14,6 +14,36 @@
  * response there is degenerate, and interpolation overshoot can push past it. */
 #define BM_MAX_FREQ_FRACTION 0.49f
 
+/* Above this fraction of the sample rate, a resonance is not represented at
+ * all: the section is bypassed rather than moved down to fit.
+ *
+ * These sections are normalised to unity gain at DC, which is what lets five of
+ * them chain without a makeup stage. That normalisation is only harmless while
+ * the poles stay well away from Nyquist - as a pole approaches it, the gain at
+ * the resonance grows relative to DC without bound, and five of those multiply.
+ * The result is not instability, which the frequency clamp above already
+ * prevents; it is a cascade that quietly gets louder as the sample rate falls.
+ *
+ * Measured, rendering a sustained vowel while moving the rate under a fixed
+ * formant at 3750 Hz:
+ *
+ *   formant / rate   0.31   0.34   0.37   0.40   0.42   0.44   0.47
+ *   peak             0.68   0.67   0.71   0.69   0.86   1.15   2.14
+ *
+ * Flat to 0.40 and then away, so 0.40 is where this sits. It is a measurement,
+ * not a round number that happens to look like one.
+ *
+ * Bypassing is also the honest answer rather than the convenient one. A formant
+ * the sample rate cannot represent should be absent, not folded onto the top of
+ * the band where it colours everything below it - clamping turns a formant you
+ * cannot hear into one you can, in the wrong place.
+ *
+ * Inert at every rate this project ships. The highest formant in the table is
+ * about 3020 Hz and `mouth` tops out at 1.4, so nothing exceeds 4.3 kHz against
+ * a threshold of 8820 at 22050 - which is why BENCmouth Retro's golden
+ * reference does not move. */
+#define BM_FORMANT_MAX_FRACTION 0.40f
+
 /* Ceiling on the antiresonator's DC-normalization gain, and the divisor below
  * which we stop dividing at all. See bm_antiresonator_set for why this exists. */
 #define BM_MAX_MAKEUP_GAIN    1000.0f
@@ -70,10 +100,25 @@ static void store(bm_resonator *r, float a, float b, float c)
 #endif
 }
 
+/* a = 1, b = c = 0 is y = x for both tick functions: the section is still in
+ * the chain and still costs its multiply-adds, and passes the signal through
+ * untouched. Cheaper than teaching the sample loop to skip sections, and it
+ * cannot get out of step with what was configured. */
+static void store_bypass(bm_resonator *r)
+{
+    store(r, 1.0f, 0.0f, 0.0f);
+}
+
+static int above_band(float freq, float sample_rate)
+{
+    return sample_rate > 0.0f && freq > sample_rate * BM_FORMANT_MAX_FRACTION;
+}
+
 void bm_resonator_set(bm_resonator *r, float freq, float bw, float sample_rate)
 {
     float a, b, c;
     if (r == 0) return;
+    if (above_band(freq, sample_rate)) { store_bypass(r); return; }
     bm_pole_pair(freq, bw, sample_rate, &a, &b, &c);
     store(r, a, b, c);
 }
@@ -83,6 +128,8 @@ void bm_antiresonator_set(bm_resonator *r, float freq, float bw, float sample_ra
     float a, b, c, inv_a;
 
     if (r == 0) return;
+    /* A zero above the band is nothing to cancel, so cancel nothing. */
+    if (above_band(freq, sample_rate)) { store_bypass(r); return; }
 
     bm_pole_pair(freq, bw, sample_rate, &a, &b, &c);
 

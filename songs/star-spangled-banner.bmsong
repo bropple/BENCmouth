@@ -15,9 +15,10 @@
 # Energy in five bands, this rendering put through the reference's own format
 # so the comparison is like for like:
 #
-#                   <500   .5-1k   1-2k   2-3k   >3k
-#   reference       15.2%  19.8%  33.2%  20.2%  11.5%
-#   this song       16.4%  24.9%  32.8%  12.7%  13.2%
+#                        <500   .5-1k   1-2k   2-3k   >3k
+#   reference            15.2%  19.8%  33.2%  20.2%  11.5%
+#   this song, 22 kHz    17.0%  28.4%  30.9%  15.5%   8.3%
+#   this song at -r 7000 14.3%  26.7%  32.2%  19.9%   6.9%
 #
 # The lever turned out to be `throat`, not `tilt`. The reference has almost no
 # energy below 500 Hz for a voice whose fundamental is 92 Hz, which means its
@@ -27,8 +28,10 @@
 # with a small mouth and a big larynx, which is what you get when the two were
 # never tied to each other in the first place.
 #
-# 2-3 kHz is the one band still short, and the tail above it is close enough
-# that chasing the rest would be fitting the resampler rather than the voice.
+# Rendered at the reference's own 7 kHz the match is closest - three of the
+# four bands that matter land within a point. The remaining gap is above 3 kHz,
+# where the reference has energy a 7 kHz recording cannot actually carry: that
+# is its resampler, not its voice, and fitting it would be fitting an artifact.
 #
 #   ./bm -S songs/star-spangled-banner.bmsong -a
 
@@ -75,6 +78,9 @@ flatten        = 0
 # reference's own rate instead:
 #
 #   ./bm -S songs/star-spangled-banner.bmsong -r 7000 -o period.wav
+#
+# That rate used to produce garbage, and finding out why is the reason
+# bm_resonator gained a band limit - see the note in bm_resonator.c.
 
 score =
 [note A2][hold 229] OW1

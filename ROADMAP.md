@@ -582,6 +582,37 @@ that need an actual decision when we get there:
       quietly clipping the status line - the one row that says what the program is doing.
       Rendered at a range of heights to find where the last row comes back whole: 786.
 
+- [x] **A resonance above the representable band is bypassed, not moved.** Found while
+      trying to render a song at 7 kHz to match a reference recording's band limit: the
+      output came back with a peak of 458. Swept, it was not a cliff but a slope - peak
+      0.6 at 22050, 0.6 at 11025, 2.1 at 8000, 458 at 7000, 1968 at 6000. Finite, and all
+      of it wrong.
+
+      Not instability. The frequency clamp already keeps every pole inside the unit
+      circle. It is the *normalisation*: these sections are unity-gain at DC, which is
+      what lets five chain without a makeup stage, and that is only harmless while the
+      poles stay away from Nyquist. As a pole approaches it the gain at the resonance
+      grows relative to DC without bound, and five of those multiply.
+
+      Isolated by phoneme class, which is what named it: at 8 kHz a vowel and a fricative
+      both ran away and a nasal did not - the nasal has no high formant.
+
+      | formant / rate | 0.31 | 0.34 | 0.37 | 0.40 | 0.42 | 0.44 | 0.47 |
+      |---|---|---|---|---|---|---|---|
+      | peak | 0.68 | 0.67 | 0.71 | 0.69 | 0.86 | 1.15 | 2.14 |
+
+      Flat to 0.40 and then away, so the threshold is 0.40 - measured, not a round number
+      that happens to look like one. Above it the section is bypassed rather than clamped
+      down to fit, which is also the honest answer: a formant the rate cannot represent
+      should be absent, not folded onto the top of the band where it colours everything
+      below it.
+
+      Inert at every rate this project ships - the highest formant in the table is about
+      3020 Hz and `mouth` tops out at 1.4, against a threshold of 8820 at 22050 - so
+      `BENCmouth Retro`'s golden reference does not move, and 22050 and 16000 render
+      bit-identically to before. Every rate from 4 kHz up now sits between 0.55 and 0.64
+      where they used to reach four figures.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

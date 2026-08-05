@@ -263,6 +263,70 @@ static void test_stability(void)
     printf("      worst peak excursion: %.4g\n", worst);
 }
 
+/* A resonance above the representable band is bypassed, not moved.
+ *
+ * These sections are normalised to unity gain at DC, and that is only harmless
+ * while the poles stay away from Nyquist: as a pole approaches it, the gain at
+ * the resonance grows relative to DC without bound. Five of those in a cascade
+ * multiply, and the engine got quietly, enormously louder as the sample rate
+ * fell - peak 0.6 at 22050, 22 at 8000, 1968 at 6000, all of it finite and all
+ * of it wrong.
+ *
+ * Measured here at the level it happens: one section's peak gain, swept. The
+ * cascade is what the listener hears, but the section is where the fault is. */
+static void test_band_limit(void)
+{
+    const float fs = 8000.0f;
+    bm_resonator r;
+    float peak, x;
+    int i;
+
+    printf("band limit\n");
+
+    /* Inside the band: an ordinary resonator, gain of a few at its peak. */
+    bm_resonator_set(&r, 1000.0f, 100.0f, fs);
+    bm_resonator_reset(&r);
+    peak = 0.0f;
+    for (i = 0; i < 4000; i++) {
+        x = (i == 0) ? 1.0f : 0.0f;
+        {
+            float y = bm_resonator_tick(&r, x);
+            if (y > peak) peak = y;
+            if (-y > peak) peak = -y;
+        }
+    }
+    printf("    1000 Hz at 8 kHz: impulse peak %.3f\n", (double)peak);
+    check(peak > 0.0f && peak < 2.0f, "a resonance inside the band behaves");
+
+    /* Above 0.40 of the rate: bypassed, so the impulse comes straight back and
+     * nothing follows it. Asserted as identity rather than as "small", because
+     * bypass is the actual claim. */
+    bm_resonator_set(&r, 3750.0f, 100.0f, fs);
+    bm_resonator_reset(&r);
+    {
+        float first = bm_resonator_tick(&r, 1.0f);
+        float rest = 0.0f;
+        for (i = 0; i < 500; i++) {
+            float y = bm_resonator_tick(&r, 0.0f);
+            if (y > rest) rest = y;
+            if (-y > rest) rest = -y;
+        }
+        printf("    3750 Hz at 8 kHz: first %.3f, tail %.3e\n",
+               (double)first, (double)rest);
+        check(first == 1.0f && rest == 0.0f,
+              "a resonance above the band passes the signal through untouched");
+    }
+
+    /* And it is not doing that at any rate anyone actually renders at: the
+     * highest formant in the table is about 3020 Hz. */
+    bm_resonator_set(&r, 3020.0f, 100.0f, 22050.0f);
+    bm_resonator_reset(&r);
+    {
+        float first = bm_resonator_tick(&r, 1.0f);
+        check(first != 1.0f, "and the highest real formant is untouched at 22 kHz");
+    }
+}
+
 int main(void)
 {
     printf("\nBENCmouth resonator tests\n\n");
@@ -270,6 +334,7 @@ int main(void)
     test_resonator();
     test_antiresonator();
     test_stability();
+    test_band_limit();
     printf("\n%s (%d failure%s)\n\n",
            failures ? "FAILED" : "all passed",
            failures, failures == 1 ? "" : "s");
