@@ -1,0 +1,174 @@
+# BENCmouth song
+#
+# The Star-Spangled Banner. Words by Francis Scott Key, 1814; the tune is
+# "To Anacreon in Heaven", John Stafford Smith, c.1773. Both long in the
+# public domain.
+#
+# Transcribed from a recording of a much older formant synthesizer singing it -
+# 85 seconds of 7 kHz 8-bit mono, which is a provenance you can hear. The
+# melody here is that recording's, pitch-tracked note by note: D major, with
+# the voice sitting between D2 and A3. The chromatic F#-G#-A rise at the end of
+# each long phrase is in the original and is not an artifact - it is the raised
+# fourth the tune has always had.
+#
+# The voice is aimed at the same target by measurement rather than by ear.
+# Energy in five bands, this rendering put through the reference's own format
+# so the comparison is like for like:
+#
+#                   <500   .5-1k   1-2k   2-3k   >3k
+#   reference       15.2%  19.8%  33.2%  20.2%  11.5%
+#   this song       16.4%  24.9%  32.8%  12.7%  13.2%
+#
+# The lever turned out to be `throat`, not `tilt`. The reference has almost no
+# energy below 500 Hz for a voice whose fundamental is 92 Hz, which means its
+# formants sit far higher than that pitch has any business implying - so throat
+# goes to 1.35, the child end of a range meant for a short vocal tract, under a
+# voice down at D2. No human is shaped like that. That is the sound: a machine
+# with a small mouth and a big larynx, which is what you get when the two were
+# never tied to each other in the first place.
+#
+# 2-3 kHz is the one band still short, and the tail above it is close enough
+# that chasing the rest would be fitting the resampler rather than the voice.
+#
+#   ./bm -S songs/star-spangled-banner.bmsong -a
+
+title          = The Star-Spangled Banner
+voice          = BENCmouth
+# 96 BPM: the reference's shortest notes land near 300 ms, which is an eighth
+# at this tempo. The holds below are the reference's own note lengths scaled by
+# 0.82 - its pitch-tracked "notes" include its voiced consonants, and here the
+# consonants get their own time on top, so the vowels have to give some back.
+# At 0.82 this runs 85.25 s against the reference's 84.90.
+tempo          = 96
+
+f0_base        = 110
+f0_range       = 0
+f0_flutter     = 0.15
+vibrato        = 0
+vibrato_rate   = 0
+source         = 0
+speed          = 1
+
+throat         = 1.35
+mouth          = 1
+
+breathiness    = 0
+# Low, and that is the whole timbre. Measured against the reference: at 1632 Hz
+# a voice down at 92 Hz has to be barely tilted at all.
+tilt           = 0
+open_quotient  = 0.3
+whisper        = 0
+gain           = 0.55
+
+# A machine from before any of this was a parameter.
+coarticulation = 0.2
+prosody        = 0
+formant_glide  = 0
+bandwidth_track= 0
+flatten        = 0
+
+# No crush. It was the obvious way to reach for the 8-bit-ness of the source
+# and it was the wrong one: crush reduces the sample *rate*, and doing that at
+# 22050 aliases energy upward into a band the reference does not have at all -
+# it is 7 kHz, so it cannot. Measured, it moved the spectrum away from the
+# target rather than toward it. For the period band limit, render at the
+# reference's own rate instead:
+#
+#   ./bm -S songs/star-spangled-banner.bmsong -r 7000 -o period.wav
+
+score =
+[note A2][hold 229] OW1
+[note F#2][hold 245] S EY1
+[note D2][hold 671] K AE1 N
+[note F#2][hold 572] Y UW1
+[note A2][hold 499] S IY1
+[note D3][hold 602] B AY1
+[note D3][hold 602] DH AH0
+[note F#3][hold 335] D AO1 N Z
+[note E3][hold 253] ER1
+[note D3][hold 712] L IY0
+[note F#2][hold 630] L AY1 T
+[note G#2][hold 581] W AH1 T
+[note A2][hold 988] S OW1
+[note A2][hold 988] P R AW1 D
+[note F#3][hold 483] L IY0
+[note F#3][hold 483] W IY1
+[note E3][hold 253] HH EY1 L D
+[note D3][hold 671] AE1 T
+[note C#3][hold 701] DH AH0
+[note C#3][hold 701] T W AY1
+[note B2][hold 262] L AY T S
+[note C#3][hold 245] L AE1 S T
+[note D3][hold 635] G L IY1 M
+[note D3][hold 635] IH0 NG
+[note A2][hold 556] HH UW1 Z
+[note F#2][hold 589] B R AO1 D
+[note D2][hold 663] S T R AY1 P S
+[note A2][hold 851] AH0 N D
+[note F#2][hold 679] B R AY1 T
+[note A2][hold 589] S T AA1 R Z
+[note D3][hold 638] TH R UW1
+[note D3][hold 638] DH AH0
+[note F#3][hold 303] P EH1 R
+[note E3][hold 253] AH0 L
+[note D3][hold 736] AH0 S
+[note F#2][hold 548] F AY1 T
+[note G#2][hold 409] OW1 R
+[note A2][hold 980] DH AH0
+[note A2][hold 980] R AE1 M
+[note F#3][hold 957] P AA2 R T S
+[note E3][hold 237] W IY1
+[note D3][hold 663] W AA1 CH T
+[note C#3][hold 590] W ER1
+[note C#3][hold 590] S OW1
+[note B2][hold 336] G AE1 L
+[note D3][hold 663] AH0 N T
+[note D3][hold 663] L IY0
+[note A2][hold 572] S T R IY1 M
+[note F#2][hold 597] IH0 NG
+[note D2][hold 589] AH0 N D
+[note F#3][hold 717] DH AH0
+[note F#3][hold 717] R AA1 K
+[note G3][hold 483] AH0 T S
+[note A3][hold 1028] R EH1 D
+[note A3][hold 1028] G L EH1 R
+[note G3][hold 458] DH AH0
+[note E3][hold 531] B AA1 M Z
+[note F#3][hold 671] B ER1 S T
+[note G3][hold 1312] IH0 NG
+[note G3][hold 1312] IH0 N
+[note F#3][hold 573] EH1 R
+[note F#3][hold 573] G EY1 V
+[note E3][hold 458] P R UW1 F
+[note C#3][hold 611] TH R UW1
+[note C#3][hold 611] DH AH0
+[note B2][hold 237] N AY1 T
+[note C#3][hold 508] DH AE1 T
+[note D3][hold 605] AW1 ER0
+[note F#2][hold 417] F L AE1 G
+[note G#2][hold 581] W AA1 Z
+[note A2][hold 1004] S T IH1 L
+[note A2][hold 1004] DH EH1 R
+[note D3][hold 931] OW1
+[note D3][hold 931] S EY1
+[note B2][hold 680] D AH1 Z
+[note B2][hold 680] DH AE1 T
+[note B2][hold 548] S T AA1 R
+[note E3][hold 613] S P AE1 NG
+[note G3][hold 172] G AH0 L D
+[note F#3][hold 442] B AE1 N
+[note D3][hold 561] ER0
+[note D3][hold 561] Y EH1 T
+[note C#3][hold 695] W EY1 V
+[note A2][hold 680] OW1 R
+[note D3][hold 577] DH AH0
+[note D3][hold 577] L AE1 N D
+[note G3][hold 229] AH1 V
+[note A3][hold 626] DH AH0
+[note A3][hold 626] F R IY1
+[note D3][hold 221] AH0 N D
+[note E3][hold 245] DH AH0
+[note F#3][hold 941] HH OW1 M
+[note G3][hold 229] AH1 V
+[note E3][hold 630] DH AH0
+[note D3][hold 900] B R EY1 V
