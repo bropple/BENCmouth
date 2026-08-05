@@ -16,7 +16,8 @@ public-domain 1976 US Naval Research Laboratory report. See `ref/README.md` for 
 provenance.
 
 **No dynamic allocation. No libm in the core. No I/O below the host layer.** The engine
-holds about 15 KB of state in caller-supplied storage, which means it drops into a
+holds all its state in caller-supplied storage — 19 KB without the effects stage, 75 KB
+with it, since two of those effects are delay lines — which means it drops into a
 microcontroller, an audio callback, or a WASM module unchanged.
 
 ![the BENCmouth GUI](assets/gui.png)

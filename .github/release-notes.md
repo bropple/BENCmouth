@@ -4,6 +4,49 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.2.0
+
+It sings, it has an effects rack, and there are twenty-five voices instead of ten.
+
+**Song mode.** A second tab in the GUI: a score of phonemes with `[note]` and `[hold]`
+in it, a word-to-phoneme translator with an INSERT button so you do not have to know
+ARPABET by heart, a reference for the notation, and save/load of `.bmsong` files. Each
+tab keeps its own voice, because singing wants prosody off and a little vibrato and
+speech wants the opposite. On the command line, `bm -S songs/daisy.bmsong -a`.
+
+**A post-synthesis effects stage**, kept in its own struct beside the voice rather than
+bolted onto it — an effect is not a property of a speaker, and keeping them apart is what
+lets any chain go on any voice. Nine controls: ring modulation with a slowly drifting
+carrier, a resonant comb, a three-tap chorus, drive, sample-rate crush, echo, reverb, and
+an output level. Fifteen presets from `Metal` to `Hall`. All of it compiles away under
+`-DBM_WITH_EFFECTS=0`, and an all-zero chain is a bit-for-bit bypass, which is what lets
+the pinned voice survive a new stage in the signal path.
+
+**Twenty-five voices.** The classic-era set — deep, professional, child, whispering,
+unstable — plus ten that carry an effects chain and arrive with it: `Zarvek`, `Sentry`,
+`Aggressor`, `Carillon`, `Harmonium`, `Diver`, `Foreman`, `Emissary`, `Trinode`, `Gravel`.
+`CLASSIC-VOICES.md` covers what the engine can reach, what it cannot, and why.
+
+**The excitation is selectable.** `source` crossfades the vocal folds into a harmonic
+pipe or the measured partial series of a church bell. The vocal tract is untouched, so a
+bell-sourced voice still has formants and still says the words — which is exactly what
+the classic instrument voices were.
+
+**New voice parameters**, all defaulting to off: `whisper` (voicing traded for
+turbulence), `vibrato` / `vibrato_rate`, `flatten` (one pitch for the whole utterance —
+`BENCmouth Monotone` was not actually monotone before this), and `source`.
+
+**The GUI grew up.** Sliders whose readouts you can type into, with arrows that step by
+the precision shown. A voice list that is sorted and scrolls. An effects column that
+scrolls. Selectable, copyable read-only boxes. And a meter that shows RMS as well as
+peak, because this synthesizer routinely makes them disagree — `Aggressor` peaks four
+times lower than `Gravel` and is a decibel *quieter*, since drive collapses the crest
+factor. `bm` reports both figures too.
+
+**Voice files are now `.bmvoice`**, matching `.bmsong`. Contents are unchanged and the
+loader never looked at the extension, so anything you saved under the old name still
+loads with `-f`.
+
 ## What is in the box
 
 Two archives per desktop platform. The CLI on its own is small and has no icon,
@@ -53,7 +96,8 @@ the binary.
 ## Notable
 
 - **No dynamic allocation, no libm in the core, no I/O below the host layer.** The
-  engine holds ~15 KB of state in caller-supplied storage.
+  engine holds all its state in caller-supplied storage: 19 KB without the effects
+  stage, 75 KB with it, since the echo and the reverb are delay lines.
 - **BENCmouth Retro is pinned.** Every naturalness feature is a voice parameter whose
   off setting reproduces the older behaviour, and a golden-reference test holds the
   original voice to it.
