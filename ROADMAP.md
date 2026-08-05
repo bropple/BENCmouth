@@ -534,10 +534,19 @@ that need an actual decision when we get there:
         and the engine measures 19,104 bytes, so a microcontroller build sets the reserve
         to 24576. `BM_ECHO_LEN` and `BM_REVERB_LEN` are the middle option.
 
-      The GUI went to **four columns** rather than growing downward - fourteen effect
-      controls in one column would have run four rows past the voice half, and the
-      tallest column sets the window height. Both halves are ten rows again, which is
-      what they were before any of this, and the window is back to 780 px tall.
+      **The effects column scrolls.** Fourteen controls will not fit in the ten rows a
+      column has, and the two ways to make them fit both cost something permanent: a
+      taller window runs out of screen, and a fourth column cost 100 px of width and a
+      940 px minimum. Scrolling one column costs a 12 px gutter.
+
+      It is also the arrangement that keeps working. The effects list has grown four
+      times now, and a layout that has to be redrawn on each occasion is a layout that
+      will be wrong again. `bm_scroll_rows` moves by whole rows rather than pixels,
+      which is not cosmetic: a half-scrolled row is still a live control with its
+      rectangle hanging outside the visible band, so clicks meant for the buttons above
+      would land on a slider nobody can see. Whole rows mean the ones out of range are
+      simply not drawn. Slider ids follow the parameter rather than the screen row, so a
+      number being typed into keeps its identity while the column moves under it.
 
 ## Known, and recorded rather than fixed
 

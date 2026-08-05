@@ -132,10 +132,11 @@ void bm_ui_init(bm_ui *ui)
 
 void bm_ui_defocus(bm_ui *ui)
 {
-    ui->focus   = 0;
-    ui->num_id  = 0;
-    ui->drag_id = 0;
-    ui->step_id = 0;
+    ui->focus    = 0;
+    ui->num_id   = 0;
+    ui->drag_id  = 0;
+    ui->step_id  = 0;
+    ui->col_drag = 0;
 }
 
 void bm_ui_free(bm_ui *ui)
@@ -1417,6 +1418,68 @@ void bm_ui_overlay(bm_ui *ui)
 
     ui->pop_kind = 0;
     ui->blocking = 0;
+}
+
+void bm_scroll_rows(bm_ui *ui, int id, Rectangle area, int total, int visible,
+                    int *first)
+{
+    Vector2 m = GetMousePosition();
+    Rectangle bar, thumb;
+    int   maxfirst = total - visible;
+    float th, travel;
+
+    if (maxfirst <= 0) { *first = 0; return; }
+
+    if (*first < 0) *first = 0;
+    if (*first > maxfirst) *first = maxfirst;
+
+    /* The wheel works anywhere over the column, not only over the 7px bar.
+     * Scrolling that requires aiming is scrolling nobody uses. */
+    if (mouse_free(ui) && CheckCollisionPointRec(m, area)) {
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0.0f) {
+            *first -= (int)wheel;
+            if (*first < 0) *first = 0;
+            if (*first > maxfirst) *first = maxfirst;
+        }
+    }
+
+    bar = (Rectangle){ area.x + area.width - 8.0f, area.y, 7.0f, area.height };
+    DrawRectangleRounded(bar, 0.5f, 4, BM_PANEL);
+
+    th = bar.height * ((float)visible / (float)total);
+    if (th < 18.0f) th = 18.0f;
+    travel = bar.height - th;
+
+    thumb = (Rectangle){ bar.x, bar.y + travel * ((float)*first / (float)maxfirst),
+                         bar.width, th };
+
+    if (mouse_free(ui) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        CheckCollisionPointRec(m, bar)) {
+        if (CheckCollisionPointRec(m, thumb)) {
+            ui->col_drag = id;
+            ui->col_grab = m.y - thumb.y;
+        } else {
+            /* Clicking the track jumps the thumb to the pointer and then keeps
+             * following it, which is what every scrollbar does and what makes a
+             * long list reachable in one gesture. */
+            ui->col_drag = id;
+            ui->col_grab = th * 0.5f;
+        }
+    }
+    if (ui->col_drag == id) {
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            ui->col_drag = 0;
+        } else if (travel > 0.0f) {
+            float t = (m.y - ui->col_grab - bar.y) / travel;
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            *first = (int)(t * (float)maxfirst + 0.5f);
+            thumb.y = bar.y + travel * ((float)*first / (float)maxfirst);
+        }
+    }
+
+    DrawRectangleRounded(thumb, 0.5f, 4, BM_ACCENT);
 }
 
 void bm_waveform(Rectangle r, const float *samples, int count)

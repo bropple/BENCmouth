@@ -28,14 +28,13 @@
 
 /* Taller than it was. Song mode needs a panel with two columns in it, and the
  * voice grew three sliders, which between them added about 80 px of layout
- * that has to come from somewhere. Then wider rather than taller when echo and
- * reverb arrived: fourteen effect controls in one column would have been four
- * rows past the voice columns, and a window that grows downward runs out of
- * screen long before one that grows sideways runs out of desk. Four columns of
- * ten instead, which is the height it was two features ago. */
-#define WIN_W       1000
+ * that has to come from somewhere. It has not grown since, and is not going to:
+ * the effects outgrew their column when echo and reverb arrived, and the answer
+ * was to scroll that column rather than to widen or heighten the window. There
+ * are more knobs here than fit on a screen, and there will be more still. */
+#define WIN_W       900
 #define WIN_H       780
-#define WIN_MIN_W   940
+#define WIN_MIN_W   800
 #define WIN_MIN_H   740
 
 /* The band the active tab's panel gets. Fixed rather than proportional: the
@@ -355,7 +354,7 @@ int main(int argc, char **argv)
     const bm_voice *voice_list[64];
     int   voice_count = 0, voice_index = 0, voice_open = 0;
     const char *fx_names[32];
-    int   fx_count = 0, fx_index = 0, fx_open = 0;
+    int   fx_count = 0, fx_index = 0, fx_open = 0, fx_scroll = 0;
     bm_effects effects;
     int   i, dirty = 1;
     int   have_dict = 0, use_dict = 1;
@@ -1032,29 +1031,29 @@ int main(int argc, char **argv)
         }
         y += 38;
 
-        /* ---- parameters, in four columns ----
+        /* ---- parameters, in three columns ----
          *
-         * Nineteen voice parameters and fourteen effect parameters stacked in
-         * one list would be 790 px of slider. The split is not arbitrary:
-         * columns one and two are the speaker, three and four are what is done
-         * to them afterwards, which is the same line bm_voice and bm_effects
-         * are drawn along.
+         * Columns one and two are the speaker, column three is what is done to
+         * them afterwards - the same line bm_voice and bm_effects are drawn
+         * along. Nineteen voice parameters split ten and nine; the effects no
+         * longer fit at all, so that column scrolls.
          *
-         * Four rather than three because the effects outgrew a single column
-         * when echo and reverb landed. Growing sideways rather than downward
-         * was the choice: the tallest column sets the window height, and a
-         * window that grows downward runs out of screen before one that grows
-         * sideways runs out of desk. Both halves are ten rows now, which is
-         * what they were before any of this.
+         * Briefly four columns instead, which fitted everything at once and
+         * cost 100 px of width and a 940 px minimum. Scrolling one column is
+         * cheaper than that, and it is the arrangement that keeps working: the
+         * effects list has grown four times and a layout that has to be redrawn
+         * on each occasion is a layout that will be wrong again.
          *
-         * The slider metrics are proportional, so a quarter-width column lays
-         * out correctly without any of this knowing about it. */
+         * The slider metrics are proportional, so the columns lay themselves
+         * out without any of this knowing their width. */
         {
-            float colw = (W - 5 * BM_PAD) / 4.0f;
+            float colw = (W - 4 * BM_PAD) / 3.0f;
             int   half = (NPARAMS + 1) / 2;
-            /* The dropdown occupies the effects half's first slot, so it is
-             * counted as one when deciding where the column breaks. */
-            int   fx_half = (NFXPARAMS + 1 + 1) / 2;
+            float fx_x = BM_PAD + 2.0f * (colw + BM_PAD);
+            /* One row goes to the dropdown, which does not scroll - it is the
+             * heading, and a heading that scrolls off is a column you cannot
+             * identify. */
+            int   fx_visible = half - 1;
 
             for (i = 0; i < NPARAMS; i++) {
                 int col = i / half;
@@ -1075,10 +1074,8 @@ int main(int argc, char **argv)
                 }
             }
 
-            /* ---- the effects half ---- */
+            /* ---- the effects column ---- */
             {
-                float fx_x = BM_PAD + 2.0f * (colw + BM_PAD);
-
                 /* The dropdown is the heading. A separate heading plus a
                  * control somewhere else would cost a row this layout does not
                  * have, and "EFFECTS: <name>" is what a heading here would say
@@ -1095,31 +1092,40 @@ int main(int argc, char **argv)
                     status_color = BM_DIM;
                 }
 
-                for (i = 0; i < NFXPARAMS; i++) {
-                    /* Slot 0 is the dropdown, so every parameter is one along.
-                     * Column three fills first and column four takes the rest,
-                     * which keeps the chain in signal order down and then
-                     * across rather than interleaved. */
-                    int slot = i + 1;
-                    int col  = slot / fx_half;
-                    int rowi = slot % fx_half;
-                    Rectangle row = { BM_PAD + (float)(2 + col) * (colw + BM_PAD),
-                                      y + (float)rowi * 24, colw, 22 };
-                    float v = fx_get(&effects, FX_PARAMS[i].key);
-                    if (bm_slider(&ui, ID_FX_SLIDER + i, row, FX_PARAMS[i].label,
-                                  &v, FX_PARAMS[i].lo, FX_PARAMS[i].hi,
-                                  FX_PARAMS[i].fmt)) {
-                        bm_effects_set_param(&effects, FX_PARAMS[i].key, 0, v);
-                        bm_engine_set_effects(g_engine, &effects);
-                        effects.name = "edited";
+                {
+                    Rectangle band = { fx_x, y + 24.0f, colw,
+                                       (float)fx_visible * 24.0f };
+                    int k;
+
+                    bm_scroll_rows(&ui, 1, band, NFXPARAMS, fx_visible,
+                                   &fx_scroll);
+
+                    for (k = 0; k < fx_visible; k++) {
+                        int slot = fx_scroll + k;
+                        Rectangle row;
+                        float v;
+
+                        if (slot >= NFXPARAMS) break;
+                        /* 12 px of gutter for the bar, always - not only when
+                         * it is showing. A column whose sliders change length
+                         * depending on how many rows there are would twitch
+                         * every time the list grew. */
+                        row = (Rectangle){ fx_x, band.y + (float)k * 24,
+                                           colw - 12.0f, 22 };
+                        v = fx_get(&effects, FX_PARAMS[slot].key);
+                        if (bm_slider(&ui, ID_FX_SLIDER + slot, row,
+                                      FX_PARAMS[slot].label, &v,
+                                      FX_PARAMS[slot].lo, FX_PARAMS[slot].hi,
+                                      FX_PARAMS[slot].fmt)) {
+                            bm_effects_set_param(&effects, FX_PARAMS[slot].key,
+                                                 0, v);
+                            bm_engine_set_effects(g_engine, &effects);
+                            effects.name = "edited";
+                        }
                     }
                 }
             }
-            /* Whichever half is taller. They are level at the moment and the
-             * layout should not depend on their staying that way - advancing by
-             * the voice height alone once put the last effect slider through
-             * the waveform. */
-            y += (float)(half > fx_half ? half : fx_half) * 24;
+            y += (float)half * 24;
         }
 
         /* ---- scope and meter ---- */

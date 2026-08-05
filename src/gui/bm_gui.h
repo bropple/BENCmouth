@@ -123,6 +123,11 @@ typedef struct bm_ui {
      * the end of a slider is supposed to do. */
     int   drag_id;
 
+    /* A scrolling column of rows: which one's thumb is being dragged, and where
+     * in the thumb it was taken hold of. */
+    int   col_drag;
+    float col_grab;
+
     /* Which stepper arrow is held, and for how long, so it can auto-repeat.
      * A stepper you have to click thirty times is a stepper nobody uses. */
     int   step_id;
@@ -230,6 +235,21 @@ int   bm_textbox(bm_ui *ui, int id, Rectangle r, char *buf, int cap, bm_edit *st
  * selection terminates it in place and puts the byte back - the alternative is
  * a scratch buffer sized for the largest thing anyone might select. */
 int   bm_textview(bm_ui *ui, int id, Rectangle r, char *s, bm_edit *st, Color c);
+
+/* A scrollbar for a column of fixed-height rows, drawn in the gutter at the
+ * right of `area`. `*first` is the index of the topmost visible row and is what
+ * this adjusts - the mouse wheel over the area moves it, and so does dragging
+ * the thumb.
+ *
+ * Rows rather than pixels, so a row is either shown whole or not at all. That
+ * is not a cosmetic choice: a half-scrolled row would still be a live control
+ * with its rectangle hanging outside the visible band, and clicks meant for
+ * whatever is above the column would land on a slider nobody can see. Whole
+ * rows mean the caller can simply skip the ones that are out of range.
+ *
+ * Draws nothing and leaves `*first` at 0 when everything fits. */
+void  bm_scroll_rows(bm_ui *ui, int id, Rectangle area, int total, int visible,
+                     int *first);
 
 /* Draws whatever popped up, above everything else. Call once, last, before
  * EndDrawing. */

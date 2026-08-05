@@ -792,6 +792,11 @@ the same widget as the text box with editing switched off rather than a second o
 the caret and the selection cannot drift apart between them. Lifting phonemes out of the
 readout is the natural way to start a score.
 
+The effects column **scrolls** — there are more of them than fit, and a mouse wheel
+anywhere over the column moves it. It scrolls by whole rows rather than pixels, so a
+control is either there or it is not; a half-scrolled slider would still be live with its
+hit area hanging outside the column.
+
 Each slider is three controls. Drag the track for the coarse move; click the **number** to
 the right of it and type an exact one, with Enter or a click elsewhere to commit and Escape
 to put it back; or use the two small **arrows** beside it to step by whatever precision the
