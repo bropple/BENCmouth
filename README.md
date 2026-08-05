@@ -155,7 +155,6 @@ bm -P "HH AH0 L OW1" -o hello.wav          # phonemes directly
 bm -t "the quick brown fox"                # see what the rules produced
 bm -f voices/Gravel.bmvoice "testing" -o t.wav
 bm -S songs/daisy.bmsong -a                # sing a song
-bm -S songs/star-spangled-banner.bmsong -a # 85 seconds of it
 bm -v deep -e enforcer "you have thirty seconds to comply"
 ```
 
