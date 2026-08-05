@@ -28,12 +28,15 @@
 
 /* Taller than it was. Song mode needs a panel with two columns in it, and the
  * voice grew three sliders, which between them added about 80 px of layout
- * that has to come from somewhere. A further row when the effects column
- * became the tallest of the three. */
-#define WIN_W       900
-#define WIN_H       804
-#define WIN_MIN_W   800
-#define WIN_MIN_H   764
+ * that has to come from somewhere. Then wider rather than taller when echo and
+ * reverb arrived: fourteen effect controls in one column would have been four
+ * rows past the voice columns, and a window that grows downward runs out of
+ * screen long before one that grows sideways runs out of desk. Four columns of
+ * ten instead, which is the height it was two features ago. */
+#define WIN_W       1000
+#define WIN_H       780
+#define WIN_MIN_W   940
+#define WIN_MIN_H   740
 
 /* The band the active tab's panel gets. Fixed rather than proportional: the
  * controls below it are a fixed height each, so a proportional panel would
@@ -172,7 +175,7 @@ static const param_row PARAMS[] = {
     { "f0_range",        "range",         0.0f,  10.0f, "%.1f st" },
     { "f0_flutter",      "flutter",       0.0f,   1.0f, "%.2f"    },
     { "vibrato",         "vibrato",       0.0f,   3.0f, "%.2f st" },
-    { "vibrato_rate",    "vib. rate",     0.0f,  12.0f, "%.1f Hz" },
+    { "vibrato_rate",    "vib. hz",       0.0f,  12.0f, "%.1f Hz" },
     /* 0 folds, 1 pipe, 2 bell, and it crossfades - see bm_voice.source. */
     { "source",          "source",        0.0f,   2.0f, "%.2f"    },
     { "speed",           "speed",         0.5f,   2.0f, "%.2f"    },
@@ -184,13 +187,13 @@ static const param_row PARAMS[] = {
     { "mouth",           "mouth",         0.7f,   1.4f, "%.2f"    },
     { "tilt",            "tilt",          0.0f,  14.0f, "%.1f dB" },
     { "breathiness",     "breath",        0.0f,  12.0f, "%.1f dB" },
-    { "open_quotient",   "open quot.",    0.3f,   0.7f, "%.2f"    },
+    { "open_quotient",   "open q.",       0.3f,   0.7f, "%.2f"    },
     { "whisper",         "whisper",       0.0f,   1.0f, "%.2f"    },
     { "gain",            "gain",          0.0f,   1.5f, "%.2f"    },
     { "coarticulation",  "coart.",        0.0f,   1.0f, "%.2f"    },
     { "prosody",         "prosody",       0.0f,   1.0f, "%.2f"    },
     { "formant_glide",   "glide",         0.0f,   1.0f, "%.2f"    },
-    { "bandwidth_track", "bandwidth",     0.0f,   1.0f, "%.2f"    },
+    { "bandwidth_track", "bandw.",        0.0f,   1.0f, "%.2f"    },
     { "flatten",         "flatten",       0.0f,   1.0f, "%.2f"    }
 };
 #define NPARAMS ((int)(sizeof PARAMS / sizeof PARAMS[0]))
@@ -200,16 +203,22 @@ static const param_row PARAMS[] = {
  * something done to the sound afterwards. See bm_effects in bencmouth.h. */
 static const param_row FX_PARAMS[] = {
     { "ring",    "ring",       0.0f,   1.0f,  "%.2f"    },
-    { "ring_hz", "ring freq",  0.0f, 400.0f,  "%.0f Hz" },
+    { "ring_hz", "ring hz",    0.0f, 400.0f,  "%.0f Hz" },
     /* Off by default everywhere, so this row reads 0.00 until someone asks
      * for it - see bm_effects.ring_drift for what it is and why. */
-    { "ring_drift","ring drift",0.0f,  1.0f,  "%.2f"    },
+    { "ring_drift","drift",     0.0f,  1.0f,  "%.2f"    },
     { "comb",    "comb",       0.0f,   1.0f,  "%.2f"    },
-    { "comb_hz", "comb freq", 40.0f, 900.0f,  "%.0f Hz" },
+    { "comb_hz", "comb hz",   40.0f, 900.0f,  "%.0f Hz" },
     { "chorus",  "chorus",     0.0f,   1.0f,  "%.2f"    },
-    { "chorus_hz","chor. rate",0.0f,   3.0f,  "%.2f Hz" },
+    { "chorus_hz","chorus hz", 0.0f,   3.0f,  "%.2f Hz" },
     { "drive",   "drive",      0.0f,   1.0f,  "%.2f"    },
     { "crush",   "crush",      0.0f,   1.0f,  "%.2f"    },
+    { "echo",    "echo",       0.0f,   1.0f,  "%.2f"    },
+    /* 0 is not "no delay" - it selects the default around 180 ms, the same way
+     * chorus_hz does. The mix control above is what turns it off. */
+    { "echo_ms", "echo ms",    0.0f, 360.0f,  "%.0f ms" },
+    { "reverb",  "reverb",     0.0f,   1.0f,  "%.2f"    },
+    { "reverb_size","room",    0.0f,   1.0f,  "%.2f"    },
     /* Bottom of the range is 0.1, not 0. In the file format a level of 0 means
      * unity - that is what keeps an all-zero bm_effects an exact bypass - so a
      * slider that could reach 0 would show "0.00" for unity gain and let you
@@ -1023,19 +1032,29 @@ int main(int argc, char **argv)
         }
         y += 38;
 
-        /* ---- parameters, in three columns ----
+        /* ---- parameters, in four columns ----
          *
-         * Seventeen voice parameters and seven effect parameters stacked in one
-         * list would be 580 px of slider. Two columns fitted the voice but left
-         * nowhere for the effects; three fits both in the same 216 px the voice
-         * alone used to take, because the effects column is one shorter.
+         * Nineteen voice parameters and fourteen effect parameters stacked in
+         * one list would be 790 px of slider. The split is not arbitrary:
+         * columns one and two are the speaker, three and four are what is done
+         * to them afterwards, which is the same line bm_voice and bm_effects
+         * are drawn along.
          *
-         * The split is not arbitrary: columns one and two are the speaker,
-         * column three is what is done to them afterwards, which is the same
-         * line bm_voice and bm_effects are drawn along. */
+         * Four rather than three because the effects outgrew a single column
+         * when echo and reverb landed. Growing sideways rather than downward
+         * was the choice: the tallest column sets the window height, and a
+         * window that grows downward runs out of screen before one that grows
+         * sideways runs out of desk. Both halves are ten rows now, which is
+         * what they were before any of this.
+         *
+         * The slider metrics are proportional, so a quarter-width column lays
+         * out correctly without any of this knowing about it. */
         {
-            float colw = (W - 4 * BM_PAD) / 3.0f;
+            float colw = (W - 5 * BM_PAD) / 4.0f;
             int   half = (NPARAMS + 1) / 2;
+            /* The dropdown occupies the effects half's first slot, so it is
+             * counted as one when deciding where the column breaks. */
+            int   fx_half = (NFXPARAMS + 1 + 1) / 2;
 
             for (i = 0; i < NPARAMS; i++) {
                 int col = i / half;
@@ -1056,18 +1075,18 @@ int main(int argc, char **argv)
                 }
             }
 
-            /* ---- the effects column ---- */
+            /* ---- the effects half ---- */
             {
                 float fx_x = BM_PAD + 2.0f * (colw + BM_PAD);
 
-                /* The dropdown is the column heading. A separate heading plus a
+                /* The dropdown is the heading. A separate heading plus a
                  * control somewhere else would cost a row this layout does not
                  * have, and "EFFECTS: <name>" is what a heading here would say
                  * anyway. */
                 if (voice_open) fx_open = 0;
-                bm_label(&ui, "EFFECTS", fx_x, y + 5);
-                if (bm_dropdown(&ui, (Rectangle){ fx_x + 76, y - 1,
-                                                  colw - 76, 24 },
+                bm_label(&ui, "FX", fx_x, y + 5);
+                if (bm_dropdown(&ui, (Rectangle){ fx_x + 32, y - 1,
+                                                  colw - 32, 24 },
                                 fx_names, fx_count, &fx_index, &fx_open,
                                 effects.name)) {
                     effects = *bm_effects_preset_at(fx_index);
@@ -1077,7 +1096,15 @@ int main(int argc, char **argv)
                 }
 
                 for (i = 0; i < NFXPARAMS; i++) {
-                    Rectangle row = { fx_x, y + (float)(i + 1) * 24, colw, 22 };
+                    /* Slot 0 is the dropdown, so every parameter is one along.
+                     * Column three fills first and column four takes the rest,
+                     * which keeps the chain in signal order down and then
+                     * across rather than interleaved. */
+                    int slot = i + 1;
+                    int col  = slot / fx_half;
+                    int rowi = slot % fx_half;
+                    Rectangle row = { BM_PAD + (float)(2 + col) * (colw + BM_PAD),
+                                      y + (float)rowi * 24, colw, 22 };
                     float v = fx_get(&effects, FX_PARAMS[i].key);
                     if (bm_slider(&ui, ID_FX_SLIDER + i, row, FX_PARAMS[i].label,
                                   &v, FX_PARAMS[i].lo, FX_PARAMS[i].hi,
@@ -1088,15 +1115,11 @@ int main(int argc, char **argv)
                     }
                 }
             }
-            /* Whichever column is taller, not always the voice one. The
-             * effects column is the dropdown plus its rows, and it overtook
-             * the voice columns when ring drift arrived - advancing by the
-             * voice height alone put the last effect slider through the
-             * waveform. */
-            {
-                int fx_rows = NFXPARAMS + 1;
-                y += (float)(half > fx_rows ? half : fx_rows) * 24;
-            }
+            /* Whichever half is taller. They are level at the moment and the
+             * layout should not depend on their staying that way - advancing by
+             * the voice height alone once put the last effect slider through
+             * the waveform. */
+            y += (float)(half > fx_half ? half : fx_half) * 24;
         }
 
         /* ---- scope and meter ---- */

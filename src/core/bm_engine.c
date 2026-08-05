@@ -19,7 +19,9 @@
 #include <stddef.h>
 
 /* Silence rendered after the last frame so the filters ring out instead of
- * being cut off mid-decay. */
+ * being cut off mid-decay. Enough for the resonators, which are done in a few
+ * tens of milliseconds; the effects chain can want far more and says so - see
+ * bm_effects_tail_ms. */
 #define BM_TAIL_MS 100u
 
 struct bm_engine {
@@ -143,7 +145,17 @@ static void begin_utterance(struct bm_engine *e)
 {
     bm_synth_reset(&e->synth);
     e->samples_left = 0;
-    e->tail_left = (size_t)BM_TAIL_MS * e->config.sample_rate / 1000u;
+    {
+        /* Whichever is longer: the fixed ring-out for the vocal tract, or what
+         * the effects chain says it needs. Without this an echo was cut off
+         * inside its first repeat and a rendered file was exactly as long with
+         * the effect as without it, which is the kind of bug that reads as the
+         * effect not working. */
+        unsigned ms = BM_TAIL_MS;
+        unsigned fx = bm_effects_tail_ms(&e->config.effects);
+        if (fx > ms) ms = fx;
+        e->tail_left = (size_t)ms * e->config.sample_rate / 1000u;
+    }
     e->active = 1;
 }
 

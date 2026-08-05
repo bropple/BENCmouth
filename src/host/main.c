@@ -112,10 +112,11 @@ int main(int argc, char **argv)
             for (k = 0; k < bm_effects_preset_count(); k++) {
                 const bm_effects *x = bm_effects_preset_at(k);
                 printf("  -e %-12s ring %.2f  comb %.2f  chorus %.2f"
-                       "  drive %.2f  crush %.2f\n",
+                       "  drive %.2f  crush %.2f  echo %.2f  reverb %.2f\n",
                        x->name, (double)x->ring, (double)x->comb,
                        (double)x->chorus,
-                       (double)x->drive, (double)x->crush);
+                       (double)x->drive, (double)x->crush,
+                       (double)x->echo, (double)x->reverb);
             }
             printf("\n");
             for (k = 0; k < bm_voice_preset_count(); k++) {

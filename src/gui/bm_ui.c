@@ -419,8 +419,8 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
      * 100 pixels, so the same widget works in a third-width column. The caps
      * are the old fixed values, which means a wide slider is laid out exactly
      * as it always was and only a narrow one gives ground. */
-    float labelw = r.width * 0.34f;
-    float valuew = r.width * 0.30f;
+    float labelw = r.width * 0.37f;
+    float valuew = r.width * 0.32f;
     Rectangle track, field, up, down;
     float t = (hi > lo) ? (*value - lo) / (hi - lo) : 0.0f;
     int   decimals = fmt_decimals(fmt);
@@ -439,6 +439,8 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
     field = (Rectangle){ r.x + r.width - valuew, r.y, valuew - 13.0f, r.height };
     up    = (Rectangle){ r.x + r.width - 13.0f, r.y, 13.0f, r.height * 0.5f };
     down  = (Rectangle){ up.x, r.y + r.height * 0.5f, 13.0f, r.height * 0.5f };
+    /* Six pixels of air after the label. Without it a label that fills its
+     * share sits directly against the track and reads as one object. */
     track = (Rectangle){ r.x + labelw, r.y + r.height * 0.5f - 3,
                          field.x - (r.x + labelw) - 8.0f, 6 };
 

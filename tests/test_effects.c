@@ -427,11 +427,174 @@ static void test_ring_drift(void)
     }
 }
 
+/* Echo repeats the signal at the delay it was given.
+ *
+ * Driven with a single impulse into silence, so the repeats are countable
+ * rather than inferred: the echo of a click is a click, and it should arrive
+ * where the delay says and again at twice that. */
+static void test_echo_repeats(void)
+{
+    bm_effects_state st;
+    bm_effects       fx;
+    size_t i, n = (size_t)(FS * 1.5f);
+    int    d, first = -1, second = -1;
+
+    printf("echo\n");
+
+    bm_effects_default(&fx);
+    fx.echo    = 0.8f;
+    fx.echo_ms = 120.0f;
+    d = (int)(0.120f * FS);
+
+    bm_effects_state_init(&st, FS);
+    bm_effects_state_set(&st, &fx);
+
+    for (i = 0; i < n; i++) {
+        float out = bm_effects_tick(&st, i == 0 ? 1.0f : 0.0f);
+        a[i] = out;
+        /* Anything well above the noise floor of an all-zero signal, which is
+         * exactly zero - so this is only picking out the repeats. */
+        if (i > 0 && out > 0.01f) {
+            if (first < 0)       first = (int)i;
+            else if (second < 0 && (int)i > first + d / 2) second = (int)i;
+        }
+    }
+
+    printf("    delay asked for %d samples; repeats at %d and %d\n",
+           d, first, second);
+
+    /* Within a hundred samples of the requested delay, which is 4 ms - the
+     * tolerance is for the integer rounding of the delay, not for the
+     * mechanism. */
+    check(first > d - 100 && first < d + 100, "the first repeat lands at the delay");
+    check(second > 2 * d - 200 && second < 2 * d + 200,
+          "and the second at twice it");
+
+    /* Each repeat quieter than the last, or it is an oscillator. */
+    check(a[first] > a[second] && a[second] > 0.0f, "and each is quieter than the last");
+}
+
+/* Reverb turns one impulse into a tail: many arrivals rather than a few, and
+ * still going long after an echo of the same length would have finished.
+ *
+ * Counted rather than described. The difference between a reverb and a delay is
+ * the density of the response, so density is what to measure. */
+static void test_reverb_is_dense(void)
+{
+    bm_effects_state st;
+    bm_effects       fx;
+    size_t i, n = (size_t)(FS * 1.5f);
+    int    crossings = 0;
+    double early = 0.0, late = 0.0;
+
+    printf("reverb\n");
+
+    bm_effects_default(&fx);
+    fx.reverb = 1.0f;
+    fx.reverb_size = 0.7f;
+
+    bm_effects_state_init(&st, FS);
+    bm_effects_state_set(&st, &fx);
+
+    for (i = 0; i < n; i++) {
+        a[i] = bm_effects_tick(&st, i == 0 ? 1.0f : 0.0f);
+        if (i > 0 && ((a[i - 1] <= 0.0f) != (a[i] <= 0.0f))) crossings++;
+    }
+
+    /* Energy in the first 100 ms against the 300-400 ms window. A tail that
+     * decays is the claim; a tail that has stopped by 300 ms is a slap. */
+    for (i = 0; i < (size_t)(FS * 0.1f); i++) early += (double)a[i] * a[i];
+    for (i = (size_t)(FS * 0.3f); i < (size_t)(FS * 0.4f); i++)
+        late += (double)a[i] * a[i];
+
+    printf("    %d sign changes; energy 0-100 ms %.3e, 300-400 ms %.3e\n",
+           crossings, early, late);
+
+    /* Against an echo of comparable length, on the same impulse. An absolute
+     * threshold here would be a guess about the damping - a tail that has lost
+     * its treble legitimately crosses zero less often, which is what a warm
+     * room is - so the claim is made relative to the thing a reverb has to be
+     * distinguishable from. An echo is a handful of separated clicks; this
+     * should be orders of magnitude busier. */
+    {
+        bm_effects_state e2;
+        bm_effects       ef;
+        int ecross = 0;
+
+        bm_effects_default(&ef);
+        ef.echo = 0.8f;
+        ef.echo_ms = 120.0f;
+        bm_effects_state_init(&e2, FS);
+        bm_effects_state_set(&e2, &ef);
+        for (i = 0; i < n; i++) {
+            b[i] = bm_effects_tick(&e2, i == 0 ? 1.0f : 0.0f);
+            if (i > 0 && ((b[i - 1] <= 0.0f) != (b[i] <= 0.0f))) ecross++;
+        }
+        printf("    an echo of the same impulse crosses zero %d times\n", ecross);
+        check(crossings > ecross * 20,
+              "the response is dense where an echo is a few discrete repeats");
+    }
+    check(late > 0.0 && late < early, "and it decays without stopping dead");
+
+    /* Bigger room, longer tail. The size control has to do the thing its name
+     * says rather than merely change something. */
+    {
+        double late_small = 0.0;
+        fx.reverb_size = 0.0f;
+        bm_effects_state_init(&st, FS);
+        bm_effects_state_set(&st, &fx);
+        for (i = 0; i < n; i++) b[i] = bm_effects_tick(&st, i == 0 ? 1.0f : 0.0f);
+        for (i = (size_t)(FS * 0.3f); i < (size_t)(FS * 0.4f); i++)
+            late_small += (double)b[i] * b[i];
+        printf("    at size 0 the same window holds %.3e\n", late_small);
+        check(late_small < late * 0.5, "a smaller room decays faster");
+    }
+}
+
+/* Neither may be a volume control. Both add to the dry signal rather than
+ * mixing against it, which is correct for what they are and is exactly the
+ * arrangement that runs hot if nothing compensates. */
+static void test_ambience_keeps_level(void)
+{
+    bm_voice   v;
+    bm_effects fx;
+    size_t     na, nb;
+    double     dry, wet, ratio;
+    int        k;
+    static const char *WHAT[] = { "echo", "reverb" };
+
+    printf("echo and reverb levels\n");
+
+    bm_voice_default(&v);
+    bm_effects_default(&fx);
+    na = render(&v, &fx, "HH AH0 L OW1 SIL W ER1 L D", a, sizeof a / sizeof a[0]);
+    dry = rms_of(a, na);
+
+    for (k = 0; k < 2; k++) {
+        char msg[96];
+        bm_effects_default(&fx);
+        if (k == 0) { fx.echo = 1.0f; fx.echo_ms = 150.0f; }
+        else        { fx.reverb = 1.0f; fx.reverb_size = 0.6f; }
+
+        nb = render(&v, &fx, "HH AH0 L OW1 SIL W ER1 L D", b, sizeof b / sizeof b[0]);
+        wet = rms_of(b, nb);
+        ratio = wet / dry;
+        printf("    %-6s dry %.4f, wet %.4f  (%.2fx, %+.1f dB)\n",
+               WHAT[k], dry, wet, ratio, 20.0 * log10(ratio));
+
+        /* Wide, and deliberately so on the high side: both of these genuinely
+         * add energy that was not there - that is what an ambience is - and the
+         * requirement is that they not run away, not that they be silent. */
+        snprintf(msg, sizeof msg, "%s at full stays within 4 dB of dry", WHAT[k]);
+        check(ratio > 0.63 && ratio < 1.6, msg);
+    }
+}
+
 static void test_presets_and_params(void)
 {
     static const char *KEYS[] = {
         "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus", "chorus_hz",
-        "drive", "crush", "level"
+        "drive", "crush", "echo", "echo_ms", "reverb", "reverb_size", "level"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, bad = 0;
@@ -546,6 +709,9 @@ int main(void)
     test_crush_holds_samples();
     test_comb_resonates();
     test_chorus_detunes();
+    test_echo_repeats();
+    test_reverb_is_dense();
+    test_ambience_keeps_level();
     test_presets_and_params();
     test_presets_are_level_matched();
 #endif

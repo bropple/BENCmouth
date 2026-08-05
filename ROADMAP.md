@@ -494,6 +494,51 @@ that need an actual decision when we get there:
       legitimately changed it. The comparison is exact on purpose, so the values fed to it
       have to be ones text can carry without loss.
 
+- [x] **Echo and reverb** — `echo` / `echo_ms`, `reverb` / `reverb_size`, at the end of
+      the chain, with `Hall` and `Canyon` as presets.
+
+      Echo is the comb again at a length the ear reads differently: below about 30 ms a
+      delayed copy fuses with the original into a resonance, above about 80 ms it
+      separates into a repeat. Same mechanism, opposite percept, which is why they are
+      two controls and not one knob spanning the gap.
+
+      Reverb is four feedback combs into two allpasses — Schroeder's arrangement, and
+      still the cheapest way to turn one impulse into a tail. The comb lengths share no
+      factors on purpose: four repeats that coincide at a common multiple give the tail a
+      *pitch*, which is the one thing a room must not have. Each comb has a one-pole
+      lowpass inside its loop, because a real room absorbs treble faster than bass and
+      without that the tail rings metallically all the way down.
+
+      Not a long echo, and the difference is countable rather than descriptive. On a
+      single impulse the reverb's response changes sign 1629 times where an echo's
+      changes 25, which is what the test asserts — a relative claim, because an absolute
+      density threshold would really be a guess about the damping.
+
+      Both are placed after the drive, and both *add* to the dry signal rather than
+      mixing against it. That is what an ambience is: the original arrives unaltered and
+      the room arrives afterwards. It is also what makes them run hot, so both carry a
+      measured trim - echo lands 2.1 dB under dry at full, reverb 3.5 dB over.
+
+      Two things had to change around them:
+
+      - **The engine's tail.** It rendered a flat 100 ms past the last frame, which is
+        right for the resonators and wrong by an order of magnitude for anything with
+        feedback: a 330 ms echo was cut off inside its first repeat, and a rendered file
+        was *exactly as long* with the effect as without it. `bm_effects_tail_ms` now
+        reports the ring-out from the parameters - time for the loop to fall 40 dB, not
+        60, since the last twenty are inaudible over the next sentence - capped at two
+        seconds so a feedback near 1 cannot ask for minutes of decaying silence.
+      - **The storage budget.** The two delay lines are 44 KB between them and the engine
+        went from 31 KB to 76 KB, so `BM_ENGINE_RESERVED` doubled to 131072. The embedded
+        path is unmoved: `-DBM_WITH_EFFECTS=0` removes every buffer along with the stage
+        and the engine measures 19,104 bytes, so a microcontroller build sets the reserve
+        to 24576. `BM_ECHO_LEN` and `BM_REVERB_LEN` are the middle option.
+
+      The GUI went to **four columns** rather than growing downward - fourteen effect
+      controls in one column would have run four rows past the voice half, and the
+      tallest column sets the window height. Both halves are ten rows again, which is
+      what they were before any of this, and the window is back to 780 px tall.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

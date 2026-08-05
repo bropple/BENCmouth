@@ -16,6 +16,20 @@
 
 #include "bencmouth.h"
 
+/* Four combs in parallel, then two allpasses in series. Schroeder's original
+ * counts, and they have survived sixty years of people trying fewer: three
+ * combs leave audible gaps in the tail, and one allpass does not diffuse an
+ * impulse enough to stop it sounding like a slap. */
+#define BM_REVERB_COMBS 4
+#define BM_REVERB_APS   2
+#define BM_REVERB_LINES (BM_REVERB_COMBS + BM_REVERB_APS)
+
+/* The longest tail the engine will render past the end of an utterance. Two
+ * seconds is generous for anything here and is a backstop rather than a target:
+ * a feedback close enough to 1 will ask for minutes, and rendering minutes of
+ * decaying silence because a slider went to the top is not a service. */
+#define BM_EFFECTS_TAIL_MAX_MS 2000u
+
 typedef struct bm_effects_state {
     bm_effects p;
     float sample_rate;
@@ -45,6 +59,25 @@ typedef struct bm_effects_state {
     float    chorus_wet;
     float    chorus_base;   /* centre delay, samples */
     float    chorus_depth;  /* sweep either side of it, samples */
+
+    float    echo_buf[BM_ECHO_LEN];
+    unsigned echo_at;
+    unsigned echo_delay;
+    float    echo_fb;
+    float    echo_wet;
+    float    echo_trim;
+
+    /* One block, sliced into six lines. Slicing rather than six arrays because
+     * the lengths are not powers of two and are tuned relative to each other -
+     * keeping them adjacent makes it obvious that the total is the budget, and
+     * changing one means changing what follows it. */
+    float    verb_buf[BM_REVERB_LEN];
+    unsigned verb_at[BM_REVERB_LINES];
+    unsigned verb_off[BM_REVERB_LINES];   /* where each line starts in verb_buf */
+    unsigned verb_len[BM_REVERB_LINES];
+    float    verb_damp_z[BM_REVERB_COMBS];/* the lowpass in each comb's loop */
+    float    verb_fb;
+    float    verb_wet;
 #endif
 
     float ring_trim;
@@ -68,5 +101,18 @@ void  bm_effects_state_set(bm_effects_state *s, const bm_effects *e);
 
 /* One sample through the chain. Returns `x` unchanged when nothing is on. */
 float bm_effects_tick(bm_effects_state *s, float x);
+
+/* How long the chain goes on making sound after its input stops, in
+ * milliseconds. 0 when nothing rings.
+ *
+ * The engine renders this much silence past the last frame. It used to render a
+ * flat 100 ms, which is right for the resonators - they are done in a few tens
+ * of milliseconds - and wrong by an order of magnitude for anything with
+ * feedback in it: a 330 ms echo was cut off inside its first repeat, and the
+ * rendered file was exactly as long with the effect as without it.
+ *
+ * A function of the parameters rather than the running state, so the engine can
+ * ask before it starts rather than having to watch the output decay. */
+unsigned bm_effects_tail_ms(const bm_effects *e);
 
 #endif /* BM_EFFECTS_H */

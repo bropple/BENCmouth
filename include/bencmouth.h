@@ -366,6 +366,25 @@ float bm_voice_formant_scale(const bm_voice *voice, int index);
  * milliseconds rather than the comb's hundreds: 1024 samples is 46 ms at
  * 22050 Hz and 21 ms at 48 kHz, and both comfortably clear the ~20 ms a
  * three-tap chorus needs. */
+/* Echo delay line. The only buffer here sized by what it is *for* rather than
+ * by what fits: an echo is heard as a repeat rather than as a resonance from
+ * about 80 ms, and stops sounding like a room and starts sounding like a
+ * musical device somewhere past 300. 8192 samples is 372 ms at 22050 Hz, which
+ * covers that whole span, and it is 32 KB - by a wide margin the largest thing
+ * the engine holds. Halve it and the longest echo halves with it; nothing else
+ * changes. */
+#ifndef BM_ECHO_LEN
+#define BM_ECHO_LEN 8192
+#endif
+
+/* Reverb scratch: four feedback combs and two allpasses, laid end to end in one
+ * block. Not a power of two and not masked - the lines are prime-ish lengths on
+ * purpose, so their repeats do not coincide and reinforce into a pitch, and
+ * rounding them up to powers of two would undo exactly that. */
+#ifndef BM_REVERB_LEN
+#define BM_REVERB_LEN 3072
+#endif
+
 #ifndef BM_CHORUS_LEN
 #define BM_CHORUS_LEN 1024
 #endif
@@ -427,6 +446,37 @@ typedef struct bm_effects {
      * is the point - it is the sound of a converter that could not keep up,
      * and it is most of what "old digital" means to the ear. */
     float crush;         /* 0..1 */
+
+    /* Echo: a single delayed copy, fed back on itself so it repeats.
+     *
+     * Distinct from `comb`, which is also a delay line and sounds nothing like
+     * this. The difference is entirely the length. Below about 30 ms the ear
+     * fuses the copy with the original and hears a resonance - that is what the
+     * comb is - and above about 80 ms it separates them and hears a repeat.
+     * There is no third mechanism here, only a delay either side of the point
+     * where perception changes its mind.
+     *
+     * `echo` is the wet mix and also sets the feedback, so one knob takes it
+     * from a single slap to a long tail. `echo_ms` is the spacing; 0 selects a
+     * default around 180 ms. */
+    float echo;          /* 0..1 */
+    float echo_ms;       /* delay in milliseconds, up to what BM_ECHO_LEN holds */
+
+    /* Reverb: four feedback combs into two allpasses, the Schroeder
+     * arrangement, which is the oldest and still the most economical way to
+     * turn one impulse into a diffuse tail.
+     *
+     * Not the same thing as a long echo, and the difference is countable. An
+     * echo gives you one repeat per delay time; this gives four at once, at
+     * lengths chosen not to share factors, and then smears each of those
+     * through allpasses that disperse an impulse in time without colouring it.
+     * The repeats multiply rather than add, so within a few hundred
+     * milliseconds they stop being countable at all, which is what a room does.
+     *
+     * `reverb_size` moves the feedback, which is the decay time: small values
+     * are a tiled room, large ones a hall. */
+    float reverb;        /* 0..1 wet mix */
+    float reverb_size;   /* 0..1; 0 selects a default mid-sized room */
 
     /* Output level, linear, applied after everything.
      *
@@ -511,8 +561,17 @@ typedef struct bm_frame {
 
 typedef struct bm_engine bm_engine;
 
+/* The union has to be at least as large as the real struct, which the library
+ * static-asserts. Raised from 65536 when echo and reverb arrived: their delay
+ * lines are 44 KB between them, and the engine went from 31 KB to 76 KB.
+ *
+ * That is a desktop number and it is meant to be. The embedded path has not
+ * moved: -DBM_WITH_EFFECTS=0 removes every one of these buffers along with the
+ * stage that reads them, and the engine measures 19,072 bytes - so a
+ * microcontroller build sets BM_ENGINE_RESERVED to 24576 and is done. Tuning
+ * BM_ECHO_LEN and BM_REVERB_LEN down is the middle option. */
 #ifndef BM_ENGINE_RESERVED
-#define BM_ENGINE_RESERVED 65536
+#define BM_ENGINE_RESERVED 131072
 #endif
 
 typedef union bm_engine_storage {

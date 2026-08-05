@@ -428,17 +428,38 @@ bm -v cadet -e metal "resistance is useless"
 | `chorus` / `chorus_hz` | three delay taps swept by an LFO | three detuned copies — a *moving* delay is a pitch shift, a fixed one is not |
 | `drive` | cubic soft clip with pre-gain | harmonics that were not there — this is what *aggressive* is |
 | `crush` | hold every Nth sample | aliasing; the sound of a converter that could not keep up |
+| `echo` / `echo_ms` | one delayed copy, fed back | repeats — the same mechanism as the comb, at a length the ear separates |
+| `reverb` / `reverb_size` | four combs into two allpasses | a room: many arrivals rather than a few countable ones |
 | `level` | output gain | see below |
 
-The chain runs **ring → comb → chorus → drive → crush**, and the order is deliberate:
+The chain runs **ring → comb → chorus → drive → crush → echo → reverb**, and the order is
+deliberate:
 ring modulation on the clean voice keeps its sidebands distinct, the comb adds the
 resonance, the chorus multiplies whatever has been built into several detuned copies,
 and the drive then saturates the lot — which is what makes a robot sound angry rather
-than merely mechanical. Crush is last because it is the digital layer, applied to a
+than merely mechanical. Crush ends the signal path because it is the digital layer, applied to a
 finished sound. Chorus goes *before* drive because modulation after distortion smears
 the harmonics the distortion just made; every guitar rig is wired the same way.
 
-Thirteen presets ship:
+Echo and reverb come after all of it, because they are not done to the voice but to the
+space around it. Distorting an echo squashes the repeats up against the dry signal until
+the tail is as loud as the words; driving a reverb pumps the whole room in time with the
+syllables. A voice goes into a room — a room does not go into a voice.
+
+**Echo and comb are the same mechanism.** The only difference is length, and the change is
+in the listener rather than in the signal: below about 30 ms the ear fuses the copy with
+the original and hears a resonance, above about 80 ms it separates them and hears a
+repeat. Two controls rather than one because a single delay knob spanning both would spend
+most of its travel in the gap between them.
+
+**Reverb is not a long echo.** An echo gives one repeat per delay time; the reverb gives
+four at once, at lengths chosen to share no factors, each then smeared through allpasses
+that spread an impulse in time without colouring it. The repeats multiply rather than add,
+so within a few hundred milliseconds they stop being countable — which is what a room does
+and what an echo never does. Measured on a single impulse: the reverb's response changes
+sign 1629 times where the echo's changes 25.
+
+Fifteen presets ship:
 
 | Preset | |
 |---|---|
@@ -455,6 +476,8 @@ Thirteen presets ship:
 | `Bullhorn` | amplified and slightly broken |
 | `Cabinet` | a low comb and nothing else — the case an instrument sits in |
 | `Klaxon` | the harsh one; sidebands close enough to the pitch to beat against it |
+| `Hall` | a large room and nothing else |
+| `Canyon` | outdoors and a long way from anything: slow echo over a big room |
 
 The last six arrived as part of a voice — see the pairings in the voice table above — and
 are listed here as well because a chain is not specific to the voice it was built for.

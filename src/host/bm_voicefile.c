@@ -192,8 +192,9 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
      * by field, so the next one added here cannot go quiet the same way. */
     if (effects != 0 &&
         (effects->ring > 0.0f || effects->comb > 0.0f ||
-         effects->chorus > 0.0f ||
-         effects->drive > 0.0f || effects->crush > 0.0f)) {
+         effects->chorus > 0.0f || effects->drive > 0.0f ||
+         effects->crush > 0.0f || effects->echo > 0.0f ||
+         effects->reverb > 0.0f)) {
         fprintf(f, "\n# effects; applied after the voice, see CLASSIC-VOICES.md\n");
         fprintf(f, "ring           = %.6g\n", (double)effects->ring);
         fprintf(f, "ring_hz        = %.6g\n", (double)effects->ring_hz);
@@ -204,6 +205,10 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
         fprintf(f, "chorus_hz      = %.6g\n", (double)effects->chorus_hz);
         fprintf(f, "drive          = %.6g\n", (double)effects->drive);
         fprintf(f, "crush          = %.6g\n", (double)effects->crush);
+        fprintf(f, "echo           = %.6g\n", (double)effects->echo);
+        fprintf(f, "echo_ms        = %.6g\n", (double)effects->echo_ms);
+        fprintf(f, "reverb         = %.6g\n", (double)effects->reverb);
+        fprintf(f, "reverb_size    = %.6g\n", (double)effects->reverb_size);
         fprintf(f, "level          = %.6g\n", (double)effects->level);
     }
 
