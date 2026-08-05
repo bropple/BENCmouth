@@ -4,6 +4,29 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.2.1
+
+**Song mode's tempo is a control, and it now does something.** It was displayed and
+inert — nothing outside the readout read it. It means one thing now: the tempo the
+score's `[hold]` values are written at. Change it and every `[hold]` is rewritten by the
+same ratio, so the song genuinely speeds up or slows down and the file stays honest — its
+header and its holds always agree. There is a slider for the quarter note in milliseconds
+too, since that is the number you actually type into a `[hold]`; it and the BPM are one
+value in two units.
+
+Songs do not scale exactly with it, because consonants keep their own length. Daisy Bell
+runs 11.9 s at 116 BPM and 9.9 s at 160. That is what singing does as well — a note's
+duration lives in its vowel, which is why `[hold]` only touches vowels.
+
+**`make all` builds everything**: dictionary, live audio, GUI and wasm, each in its best
+configuration, testing for raylib, clang and the ALSA headers rather than assuming them
+and reporting whatever it skips. A plain `make` is unchanged and still needs nothing but
+a C compiler.
+
+**Fixed:** the minimum window size had been about twelve pixels shorter than the layout
+needed, so at the smallest size the status line — the one row that says what the program
+is doing — was cut off the bottom.
+
 ## New in 0.2.0
 
 It sings, it has an effects rack, and there are twenty-five voices instead of ten.
