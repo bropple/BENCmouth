@@ -28,19 +28,30 @@
 
 /* Taller than it was. Song mode needs a panel with two columns in it, and the
  * voice grew three sliders, which between them added about 80 px of layout
- * that has to come from somewhere. It has not grown since, and is not going to:
- * the effects outgrew their column when echo and reverb arrived, and the answer
- * was to scroll that column rather than to widen or heighten the window. There
- * are more knobs here than fit on a screen, and there will be more still. */
+ * that has to come from somewhere, and 34 more when song mode got controls for
+ * its tempo.
+ *
+ * Width has stopped growing, though, and that is the rule worth keeping: when
+ * the effects outgrew their column the answer was to scroll the column rather
+ * than add a fourth one. A list that will keep growing gets a scrollbar; a
+ * fixed handful of controls that will not grow again can have the pixels.
+ *
+ * WIN_MIN_H is measured rather than guessed, and it had been guessed. The
+ * layout is computed top-down, so its total height does not depend on the
+ * window - at anything shorter than the total, the status line is simply off
+ * the bottom. The old 740 was about twelve pixels short of what the layout
+ * already needed, so the minimum size had been quietly clipping the one line
+ * that reports what the program is doing. Rendered at a range of heights: the
+ * last row is whole at 786. */
 #define WIN_W       900
-#define WIN_H       780
+#define WIN_H       814
 #define WIN_MIN_W   800
-#define WIN_MIN_H   740
+#define WIN_MIN_H   790
 
 /* The band the active tab's panel gets. Fixed rather than proportional: the
  * controls below it are a fixed height each, so a proportional panel would
  * push the status line off the bottom of a short window. */
-#define PANEL_H     210
+#define PANEL_H     244
 #define TEXT_CAP    2048
 #define SCOPE_LEN   2048
 #define SAMPLE_RATE 22050
@@ -51,9 +62,9 @@
  * readouts alike, because there is one caret. Two schemes would let a slider
  * and a text box both be lit at once, and both take the same keystroke.
  *
- * 1 is this file's text box; 2 to 6 are the song panel's, in bm_song_ui.c. The
- * sliders start well clear of those and take a block each, so adding a
- * parameter costs nothing here. */
+ * 1 is this file's text box; 2 to 6 and 9 to 10 are the song panel's, in
+ * bm_song_ui.c. The sliders start well clear of those and take a block each, so
+ * adding a parameter costs nothing here. */
 #define ID_TEXT          1
 #define ID_PHONEMES      7
 #define ID_ABOUT         8
@@ -662,6 +673,10 @@ int main(int argc, char **argv)
                         memcpy(song.score, loaded_score, sizeof song.score);
                         snprintf(song.title, sizeof song.title, "%s",
                                  song.song.title);
+                        /* The holds in this file were written at this file's
+                         * tempo, so nothing needs retiming until somebody
+                         * moves the control. */
+                        song.tempo_applied = song.song.tempo;
                         song.score_st.caret = song.score_st.sel = 0;
                         song.score_st.scroll = 0.0f;
                         song.title_st.caret = song.title_st.sel = 0;

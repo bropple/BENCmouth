@@ -16,6 +16,8 @@
 #define ID_WORD      4
 #define ID_WORD_OUT  5
 #define ID_REFERENCE 6
+#define ID_TEMPO     9
+#define ID_QUARTER   10
 
 /* Height of a one-line text box: one line of body text plus the inset a short
  * box gets. bm_textbox is a wrapping, scrolling editor - there is no
@@ -51,6 +53,7 @@ void bm_song_ui_init(bm_song_ui *s)
     s->song.voice.vibrato = 0.28f;
     s->song.voice.vibrato_rate = 5.5f;
     s->song.tempo = 120.0f;
+    s->tempo_applied = 120.0f;
 
     s->word_dirty = 1;
     s->score_st.caret = s->score_st.sel = (int)strlen(s->score);
@@ -73,6 +76,70 @@ static void translate(bm_song_ui *s, int use_dict)
                                &n, flags) != BM_OK || n == 0) {
         snprintf(s->word_out, sizeof s->word_out, "%s", "(no pronunciation)");
     }
+}
+
+/* Rewrites every [hold N] in the score for a new tempo.
+ *
+ * This is what makes the tempo control a control rather than a caption. The
+ * engine has no notion of tempo - `[hold]` is milliseconds and always was - so
+ * the only thing "changing the tempo" can honestly mean here is changing the
+ * numbers that were written against it. Doing it to the text rather than at
+ * playback also keeps the file self-describing: the tempo in the header and the
+ * holds in the score always agree, so reloading gives back exactly what was
+ * heard, which a hidden playback multiplier would not.
+ *
+ * Clamped to the 1..10000 ms the markup parser accepts, so dragging the tempo
+ * to an extreme cannot produce a score that will no longer sing. Values that
+ * clamp do not come back on the way up - that is the price of holding the text
+ * as the single source of truth, and it is why the range is 40..240 rather than
+ * something wider.
+ */
+static void retime_score(bm_song_ui *s, float from, float to)
+{
+    /* Static because it is 16 KB and this is called from a draw loop; the GUI
+     * is single-threaded and this is dead between calls. */
+    static char out[BM_SONG_SCORE_MAX];
+    const char *in = s->score;
+    size_t o = 0;
+    float  ratio;
+
+    if (from <= 0.0f || to <= 0.0f) return;
+    ratio = from / to;
+
+    while (*in != '\0' && o + 1 < sizeof out) {
+        if (in[0] == '[' && strncmp(in + 1, "hold", 4) == 0) {
+            const char *p = in + 5;
+            long        ms = 0;
+            int         digits = 0;
+
+            while (*p == ' ' || *p == '\t') p++;
+            while (*p >= '0' && *p <= '9') {
+                ms = ms * 10 + (*p - '0');
+                p++;
+                digits++;
+            }
+            if (digits > 0 && *p == ']') {
+                long v = (long)((float)ms * ratio + 0.5f);
+                int  n;
+
+                if (v < 1)     v = 1;
+                if (v > 10000) v = 10000;
+
+                n = snprintf(out + o, sizeof out - o, "[hold %ld]", v);
+                /* Refuse rather than truncate: half a command written into the
+                 * middle of a score is worse than a score that did not change. */
+                if (n < 0 || (size_t)n >= sizeof out - o) return;
+                o += (size_t)n;
+                in = p + 1;
+                continue;
+            }
+        }
+        out[o++] = *in++;
+    }
+
+    if (*in != '\0') return;          /* would not have fitted; leave it alone */
+    out[o] = '\0';
+    memcpy(s->score, out, o + 1);
 }
 
 /* Appends to the score at the caret, which is where someone looking at the
@@ -112,14 +179,26 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
                             area.height - 18.0f },
                s->score, (int)sizeof s->score, &s->score_st);
 
-    /* ---- right: title, translator, reference ----
+    /* ---- right: title, translator, tempo, reference ----
      *
-     * The running total, against a panel 210 tall: 18 label + 34 box + 8,
-     * 18 + 34 + 4, 34 view + 8, 22 tempo, 28 buttons = 208. It fits with two
-     * pixels to spare, so change one of these numbers and check the FORMAT row
-     * still lands inside `area` - there is no layout engine to catch it. */
+     * The running total, against a panel 244 tall: 18 label + 34 box + 8,
+     * 18 + 34 + 4, 34 view + 8, 24 + 24 tempo, 4, 28 buttons = 238. Six pixels
+     * to spare, so change one of these numbers and check the FORMAT row still
+     * lands inside `area` - there is no layout engine to catch it. */
     y = area.y;
     bm_label(ui, "TITLE", rx, y);
+    /* The eighth note, right-aligned on the label row, which is otherwise
+     * empty. It is the one figure here with no control of its own: it is half
+     * the quarter by definition, and a slider for it would be a third view of
+     * a number that already has two. */
+    {
+        char note[48];
+        float bpm = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
+        float w;
+        snprintf(note, sizeof note, "eighth %.0f ms", (double)(30000.0f / bpm));
+        w = bm_text_measure(ui, BM_FONT_SMALL, note, 1.0f);
+        bm_text_spaced(ui, BM_FONT_SMALL, note, rx + rw - w, y, BM_DIM);
+    }
     y += 18.0f;
     if (bm_textbox(ui, ID_TITLE, (Rectangle){ rx, y, rw, LINE_H },
                    s->title, (int)sizeof s->title, &s->title_st)) {
@@ -151,19 +230,60 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
                 &s->out_st, BM_TEXT);
     y += LINE_H + 8.0f;
 
-    /* A quarter note in milliseconds, which is the number actually needed to
-     * write a [hold]. The engine knows nothing about tempo - note lengths are
-     * absolute - so this is arithmetic the editor does rather than a setting
-     * the synthesizer reads. */
+    /* Tempo, twice.
+     *
+     * The engine knows nothing about tempo - note lengths are absolute, and
+     * `[hold]` is in milliseconds - so this is arithmetic the editor does on
+     * the writer's behalf rather than a setting the synthesizer reads. It is
+     * still a song parameter: it is saved in the file, because a score whose
+     * holds were written at 96 BPM is a different piece read at 140.
+     *
+     * Both units get a control because both are things people arrive with. A
+     * tempo is what a song *is*; a quarter in milliseconds is what actually
+     * gets typed into a `[hold]`, and working it out from BPM in your head is
+     * the sort of arithmetic that stops you writing.
+     *
+     * They are one number. `tempo` is what is stored, and setting the quarter
+     * stores 60000/quarter - which is often not a round BPM, and that is
+     * deliberate: rounding it would make the quarter you just asked for snap
+     * to something else the moment you looked away. The displays round; the
+     * stored value does not. */
     {
-        char line[96];
-        float t = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
+        Rectangle row = { rx, y, rw, 22.0f };
+        float bpm = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
+        float v = bpm;
 
-        snprintf(line, sizeof line, "%.0f BPM  -  quarter %.0f ms  eighth %.0f ms",
-                 (double)t, (double)(60000.0f / t), (double)(30000.0f / t));
-        bm_text(ui, BM_FONT_SMALL, line, rx, y, BM_DIM);
+        if (bm_slider(ui, ID_TEMPO, row, "tempo", &v, 40.0f, 240.0f, "%.0f BPM") &&
+            v > 0.0f) {
+            s->song.tempo = v;
+        }
+        y += 24.0f;
+
+        /* Recomputed rather than carried down from above: the slider on the
+         * row before this one may have just changed it. */
+        bpm = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
+        row.y = y;
+        v = 60000.0f / bpm;
+        if (bm_slider(ui, ID_QUARTER, row, "quarter", &v, 250.0f, 1500.0f,
+                      "%.0f ms") && v > 1.0f) {
+            s->song.tempo = 60000.0f / v;
+        }
+        y += 24.0f;
+
+        /* Retime once the gesture is over, not while it is happening. A slider
+         * reports a change every frame it is dragged, and rescaling the text
+         * sixty times a second would walk 260 down a millisecond at a time -
+         * the rounding is only harmless when it happens once. The focus test
+         * covers the arrow keys, which move the value with the mouse up. */
+        if (s->song.tempo > 0.0f && s->tempo_applied > 0.0f &&
+            s->song.tempo != s->tempo_applied &&
+            !IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+            ui->focus != ID_TEMPO && ui->focus != ID_QUARTER) {
+            retime_score(s, s->tempo_applied, s->song.tempo);
+            s->tempo_applied = s->song.tempo;
+        }
     }
-    y += 22.0f;
+    y += 4.0f;
 
     if (bm_button(ui, (Rectangle){ rx, y, 88.0f, 28.0f }, "FORMAT", 1)) {
         s->ref_open = 1;
@@ -237,9 +357,21 @@ static char REFERENCE[] =
 "  [reset]        Back to the voice's own settings: no held length, no\n"
 "                 pitch override, nominal speed.\n"
 "\n"
-"  Tempo lives in the file, not in the engine. At T beats per minute a\n"
-"  quarter note is 60000/T milliseconds - 500 ms at 120 - and the panel\n"
-"  shows the arithmetic so you can write the [hold] without doing it.\n"
+"  TEMPO is the tempo the score's [hold] values are written at. At T beats\n"
+"  per minute a quarter note is 60000/T milliseconds - 500 ms at 120 - and\n"
+"  the panel has a control for each, so you can set whichever one you\n"
+"  arrived with and read the other off. They are one number; moving either\n"
+"  moves the other, and the eighth beside the title is half the quarter.\n"
+"\n"
+"  Changing it rewrites every [hold] in the score by the same ratio, so\n"
+"  the song really does speed up or slow down and the file stays honest -\n"
+"  its header and its holds always agree. The engine has no idea what a\n"
+"  tempo is; [hold] is milliseconds and always was.\n"
+"\n"
+"  Consonants keep their own length, so a song does not scale exactly\n"
+"  with the number: Daisy Bell runs 11.9 s at 116 and 9.9 s at 160, not\n"
+"  8.6 s. That is what singing does too - it is the vowels that carry a\n"
+"  note's duration, which is why [hold] only touches them.\n"
 "\n"
 "================================================================\n"
 "  PHONEMES\n"

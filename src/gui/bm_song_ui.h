@@ -42,6 +42,15 @@ typedef struct bm_song_ui {
      * opens, which reads as the dialog opening halfway down. */
     bm_edit score_st, title_st, word_st, out_st, ref_st;
 
+    /* The tempo the score's [hold] values currently reflect.
+     *
+     * `song.tempo` is what the control shows and the file stores; this is what
+     * the text was last written against. When they differ, the score is
+     * retimed by their ratio and this catches up. Keeping the two apart is
+     * what makes the retime happen once per change rather than once per frame
+     * of a slider drag, which would round 260 down a millisecond at a time. */
+    float   tempo_applied;
+
     /* The format reference, as a modal. It is two screens of text and it is
      * needed while writing, not while listening. */
     int     ref_open;

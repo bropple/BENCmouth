@@ -548,6 +548,40 @@ that need an actual decision when we get there:
       simply not drawn. Slider ids follow the parameter rather than the screen row, so a
       number being typed into keeps its identity while the column moves under it.
 
+- [x] **Tempo is a control, and it does something.** Song mode showed a tempo but had no
+      way to change it, and changing it would not have mattered: nothing outside the
+      readout read `song.tempo`. Grep confirmed it - stored, saved, loaded, displayed, and
+      inert. The shipped songs each had their holds written against their own declared
+      tempo, so the number was accurate documentation and nothing else.
+
+      It now means one thing: **the tempo the score's `[hold]` values are written at.**
+      Two sliders, tempo in BPM and the quarter in milliseconds, because both are numbers
+      people arrive with - a tempo is what a song *is*, a quarter in ms is what actually
+      gets typed into a `[hold]`. They are one value; `tempo` is what is stored, and
+      setting the quarter stores 60000/quarter without rounding it to a tidy BPM, because
+      rounding would make the quarter you just asked for snap to something else.
+
+      Changing it **rewrites every `[hold]` in the score** by the same ratio. Retiming the
+      text rather than scaling at playback is what keeps the file self-describing: the
+      header and the holds always agree, so reloading gives back exactly what was heard.
+      Clamped to the 1..10000 ms the markup parser accepts, so a drag to an extreme cannot
+      produce a score that will no longer sing.
+
+      Applied once the gesture is over rather than per frame - a slider reports a change
+      every frame it is dragged, and rescaling sixty times a second walks 260 down a
+      millisecond at a time. Rounding is only harmless when it happens once.
+
+      Measured end to end: Daisy Bell runs 11.88 s at 116 BPM, 9.93 s at 160 and 15.15 s
+      at 80. Not a linear scale, because consonants keep their own length - which is what
+      singing does too, and why `[hold]` was vowels-only from the start.
+
+- [x] **`WIN_MIN_H` is measured rather than guessed**, and it had been guessed. The layout
+      is computed top-down, so its height does not depend on the window: anything shorter
+      than the total simply loses the bottom of it. The old 740 was about twelve pixels
+      short of what the layout already needed, so the minimum window size had been
+      quietly clipping the status line - the one row that says what the program is doing.
+      Rendered at a range of heights to find where the last row comes back whole: 786.
+
 ## Known, and recorded rather than fixed
 
 - **The default voices engage the limiter on long sentences.** On "The quick brown fox

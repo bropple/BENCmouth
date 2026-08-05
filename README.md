@@ -721,10 +721,18 @@ Points worth knowing:
 - **Turn `prosody` down for singing.** It is speech planning — it declines the pitch
   across a phrase and lengthens the final syllable — and against a written melody all of
   that is interference.
-- **`tempo` is metadata.** Nothing in the engine reads it; note lengths are absolute
-  milliseconds. It is there so the editor can show what a quarter note is worth
-  (60000/tempo ms) and so you do not have to work it out again every time you reopen a
-  song.
+- **`tempo` is the tempo the `[hold]` values are written at.** The engine has no idea
+  what a tempo is — `[hold]` is milliseconds and always was — so the header line is what
+  ties those milliseconds to a musical speed. The GUI gives it a control, and moving it
+  rewrites every `[hold]` in the score by the same ratio: the song genuinely speeds up or
+  slows down, and the header and the holds never disagree. There is a control for the
+  quarter note in milliseconds too, since that is the number you actually type into a
+  `[hold]`; they are one value in two units.
+
+  Songs do not scale exactly with it, because consonants keep their own length. Daisy
+  Bell runs 11.9 s at 116 BPM and 9.9 s at 160, not 8.6 s. That is what singing does as
+  well — a note's duration lives in its vowel, which is why `[hold]` only touches
+  vowels.
 - An **unknown voice name is not fatal** — the score is the part that cannot be
   reconstructed, so the file still opens and only the starting point is lost. An unknown
   *setting* is fatal, for the reason voice files give: one that is quietly dropped
