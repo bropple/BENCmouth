@@ -27,10 +27,15 @@ BIN  := bm
 DEMO  := vowel_demo
 SPEAK := speak_demo
 
-.PHONY: all lib demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding gui-dict
+.PHONY: all default lib demo speak dict audio wasm gui gui-info clean-objs clean test check-freestanding gui-dict
 
-# The bm CLI has no main yet; until it does, the demo is what you run.
-all: lib bm demo speak
+# `make` on its own builds this: the library, the CLI and the two demos, with a
+# C compiler and nothing else. That property is load-bearing - it is what lets
+# someone clone this and have it work - so it stays the default goal even though
+# `all` now means more.
+.DEFAULT_GOAL := default
+
+default: lib bm demo speak
 
 lib: $(LIB)
 
@@ -124,7 +129,7 @@ $(DICT_DATA): mkdict $(DICT_SRC)
 
 dict: $(DICT_DATA)
 	$(MAKE) clean-objs
-	$(MAKE) all OPT="$(OPT) -DBM_WITH_DICT=1"
+	$(MAKE) default OPT="$(OPT) -DBM_WITH_DICT=1"
 
 # Objects only - keeps the generated dictionary, which takes a while to build.
 clean-objs:
@@ -162,7 +167,7 @@ endif
 
 audio:
 	$(MAKE) clean-objs
-	$(MAKE) all OPT="$(OPT) $(AUDIO_FLAGS)" LDFLAGS="$(LDFLAGS) $(AUDIO_LIBS)"
+	$(MAKE) default OPT="$(OPT) $(AUDIO_FLAGS)" LDFLAGS="$(LDFLAGS) $(AUDIO_LIBS)"
 
 # ---------------------------------------------------------------------------
 # WebAssembly.
@@ -344,6 +349,80 @@ $(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
 	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui $(RL_CFLAGS) \
 	  -o $@ $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB) \
 	  $(RL_LIBS) $(RL_SYS) $(GUI_LINK) -lm
+
+# ---------------------------------------------------------------------------
+# Everything.
+#
+# `make` builds the part that needs nothing but a C compiler. `make all` builds
+# the lot: dictionary, live audio, GUI and wasm, each in its best configuration.
+#
+# The two are separate targets on purpose. A plain `make` that needed raylib,
+# clang and ALSA headers would stop being the thing you can run straight after a
+# clone, and that is the property this project is least willing to give up - so
+# `default` stays the default goal and `all` is the one you ask for.
+#
+# The optional pieces are *tested for* rather than assumed, and a missing one is
+# reported and skipped rather than failing the build. A convenience target that
+# cannot run on a machine without raylib would not be much of a convenience,
+# and silently doing less than it said would be worse than either.
+#
+# Order matters, and not obviously. The GUI links the host objects, one of which
+# is bm_audio.o - so a GUI linked against objects compiled for ALSA needs
+# -lasound on its own link line, which it does not have. Building the GUI first
+# (via gui-dict, which clears the objects itself) and the audio-enabled CLI
+# second keeps them apart, and leaves the tree holding the CLI build, which is
+# the more useful thing to find there afterwards.
+# ---------------------------------------------------------------------------
+
+# Does this machine have what the optional pieces need? Asked, not assumed.
+HAVE_RAYLIB := $(if $(RAYLIB),yes,$(shell pkg-config --exists raylib 2>/dev/null && echo yes))
+ifeq (,$(HAVE_RAYLIB))
+  HAVE_RAYLIB := $(if $(findstring /,$(shell $(CC) -print-file-name=libraylib.a 2>/dev/null)),yes,)
+endif
+
+HAVE_WASM_CC := $(shell command -v $(WASM_CC) >/dev/null 2>&1 && echo yes)
+
+# Only Linux needs a package for this; the macOS and Windows backends are part
+# of the system. `-E` on an empty translation unit that includes the header is
+# the question actually being asked: can this compiler find it?
+ifeq ($(UNAME),Linux)
+  HAVE_AUDIO := $(shell echo '\#include <alsa/asoundlib.h>' | \
+                  $(CC) -E -xc - >/dev/null 2>&1 && echo yes)
+else
+  HAVE_AUDIO := yes
+endif
+
+ifeq (yes,$(HAVE_AUDIO))
+  ALL_AUDIO_FLAGS := $(AUDIO_FLAGS)
+  ALL_AUDIO_LIBS  := $(AUDIO_LIBS)
+  ALL_AUDIO_NOTE  := with live audio
+else
+  ALL_AUDIO_FLAGS :=
+  ALL_AUDIO_LIBS  :=
+  ALL_AUDIO_NOTE  := without live audio - no ALSA headers found
+endif
+
+all:
+	@echo "== dictionary"
+	$(MAKE) $(DICT_DATA)
+ifeq (yes,$(HAVE_RAYLIB))
+	@echo "== GUI, with the dictionary"
+	$(MAKE) gui-dict
+else
+	@echo "== GUI: skipped - no raylib found. See 'make gui-info'."
+endif
+	@echo "== library, CLI and demos: dictionary, $(ALL_AUDIO_NOTE)"
+	$(MAKE) clean-objs
+	$(MAKE) default OPT="$(OPT) -DBM_WITH_DICT=1 $(ALL_AUDIO_FLAGS)" \
+	                LDFLAGS="$(LDFLAGS) $(ALL_AUDIO_LIBS)"
+ifeq (yes,$(HAVE_WASM_CC))
+	@echo "== wasm"
+	$(MAKE) wasm
+else
+	@echo "== wasm: skipped - $(WASM_CC) not found."
+endif
+	@echo
+	@echo "everything built."
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

@@ -530,7 +530,10 @@ jobs:
       - name: Build and test in fixed point
         run: |
           make clean
-          make all OPT="-O2 -Werror -DBM_FIXED_POINT=1"
+          # `default`, not `all`: this job wants the library and the CLI built
+          # in fixed point, not the GUI and the wasm module dragged along with
+          # a flag that has nothing to say to either.
+          make default OPT="-O2 -Werror -DBM_FIXED_POINT=1"
           make test OPT="-O2 -DBM_FIXED_POINT=1"
           make clean
 

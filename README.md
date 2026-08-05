@@ -98,7 +98,8 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 
 | Target | Result |
 |---|---|
-| `make` | library, `bm`, and both demos |
+| `make` | library, `bm`, and both demos — needs only a C compiler |
+| `make all` | **everything**: dictionary, live audio, GUI and wasm, each in its best configuration |
 | `make lib` | `libbencmouth.a` only |
 | `make bm` | the CLI only |
 | `make audio` | compile live playback in and rebuild |
@@ -108,6 +109,20 @@ selectable and the default is too old for `stdint.h` usage in the public header.
 | `make test` | run all ten test suites |
 | `make check-freestanding` | assert the core includes no hosted headers |
 | `make clean` | remove build products |
+
+`make` and `make all` are deliberately different. A plain `make` needs nothing but a C
+compiler, and that is the property this project is least willing to give up — so it stays
+the default and `all` is the one you ask for. `make all` tests for raylib, clang and the
+ALSA headers rather than assuming them, and reports what it is skipping instead of
+failing:
+
+```
+== dictionary
+== GUI, with the dictionary
+== library, CLI and demos: dictionary, with live audio
+== wasm: skipped - clang not found.
+everything built.
+```
 
 ---
 
