@@ -110,7 +110,7 @@ int bm_voicefile_load(const char *path, bm_voice *voice, bm_effects *effects,
              * a voice that has already been named throws the name away. Every
              * shipped file happens to put `name` first, which is the natural
              * order to write them in, so this made `preset = retro` silently
-             * rename the voice to "BENCmouth Retro" - Gravel.voice announced
+             * rename the voice to "BENCmouth Retro" - Gravel.bmvoice announced
              * itself as Retro for as long as it existed. The inherited numbers
              * are the point of the key; the inherited name never is. */
             if (named) voice->name = keep;
@@ -183,7 +183,13 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
     /* Only when there is something to say. A file full of zeroed effect keys
      * would suggest the voice has an effects chain that happens to be off,
      * when in fact it has none - and it is one more block to read past in
-     * every voice file that will never use one. */
+     * every voice file that will never use one.
+     *
+     * Every field, once there is. Two had been missing: `level`, since the day
+     * it was added, so saving Sentry lost the 1.5 that stops it playing 3.7 dB
+     * down; and `ring_drift`, immediately. Both were invisible because nothing
+     * saved a file and loaded it back - tests/test_voicefile.c does now, field
+     * by field, so the next one added here cannot go quiet the same way. */
     if (effects != 0 &&
         (effects->ring > 0.0f || effects->comb > 0.0f ||
          effects->chorus > 0.0f ||
@@ -191,12 +197,14 @@ int bm_voicefile_save(const char *path, const bm_voice *voice,
         fprintf(f, "\n# effects; applied after the voice, see CLASSIC-VOICES.md\n");
         fprintf(f, "ring           = %.6g\n", (double)effects->ring);
         fprintf(f, "ring_hz        = %.6g\n", (double)effects->ring_hz);
+        fprintf(f, "ring_drift     = %.6g\n", (double)effects->ring_drift);
         fprintf(f, "comb           = %.6g\n", (double)effects->comb);
         fprintf(f, "comb_hz        = %.6g\n", (double)effects->comb_hz);
         fprintf(f, "chorus         = %.6g\n", (double)effects->chorus);
         fprintf(f, "chorus_hz      = %.6g\n", (double)effects->chorus_hz);
         fprintf(f, "drive          = %.6g\n", (double)effects->drive);
         fprintf(f, "crush          = %.6g\n", (double)effects->crush);
+        fprintf(f, "level          = %.6g\n", (double)effects->level);
     }
 
     if (to_stdout) { fflush(f); return 0; }

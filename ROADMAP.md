@@ -108,7 +108,7 @@ that need an actual decision when we get there:
 
 - [x] **Desktop GUI** (`make gui`, `src/gui/`). raylib, hand-drawn widgets, BENCO palette,
       the layout from GUI-PLAN.md. Text field with a live phoneme readout, voice dropdown,
-      fourteen parameter sliders bound to the `.voice` keys, waveform, peak meter with the
+      fourteen parameter sliders bound to the `.bmvoice` keys, waveform, peak meter with the
       limiter threshold marked, WAV export, and a random-voice button.
 
       Audio streams from `bm_read()` straight into raylib's audio callback, so a slider
@@ -130,12 +130,12 @@ that need an actual decision when we get there:
       little vibrato sounds wrong out of a 200 Hz voice with none, and losing the voice on
       save makes every reload a re-tuning session.
 
-      Same shape as a `.voice` file - a `key = value` header - with one addition: a line
+      Same shape as a `.bmvoice` file - a `key = value` header - with one addition: a line
       reading exactly `score =` ends the header and everything after it is the score.
       A key with no value rather than a marker of its own, so the whole file is one
       lexical form and there is nothing extra to explain.
 
-      The decision worth recording: **comments are whole lines only.** The `.voice` loader
+      The decision worth recording: **comments are whole lines only.** The `.bmvoice` loader
       strips from the first `#` to end of line, and doing that here would silently eat
       every accidental in the file - `[note A#4]` is a sharp.
 
@@ -248,7 +248,7 @@ that need an actual decision when we get there:
       take the same number of frames whatever stress digit they carry.
 
 - [x] **Second wave of voice analogues.** `Frantic` and `Grizzled` as presets;
-      `Emissary`, `Diver` and `Foreman` as `.voice` files, because each needs an effects
+      `Emissary`, `Diver` and `Foreman` as `.bmvoice` files, because each needs an effects
       chain and an effect is not part of a `bm_voice`. Plus `songs/bad-news.bmsong` and
       `songs/good-news.bmsong`, which are the honest form of two classic novelty
       "voices" that were always scores rather than settings.
@@ -287,7 +287,7 @@ that need an actual decision when we get there:
       Default 0. Retro's reference is unmoved.
 
 - [x] **The roster filled in.** `Frederick` and `Duchess` as presets; `Zarvek`,
-      `Carillon` (bell) and `Harmonium` (pipe) as `.voice` files; `songs/boing.bmsong`,
+      `Carillon` (bell) and `Harmonium` (pipe) as `.bmvoice` files; `songs/boing.bmsong`,
       which is the third member of the "this was never a voice" set - a bouncing pitch
       envelope written down is a score.
 
@@ -323,14 +323,14 @@ that need an actual decision when we get there:
       - Chorus before drive. Modulation after distortion smears the harmonics the
         distortion just made.
 
-      `Trinode` as an effects preset and as a `.voice` file.
+      `Trinode` as an effects preset and as a `.bmvoice` file.
 
 - [x] **Near-miss names.** Where a preset aims at a voice with a well-known name it now
       carries a near-miss rather than the name: `Zarvek`, `Duchess`, `Hushed`. Same rule
       the parameter tables already followed - close enough to say what it is reaching
       for, far enough not to be a copy. `Frederick` is the deliberate exception.
 
-- [x] **Every voice is in the dropdown.** Ten voices existed only as `.voice` files -
+- [x] **Every voice is in the dropdown.** Ten voices existed only as `.bmvoice` files -
       the ones that need an effects chain - on the reasoning that an effect is not a
       property of a speaker and a preset table holding pairs would duplicate one of
       them. Right about the structs, wrong about the shipping: the dropdown lists
@@ -347,9 +347,9 @@ that need an actual decision when we get there:
       The files stay, and `tests/test_voicefile.c` compares each against its preset so
       the two copies cannot drift. Writing it found three that already had:
 
-      - `BENCmouth Monotone.voice` had no `flatten = 1`. The file was not monotone; the
+      - `BENCmouth Monotone.bmvoice` had no `flatten = 1`. The file was not monotone; the
         preset of the same name was. It had shipped that way since flatten landed.
-      - `Sentry.voice` had no `level`, so it played 3.7 dB below the `Sentinel` chain it
+      - `Sentry.bmvoice` had no `level`, so it played 3.7 dB below the `Sentinel` chain it
         is meant to use.
       - `preset = retro` renamed the voice that used it. A preset is a whole `bm_voice`,
         name included, and every file puts `name` first - so `Gravel` had announced
@@ -465,6 +465,34 @@ that need an actual decision when we get there:
       made the song panel's `REFERENCE` a `static char[]` instead of a string literal -
       undefined behaviour for that one instant otherwise, even though the text is
       identical either side of it.
+
+- [x] **`.bmvoice`, and the names on screen agree with the files.** The extension is now
+      `.bmvoice`, matching `.bmsong`: `.voice` is a common enough word to collide with
+      something else, and a file type worth double-clicking is worth owning a name for.
+      Contents unchanged, and the loader never looked at the extension anyway - only the
+      dialog filter and the suggested save name did - so old files still load.
+
+      Two naming bugs went with it. The voice dropdown displayed `items[index]`, which is
+      whichever preset was last *selected* - so a voice loaded from a file, or one whose
+      sliders had been moved since, was labelled with something that was no longer there.
+      It displays the live `voice.name` now, and so does the effects dropdown. And saving
+      names the voice after the file: it used to write `name = edited` and leave the
+      control showing the original preset, so the screen, the file and what you had just
+      called it were three different answers.
+
+      Writing the round-trip test for that turned up two fields `bm_voicefile_save` had
+      never written: `ring_drift`, immediately, and `level` since the day it was added -
+      so saving `Sentry` lost the trim that keeps it from playing 3.7 dB down. Nothing had
+      ever written a file and read it back. `tests/test_voicefile.c` does now, over every
+      shipped chain and over a synthetic one with a distinct non-zero value in every
+      field, because a field is only tested by a value it could lose - every preset has
+      `ring_drift` at 0, so round-tripping the presets alone passes 0 against 0.
+
+      The synthetic values are sixty-fourths rather than tenths. An earlier version used
+      0.11, 0.22, ... and reported `ring_drift = 0.33 in the file, 0.33 in the preset`:
+      `0.11f * 3` is not the float nearest 0.33, so writing it as text and reading it back
+      legitimately changed it. The comparison is exact on purpose, so the values fed to it
+      have to be ones text can carry without loss.
 
 ## Known, and recorded rather than fixed
 

@@ -7,7 +7,7 @@
  *   ./speak_demo                              render the built-in set
  *   ./speak_demo "HH AH0 L OW1" out.wav       one utterance, default voice
  *   ./speak_demo -v deep "HH AH0 L OW1" o.wav a named preset
- *   ./speak_demo -f Gravel.voice "..." o.wav  a voice file
+ *   ./speak_demo -f Gravel.bmvoice "..." o.wav  a voice file
  *   ./speak_demo -l                           list presets
  */
 

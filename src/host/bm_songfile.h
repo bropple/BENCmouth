@@ -6,7 +6,7 @@
  * vibrato sounds wrong out of a 200 Hz voice with none, and losing the voice on
  * save means every reload is a re-tuning session.
  *
- * The format is text, and deliberately the same shape as a .voice file - a
+ * The format is text, and deliberately the same shape as a .bmvoice file - a
  * header of `key = value` lines - so that anything already true of voice files
  * is true here too. The one addition is that the score has to be many lines of
  * free-form text, which `key = value` cannot carry. A line that is exactly
@@ -27,7 +27,7 @@
  * Comments: a line whose first non-blank character is '#' is dropped, in the
  * header and in the score alike. A '#' anywhere else is literal, and that is
  * not an oversight - `[note A#4]` is a sharp, and stripping from the first '#'
- * to end of line the way the .voice loader does would silently eat half of
+ * to end of line the way the .bmvoice loader does would silently eat half of
  * every accidental in the file.
  *
  * Unknown header keys are errors, for the reason voice files give: a setting

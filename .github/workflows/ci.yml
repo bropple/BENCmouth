@@ -73,7 +73,7 @@ jobs:
       - name: The shipped voices load, without clipping
         run: |
           fail=0
-          for v in voices/*.voice; do
+          for v in voices/*.bmvoice; do
             echo "== $v"
             out=$(./bm -f "$v" "The quick brown fox jumps over the lazy dog." \
                     -o /dev/null 2>&1)
@@ -81,7 +81,7 @@ jobs:
             case "$out" in
               *LIMITED*)
                 case "$v" in
-                  *BENCmouth.voice|*"BENCmouth Retro.voice")
+                  *BENCmouth.bmvoice|*"BENCmouth Retro.bmvoice")
                     echo "   ^ known, and pinned - see the comment above" ;;
                   *) echo "   ^ hits the limiter"; fail=1 ;;
                 esac ;;

@@ -70,7 +70,7 @@ static void usage(void)
 "  bm -a \"straight out of the speakers\"\n"
 "  bm -v deep -e enforcer \"you have thirty seconds to comply\"\n"
 "  bm -S songs/daisy.bmsong -a\n"
-"  bm -R 4242 -w found.voice   # keep a random voice you liked\n",
+"  bm -R 4242 -w found.bmvoice  # keep a random voice you liked\n",
         bm_audio_backend(), dict_line());
 }
 

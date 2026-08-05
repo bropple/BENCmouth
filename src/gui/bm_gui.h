@@ -211,8 +211,11 @@ int   bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
  * moves it and a bar on the right says where you are. Opening it scrolls the
  * current selection into view, because a list that opens at the top when the
  * selection is at the bottom looks like it has forgotten. */
+/* `shown` overrides the closed control's label, for when what is selected is
+ * not one of the entries - a voice loaded from a file, or an edited one. Pass 0
+ * to display items[*index], which is the ordinary case. */
 int   bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
-                  int *index, int *open);
+                  int *index, int *open, const char *shown);
 
 /* A wrapped, scrolling, editable text box: caret, selection, clipboard, and a
  * scrollbar when the text outgrows the box. `id` is any nonzero number unique

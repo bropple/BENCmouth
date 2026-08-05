@@ -635,7 +635,7 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
 }
 
 int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
-                int *index, int *open)
+                int *index, int *open, const char *shown)
 {
     Vector2 m = GetMousePosition();
     int changed = 0, i;
@@ -643,7 +643,12 @@ int bm_dropdown(bm_ui *ui, Rectangle r, const char **items, int count,
     int was_open = *open;
 
     bm_panel(r);
-    bm_text(ui, BM_FONT_SMALL, items[*index], r.x + 8,
+    /* What is actually selected, which is not always an entry in the list. A
+     * voice loaded from a file, or one whose sliders have been moved since,
+     * has a name the list does not contain - and a control that went on
+     * displaying the preset it started from would be describing something that
+     * is no longer there. */
+    bm_text(ui, BM_FONT_SMALL, shown != 0 ? shown : items[*index], r.x + 8,
             r.y + (r.height - BM_FONT_SMALL) * 0.5f, BM_TEXT);
     bm_text(ui, BM_FONT_SMALL, *open ? "^" : "v", r.x + r.width - 18,
             r.y + (r.height - BM_FONT_SMALL) * 0.5f, BM_DIM);

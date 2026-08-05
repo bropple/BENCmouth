@@ -137,7 +137,7 @@ bm "Hello world" -o hello.wav
 bm -v retro -s 0.8 "I am sorry Dave" -o dave.wav
 bm -P "HH AH0 L OW1" -o hello.wav          # phonemes directly
 bm -t "the quick brown fox"                # see what the rules produced
-bm -f voices/Gravel.voice "testing" -o t.wav
+bm -f voices/Gravel.bmvoice "testing" -o t.wav
 bm -S songs/daisy.bmsong -a                # sing a song
 bm -v deep -e enforcer "you have thirty seconds to comply"
 ```
@@ -266,7 +266,7 @@ Ten more are a voice **and** an effects chain, and `-v` brings both:
 | `Trinode` | `Trinode` | three of it, slightly out with each other |
 | `Zarvek` | `Klaxon` | the harsh one |
 
-These lived only as `.voice` files for a while, on the reasoning that an effect is not part
+These lived only as `.bmvoice` files for a while, on the reasoning that an effect is not part
 of a voice. That was true and still the wrong call — the GUI dropdown lists presets, so a
 voice that is only a file is a voice most people never find. The files stay: they carry the
 working-out for each one, and `tests/test_voicefile.c` holds them to matching the preset
@@ -295,7 +295,11 @@ resolve.
 
 ### Voice files
 
-Voices are plain text and live in `voices/`:
+Voices are plain text, carry the extension **`.bmvoice`**, and live in `voices/`. The
+prefix is deliberate and matches `.bmsong`: `.voice` is a common enough word to collide
+with something else on a shared machine, and a file type worth double-clicking is worth
+owning a name for. Nothing in the loader cares about the extension — it opens whatever
+path it is given — so a file saved under the old name still loads.
 
 ```
 # BENCmouth voice
@@ -321,7 +325,7 @@ bandwidth_track= 0          # 0 = table bandwidths, 1 = scaled by formant freque
 Unknown keys are **errors**, not warnings — a silently dropped setting produces a voice
 that mysteriously sounds wrong, which is far worse to debug than a refusal to load.
 
-Dump any voice with `bm -v deep -w mine.voice`, edit, and load it back with `-f`.
+Dump any voice with `bm -v deep -w mine.bmvoice`, edit, and load it back with `-f`.
 
 `whisper` and `vibrato` are worth calling out because each is easily confused with a
 neighbour:
@@ -361,7 +365,7 @@ which is the contract in the section below, working as intended.
 
 ```
 bm -R 4242 "hello there"          # random, but the same every time for that seed
-bm -R 4242 -w found.voice         # keep one you liked
+bm -R 4242 -w found.bmvoice         # keep one you liked
 ```
 
 The parameter space is large and mostly uninteresting, and the good corners of it turn up
@@ -454,7 +458,7 @@ Thirteen presets ship:
 
 The last six arrived as part of a voice — see the pairings in the voice table above — and
 are listed here as well because a chain is not specific to the voice it was built for.
-A `.voice` file can carry an `effects = NAME` line and any of the keys above.
+A `.bmvoice` file can carry an `effects = NAME` line and any of the keys above.
 
 **Why `ring_drift` exists.** Reported as "over a long sentence the Metal effect kind of
 peters out" on `BENCmouth Monotone`. Measured over 5–20 second utterances of four
@@ -591,7 +595,7 @@ src/host/             platform glue - CLI, WAV writer, voice and song files
 src/gui/              the desktop GUI; the only third-party dependency lives here
 tools/                generators and demos (see ARCHITECTURE.md)
 tests/                ten suites, run with `make test`
-voices/               shareable voice files
+voices/               shareable .bmvoice files
 songs/                shareable .bmsong scores
 ref/                  source material and its provenance - read ref/README.md
 render/               generated audio; gitignored
@@ -665,7 +669,7 @@ of the classic novelty *voices* were never voices at all. There is no setting th
 a synthesizer sing a fixed melody — a melody is a score, and a score is a file. Nothing
 in either voice block is doing the work.
 
-The format is text and deliberately the same shape as a `.voice` file — a header of
+The format is text and deliberately the same shape as a `.bmvoice` file — a header of
 `key = value` lines. The one addition is that a score is many lines of free text, which
 `key = value` cannot carry, so a line reading exactly `score =` ends the header and
 everything after it is the score:
@@ -686,7 +690,7 @@ Points worth knowing:
 
 - **Comments are whole lines beginning with `#`.** A `#` anywhere else is literal, and it
   has to be — `[note A#4]` is a sharp, and stripping from the first `#` to end of line
-  the way the `.voice` loader does would silently eat every accidental in the file.
+  the way the `.bmvoice` loader does would silently eat every accidental in the file.
 - **Every voice key is written on save**, not only the ones that differ from a preset, so
   a song reopens as exactly the voice it was left as even if the preset it started from
   later moves.
@@ -721,7 +725,7 @@ await bm.play('hello world');              // through Web Audio
 const pcm = bm.say('hello world');         // or just the Float32Array
 ```
 
-`bm.voice(name)` and `bm.param(key, value)` reach the presets and the `.voice` file keys.
+`bm.voice(name)` and `bm.param(key, value)` reach the presets and the `.bmvoice` file keys.
 
 ### The GUI
 
@@ -773,7 +777,7 @@ That last one is the difference between being able to place a formant and having
 for it: a 100 px track across a 0–400 Hz range moves 4 Hz per pixel, and the values worth
 finding are usually a hair off the one you can hit.
 
-Every slider is bound to a `.voice` file key, so
+Every slider is bound to a `.bmvoice` file key, so
 what you tune and what SAVE writes cannot drift apart, and LOAD reads the same files
 back — the presets in `voices/`, or anything you saved. A file is applied over the
 current voice, the way `bm -f` does, so one that sets two keys is an edit rather than a

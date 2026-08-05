@@ -165,7 +165,7 @@ typedef struct {
     const char *fmt;
 } param_row;
 
-/* The keys are the .voice file keys, so what the sliders write and what a
+/* The keys are the .bmvoice file keys, so what the sliders write and what a
  * saved file contains cannot drift apart. */
 static const param_row PARAMS[] = {
     { "f0_base",         "pitch",        60.0f, 260.0f, "%.0f Hz" },
@@ -838,7 +838,7 @@ int main(int argc, char **argv)
             bm_label(&ui, "VOICE", BM_PAD, y + 8);
             b = (Rectangle){ BM_PAD + 60, y, 220, 28 };
             if (bm_dropdown(&ui, b, voice_names, voice_count, &voice_index,
-                            &voice_open)) {
+                            &voice_open, voice.name)) {
                 const char *chain;
 
                 voice = *voice_list[voice_index];
@@ -891,7 +891,7 @@ int main(int argc, char **argv)
                 }
 
                 dlg = bm_open_dialog(GetWindowHandle(), "Load voice", start,
-                                     "BENCmouth voice", "voice",
+                                     "BENCmouth voice", "bmvoice",
                                      path, sizeof path);
 
                 if (dlg == BM_DLG_UNAVAILABLE) {
@@ -916,12 +916,22 @@ int main(int argc, char **argv)
                         voice = next;
                         effects = next_fx;
                         bm_engine_set_effects(g_engine, &effects);
+                        /* The file's own `name`, and failing that the file's
+                         * name - which is nearly always what somebody meant by
+                         * calling it that. "loaded" told you only that
+                         * something had been. */
+                        if (voice_name_buf[0] == '\0') {
+                            snprintf(voice_name_buf, sizeof voice_name_buf,
+                                     "%s", GetFileNameWithoutExt(path));
+                        }
                         voice.name = voice_name_buf[0] != '\0'
                                          ? voice_name_buf : "loaded";
                         bm_engine_set_voice(g_engine, &voice);
                         /* A file naming a preset selects it in the dropdown;
                          * one that does not leaves the selection where it was,
-                         * because there is nothing in the list to point at. */
+                         * because there is nothing in the list to point at -
+                         * but the control shows the loaded name either way,
+                         * since it displays voice.name rather than the list. */
                         voice_index = name_index(voice_names, voice_count,
                                                  voice.name, voice_index);
                         fx_index    = name_index(fx_names, fx_count,
@@ -940,27 +950,49 @@ int main(int argc, char **argv)
             if (bm_button(&ui, b, "SAVE", 1)) {
                 char path[1024];
                 int  dlg = bm_save_dialog(GetWindowHandle(), "Save voice",
-                                          "bencmouth.voice",
-                                          "BENCmouth voice", "voice",
+                                          "bencmouth.bmvoice",
+                                          "BENCmouth voice", "bmvoice",
                                           path, sizeof path);
 
                 if (dlg == BM_DLG_UNAVAILABLE) {
-                    snprintf(path, sizeof path, "bencmouth.voice");
+                    snprintf(path, sizeof path, "bencmouth.bmvoice");
                     dlg = BM_DLG_OK;
                 }
 
                 if (dlg != BM_DLG_OK) {
                     snprintf(status, sizeof status, "save cancelled");
                     status_color = BM_DIM;
-                } else if (bm_voicefile_save(path, &voice, &effects) == 0) {
-                    snprintf(status, sizeof status, "wrote %.150s", GetFileName(path));
-                    status_color = BM_ACCENT;
                 } else {
-                    /* An explicit precision: a path can be longer than the status
-                         * line, and saying so beats letting snprintf decide. */
+                    /* Saving names the voice after the file it is saved as.
+                     * Before this, a voice that had been touched was called
+                     * "edited": saving wrote `name = edited` into the file, and
+                     * the dropdown went on showing whichever preset it had
+                     * started from - so what was on screen, what was in the
+                     * file, and what you had just named it were three different
+                     * answers. Naming it after the file makes them one.
+                     *
+                     * Copied immediately because GetFileNameWithoutExt returns
+                     * raylib's own scratch buffer, and voice.name has to
+                     * outlive the next call to anything. */
+                    snprintf(voice_name_buf, sizeof voice_name_buf, "%s",
+                             GetFileNameWithoutExt(path));
+                    if (voice_name_buf[0] != '\0') voice.name = voice_name_buf;
+
+                    if (bm_voicefile_save(path, &voice, &effects) == 0) {
+                        voice_index = name_index(voice_names, voice_count,
+                                                 voice.name, voice_index);
+                        snprintf(status, sizeof status,
+                                 "wrote %.110s as \"%.60s\"",
+                                 GetFileName(path), voice.name);
+                        status_color = BM_ACCENT;
+                    } else {
+                        /* An explicit precision: a path can be longer than the
+                         * status line, and saying so beats letting snprintf
+                         * decide. */
                         snprintf(status, sizeof status,
                                  "could not write %.150s", path);
-                    status_color = BM_ALERT;
+                        status_color = BM_ALERT;
+                    }
                 }
             }
             b.x += 84;
@@ -1036,7 +1068,8 @@ int main(int argc, char **argv)
                 bm_label(&ui, "EFFECTS", fx_x, y + 5);
                 if (bm_dropdown(&ui, (Rectangle){ fx_x + 76, y - 1,
                                                   colw - 76, 24 },
-                                fx_names, fx_count, &fx_index, &fx_open)) {
+                                fx_names, fx_count, &fx_index, &fx_open,
+                                effects.name)) {
                     effects = *bm_effects_preset_at(fx_index);
                     bm_engine_set_effects(g_engine, &effects);
                     snprintf(status, sizeof status, "effects: %s", effects.name);

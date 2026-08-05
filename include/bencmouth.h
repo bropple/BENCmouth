@@ -306,7 +306,7 @@ bm_result bm_voice_set_param(bm_voice *voice, const char *key, size_t key_len,
  *
  * Exists because the parameter space is large and mostly uninteresting, and
  * the good corners of it are found by accident far more often than by
- * reasoning. `bm -R 12345 -w found.voice` captures one worth keeping.
+ * reasoning. `bm -R 12345 -w found.bmvoice` captures one worth keeping.
  *
  * `name` points at static storage; rename it yourself if you keep it. */
 void bm_voice_random(bm_voice *voice, uint32_t seed);

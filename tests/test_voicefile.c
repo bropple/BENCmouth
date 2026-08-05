@@ -90,7 +90,7 @@ static void test_files_match_presets(void)
         char        path[256], name[64], err[256], what[128];
         FILE       *probe;
 
-        snprintf(path, sizeof path, "voices/%s.voice", preset->name);
+        snprintf(path, sizeof path, "voices/%s.bmvoice", preset->name);
         probe = fopen(path, "r");
         if (probe == 0) continue;      /* most presets have no file, and need none */
         fclose(probe);
@@ -102,7 +102,7 @@ static void test_files_match_presets(void)
         effects = config.effects;
 
         err[0] = '\0';
-        snprintf(what, sizeof what, "%s.voice loads", preset->name);
+        snprintf(what, sizeof what, "%s.bmvoice loads", preset->name);
         if (bm_voicefile_load(path, &voice, &effects, name, sizeof name,
                               err, sizeof err) != 0) {
             printf("    %s\n", err);
@@ -111,16 +111,16 @@ static void test_files_match_presets(void)
         }
         checked++;
 
-        snprintf(what, sizeof what, "%s.voice names itself the same", preset->name);
+        snprintf(what, sizeof what, "%s.bmvoice names itself the same", preset->name);
         check(voice.name != 0 && strcmp(voice.name, preset->name) == 0, what);
 
-        snprintf(what, sizeof what, "%s.voice matches the preset", preset->name);
+        snprintf(what, sizeof what, "%s.bmvoice matches the preset", preset->name);
         check(floats_match((const float *)(const void *)&voice.f0_base,
                            (const float *)(const void *)&preset->f0_base,
                            NVOICE_KEYS, VOICE_KEYS, preset->name, "voice"), what);
 
         want_fx = (chain != 0) ? bm_effects_preset(chain) : bm_effects_preset("None");
-        snprintf(what, sizeof what, "%s.voice carries the %s chain", preset->name,
+        snprintf(what, sizeof what, "%s.bmvoice carries the %s chain", preset->name,
                  chain != 0 ? chain : "None");
         if (want_fx == 0) {
             printf("    no effects preset named \"%s\"\n", chain);
@@ -136,6 +136,115 @@ static void test_files_match_presets(void)
      * paired voice should not have to edit this - but not at zero, because zero
      * is what a wrong working directory looks like and it would otherwise pass. */
     check(checked >= 10, "found the shipped voice files at all");
+}
+
+/* Save a voice, load it back, and require every field to have survived.
+ *
+ * The writer is a hand-maintained list of fprintf lines, which is the kind of
+ * thing that falls one field behind the struct and says nothing about it. Two
+ * had: `level`, since the day it arrived - so saving Sentry lost the trim that
+ * keeps it from playing 3.7 dB down - and `ring_drift`, immediately. Neither
+ * was visible from anywhere, because nothing ever wrote a file and read it
+ * back. This does, for every chain that ships. */
+static void test_save_round_trip(void)
+{
+    int i, worst = 0;
+
+    /* First a chain no preset is: every field distinct and non-zero.
+     *
+     * Round-tripping the presets alone is not enough, and `ring_drift` is why -
+     * every preset has it at 0, so a writer that omits it round-trips 0 against
+     * 0 and passes. A field is only really tested by a value it could lose. */
+    {
+        bm_config  config;
+        bm_effects made, back_fx;
+        bm_voice   voice, back_v;
+        float     *f;
+        char       name[64], err[256];
+        const char *path = "bm_roundtrip_tmp.bmvoice";
+
+        bm_config_default(&config);
+        voice = config.voice;
+        bm_effects_default(&made);
+        made.name = "Synthetic";
+
+        /* Sixty-fourths across the whole float block, whatever it holds today.
+         * Distinct, so a writer emitting one field's value under another
+         * field's key shows as a mismatch rather than as a coincidence - and
+         * exactly representable, which decimal fractions are not. An earlier
+         * version used 0.11, 0.22, ... and reported ring_drift as "0.33 in the
+         * file, 0.33 in the preset": 0.11f*3 is not the float nearest 0.33, so
+         * writing it as text and reading it back legitimately changed it. The
+         * comparison here is exact on purpose, so the values fed to it have to
+         * be ones text can carry without loss. */
+        f = (float *)(void *)&made.ring;
+        for (i = 0; i < NFX_KEYS; i++) f[i] = (float)(i + 1) / 64.0f;
+
+        if (bm_voicefile_save(path, &voice, &made) != 0) {
+            check(0, "a synthetic chain can be written");
+        } else {
+            bm_config_default(&config);
+            back_v  = config.voice;
+            back_fx = config.effects;
+            err[0]  = '\0';
+            if (bm_voicefile_load(path, &back_v, &back_fx, name, sizeof name,
+                                  err, sizeof err) != 0) {
+                printf("    %s\n", err);
+                check(0, "a synthetic chain reads back");
+            } else {
+                check(floats_match((const float *)(const void *)&back_fx.ring,
+                                   (const float *)(const void *)&made.ring,
+                                   NFX_KEYS, FX_KEYS, "Synthetic", "chain"),
+                      "every effects field survives save and load");
+            }
+        }
+        remove(path);
+    }
+
+    for (i = 0; i < bm_effects_preset_count(); i++) {
+        const bm_effects *fx = bm_effects_preset_at(i);
+        bm_config  config;
+        bm_voice   voice, back_v;
+        bm_effects back_fx;
+        char       name[64], err[256], what[128];
+        const char *path = "bm_roundtrip_tmp.bmvoice";
+
+        /* The bypass writes no effects block by design, so there is nothing to
+         * round-trip and asserting otherwise would be asserting the opposite
+         * of the intent. */
+        if (fx->ring <= 0.0f && fx->comb <= 0.0f && fx->chorus <= 0.0f &&
+            fx->drive <= 0.0f && fx->crush <= 0.0f) continue;
+
+        bm_config_default(&config);
+        voice = config.voice;
+
+        if (bm_voicefile_save(path, &voice, fx) != 0) {
+            check(0, "the temporary voice file can be written");
+            return;
+        }
+
+        bm_config_default(&config);
+        back_v  = config.voice;
+        back_fx = config.effects;
+        err[0]  = '\0';
+        if (bm_voicefile_load(path, &back_v, &back_fx, name, sizeof name,
+                              err, sizeof err) != 0) {
+            printf("    %s\n", err);
+            check(0, "and read back");
+            remove(path);
+            return;
+        }
+        remove(path);
+
+        snprintf(what, sizeof what, "%s survives save and load", fx->name);
+        if (!floats_match((const float *)(const void *)&back_fx.ring,
+                          (const float *)(const void *)&fx->ring,
+                          NFX_KEYS, FX_KEYS, fx->name, "chain")) {
+            worst = 1;
+        }
+        check(worst == 0, what);
+        if (worst) return;      /* one report is enough; they fail together */
+    }
 }
 
 /* Every chain named by a voice has to exist. A typo here would otherwise show
@@ -212,6 +321,7 @@ int main(void)
 {
     printf("\nBENCmouth voice file tests\n\n");
     test_files_match_presets();
+    test_save_round_trip();
     test_chains_resolve();
     test_preset_names_are_unique();
     test_presets_find_themselves();

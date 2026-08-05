@@ -25,7 +25,7 @@ whole name where the original is a short one.
 
 ## What the engine reaches
 
-Six presets, all selectable as `bm -v NAME`, in the GUI dropdown, and as `.voice`
+Six presets, all selectable as `bm -v NAME`, in the GUI dropdown, and as `.bmvoice`
 files under `voices/`.
 
 | Preset | Archetype | What carries it |
@@ -126,8 +126,8 @@ they have to match is a sparse spike train whose RMS is nothing like its peak.
 
 **The vocal tract is untouched.** A bell-sourced voice still has formants and still says
 the words, which is exactly what the classic instrument voices were — not an instrument
-playing instead of speech, but an instrument doing the speaking. `voices/Carillon.voice`
-and `voices/Harmonium.voice`.
+playing instead of speech, but an instrument doing the speaking. `voices/Carillon.bmvoice`
+and `voices/Harmonium.bmvoice`.
 
 Two details worth recording. The partials need their own phase accumulators rather than
 being derived from the fundamental's: `sin(2π · phase · ratio)` looks equivalent and is
@@ -291,7 +291,7 @@ delay changing by D samples per sample shifts pitch by a factor of (1 − D), wh
 what the Doppler effect is. Three taps swept a third of an LFO cycle apart really are
 three slightly different pitches.
 
-`chorus` and `chorus_hz`, and `voices/Trinode.voice`. Measured: energy either side of
+`chorus` and `chorus_hz`, and `voices/Trinode.bmvoice`. Measured: energy either side of
 the fundamental, relative to the fundamental itself, goes from **0.007 dry to 0.356**
 with the chorus on — the pitch has been spread across a band rather than copied, which
 is exactly the difference between a chorus and an echo.
@@ -322,7 +322,7 @@ which carries some of it.
 
 ## Where they live
 
-The voices that need a chain were `.voice` files for several rounds of this, on the
+The voices that need a chain were `.bmvoice` files for several rounds of this, on the
 reasoning stated above: an effect is not a property of a speaker, so a preset table
 holding voice-and-chain pairs would be duplicating one of them.
 
@@ -339,8 +339,8 @@ working-out, and they are the format anyone writes their own in — and
 `tests/test_voicefile.c` compares every file against its preset, chain included, so the
 two copies cannot drift.
 
-Writing that test found three things that already had: `BENCmouth Monotone.voice` was
-missing the `flatten = 1` that gives it its name, `Sentry.voice` was missing the level
+Writing that test found three things that already had: `BENCmouth Monotone.bmvoice` was
+missing the `flatten = 1` that gives it its name, `Sentry.bmvoice` was missing the level
 trim and played 3.7 dB down, and `preset = retro` was silently renaming the voice that
 used it, because a preset is a whole `bm_voice` and copying one over a named voice takes
 its name too. `Gravel` had been announcing itself as `BENCmouth Retro` for as long as it

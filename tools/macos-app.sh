@@ -47,7 +47,7 @@ cp assets/icon/hex-512.png "$ICONSET/icon_512x512.png"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/$NAME.icns"
 
 # The preset voices and songs travel inside the bundle. A .app is meant to be
-# one self-contained thing a user drags to Applications; a folder of .voice
+# one self-contained thing a user drags to Applications; a folder of .bmvoice
 # files that had to stay next to it would defeat that, and both LOAD buttons
 # know to look here.
 if [ -d voices ]; then
