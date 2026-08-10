@@ -33,3 +33,7 @@ style/
 # Generated from assets/ by tools/mkembed.c, like the dictionary data.
 src/gui/bm_embed.c
 mkembed
+
+# What the release job assembles for makensis, out of files that are already
+# either committed or built. The setup .exe itself is covered by *.exe above.
+stage/

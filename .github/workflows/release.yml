@@ -229,6 +229,57 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
       - run: ls -lR dist
+
+      # One thing to download and double-click, which upgrades whatever is
+      # already there rather than sitting beside it. Built here rather than in
+      # the windows job because the payload is exactly what that job already
+      # packaged, and because makensis cross-compiles - the runner it runs on
+      # has nothing to do with the installer it produces.
+      - name: NSIS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+      - name: Build the Windows installer
+        run: |
+          V="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          rm -rf stage && mkdir -p stage /tmp/win
+          # By glob, not by name: on a workflow_dispatch run the tag and the
+          # ref name are different things and the archive is named after
+          # whichever one the packaging job saw.
+          unzip -qo dist/bencmouth-gui-*-windows-x86_64.zip -d /tmp/win
+          cp -r /tmp/win/*/. stage/
+          ls stage
+          # VIProductVersion takes four numbers and nothing else - not "v",
+          # not a suffix. v0.2.2 becomes 0.2.2.0, v1 becomes 1.0.0.0.
+          N="${V#v}"; N="${N%%-*}"
+          case "$N" in
+            *.*.*) ;;
+            *.*)   N="$N.0" ;;
+            *)     N="$N.0.0" ;;
+          esac
+          # Absolute. makensis resolves a relative source path against the
+          # script's own directory rather than the working directory, so
+          # "assets/icon/..." would be looked for under tools/ and reported as
+          # an icon that could not be opened, three macros deep.
+          #
+          # -WX because makensis degrades quietly. A bitmap it cannot read is
+          # warning 5040 and exit status 0, and what comes out is an installer
+          # with the header art silently missing - which is precisely the
+          # failure this job exists to prevent.
+          makensis -WX -V2 \
+                   -DVERSION="$V" \
+                   -DVIVERSION="$N.0" \
+                   -DSRCDIR="$PWD/stage" \
+                   -DICONFILE="$PWD/assets/icon/bencmouth.ico" \
+                   -DARTDIR="$PWD/assets/brand" \
+                   -DOUTFILE="$PWD/dist/bencmouth-$V-windows-setup.exe" \
+                   tools/windows-installer.nsi
+          rm -rf stage
+          # A release that quietly ships without its installer is one nobody
+          # notices is missing until somebody goes looking for it.
+          test -s "dist/bencmouth-$V-windows-setup.exe"
+          ls -l dist/*setup.exe
+
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}

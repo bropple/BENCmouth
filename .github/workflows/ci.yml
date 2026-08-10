@@ -355,6 +355,80 @@ jobs:
           path: bencmouth-gui.exe
           if-no-files-found: error
 
+  # Built here as well as at release time, for the same reason the disk image
+  # is: a broken installer should show up on a push rather than on a tag.
+  #
+  # On Linux, because that is where the release job builds it too - makensis
+  # cross-compiles, and the runner it runs on has nothing to do with the
+  # installer it produces. Running it here on Windows instead would test a
+  # different invocation than the one that ships, with native paths where the
+  # release job passes POSIX ones.
+  #
+  # The payload is the real thing, taken from the two Windows jobs above, so
+  # what comes out is an installer somebody can actually run on a Windows
+  # machine and try - not a syntax check with placeholder files in it.
+  installer:
+    name: Windows installer
+    runs-on: ubuntu-latest
+    needs: [windows, gui-windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: bencmouth-windows, path: dl/cli }
+      - uses: actions/download-artifact@v4
+        with: { name: bencmouth-gui-windows, path: dl/gui }
+      - name: NSIS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+      - name: Assemble what goes in it
+        run: |
+          mkdir -p stage
+          cp dl/gui/bencmouth-gui.exe dl/cli/bm.exe stage/
+          cp README.md LICENSE NOTICE stage/
+          cp -r voices songs stage/
+          ls -l stage
+
+      # Named for the commit, like the disk image, because this one gets
+      # uploaded and somebody has to be able to tell which build they ran.
+      #
+      # -WX because makensis degrades quietly: a bitmap it cannot read is a
+      # warning and exit status 0, and what comes out is an installer with the
+      # art silently missing.
+      - name: It builds
+        run: |
+          V="$(git rev-parse --short HEAD)"
+          echo "SETUP=bencmouth-$V-windows-setup.exe" >> "$GITHUB_ENV"
+          makensis -WX -V2 \
+                   -DVERSION="$V" \
+                   -DVIVERSION="0.0.0.0" \
+                   -DSRCDIR="$PWD/stage" \
+                   -DICONFILE="$PWD/assets/icon/bencmouth.ico" \
+                   -DARTDIR="$PWD/assets/brand" \
+                   -DOUTFILE="$PWD/bencmouth-$V-windows-setup.exe" \
+                   tools/windows-installer.nsi
+          ls -l "bencmouth-$V-windows-setup.exe"
+
+      # A .exe that is not a .exe is worth ruling out before anyone downloads
+      # it, and the version resource is the one thing in there that comes from
+      # a command line rather than from the script.
+      - name: It is a Windows executable, and it knows what it is
+        run: |
+          file "$SETUP" | grep -q "PE32.*executable"
+          python3 - "$SETUP" <<'PY'
+          import sys
+          exe = open(sys.argv[1], 'rb').read()
+          for s in ('BENCmouth', 'BENCO Holdings', '0.0.0.0'):
+              assert s.encode('utf-16-le') in exe, f'missing from version info: {s}'
+              print('  ok ', s)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-windows-installer
+          path: bencmouth-*-windows-setup.exe
+          if-no-files-found: error
+
   gui-macos:
     name: GUI (macOS)
     runs-on: macos-latest

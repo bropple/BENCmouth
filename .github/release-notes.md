@@ -79,7 +79,18 @@ because nobody double-clicks a console program. The GUI is a separate download.
 |---|---|
 | `bencmouth-VERSION-PLATFORM` | the `bm` CLI, with live audio and the 124,910-word CMU dictionary |
 | `bencmouth-gui-VERSION-PLATFORM` | `bencmouth-gui` and the CLI beside it (macOS: a `.dmg`, drag to Applications) |
+| `bencmouth-VERSION-windows-setup.exe` | the same GUI and CLI, installed |
 | `bencmouth-VERSION-wasm` | `bencmouth.wasm` and its JavaScript wrapper |
+
+**On Windows there is now an installer.** It puts BENCmouth in Program Files for every
+user on the machine, adds a Start Menu entry and, if you want one, a desktop shortcut,
+and uninstalls from Apps & Features like anything else. Run it over an older BENCmouth
+and it replaces that install rather than sitting beside it — including the voices and
+songs folders, so a voice withdrawn in a later release actually goes away.
+
+It does not touch your PATH: a stock NSIS holds a string in 1024 characters, and a
+machine with enough software on it would get a *truncated* PATH written back. The `.zip`
+is still published for anyone who would rather unpack a folder than install anything.
 
 ```
 ./bm "Hello world" -o hello.wav

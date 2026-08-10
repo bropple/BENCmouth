@@ -649,18 +649,27 @@ cannot reach and why.
 
 ## Prebuilt binaries
 
-> **No new releases for now.** Tagging is paused while song mode and the classic voices
-> settle, and while the release pipeline gets the treatment it deserves — signing and
-> notarization on macOS in particular, which is the one thing the runners genuinely
-> cannot do without a paid Developer ID. Build from source, or take a CI artifact.
-
 **[Releases](https://github.com/bropple/BENCmouth/releases)** carry tagged builds for
 Linux, macOS, Windows and the browser, each with live audio and CMUdict compiled in.
 
 There are two archives per desktop platform. `bencmouth-VERSION-PLATFORM` is the CLI
 alone — a console program, so on Windows double-clicking it prints usage and closes,
 which is what console programs do. `bencmouth-gui-VERSION-PLATFORM` is the windowed
-application, with the font it needs beside it; that is the one to double-click.
+application with the CLI beside it; that is the one to double-click.
+
+Each desktop platform also has the form its own users expect:
+
+| | |
+|---|---|
+| **Windows** | `bencmouth-VERSION-windows-setup.exe` — installs into Program Files for every user, with a Start Menu entry and an optional desktop shortcut, and replaces an older BENCmouth rather than sitting next to it. Uninstalls from Apps & Features. The `.zip` is still there for anyone who would rather not install anything. |
+| **macOS** | `bencmouth-gui-VERSION-macos-ARCH.dmg` — mount it and drag BENCmouth to Applications. |
+| **Linux** | the tarballs. Unpack and run; there is nothing to install. |
+
+The installer does not put `bm` on your PATH. It could, and a stock NSIS holds a string
+in 1024 characters, so on a machine with a lot of software on it what gets written back
+is a *truncated* PATH. Breaking that to save typing a directory name is not a trade
+worth making — run `bm` from the install directory, or copy it somewhere already on
+PATH.
 
 Every push also builds on all three platforms and attaches the result to its
 [workflow run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — useful
