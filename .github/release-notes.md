@@ -4,6 +4,40 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.2.2
+
+**Windows has an installer.** `bencmouth-VERSION-windows-setup.exe` puts BENCmouth in
+Program Files for everyone on the machine, adds a Start Menu entry and, if you tick the
+box, a desktop shortcut, and uninstalls from Apps & Features like anything else. Run it
+over an older BENCmouth and it replaces that install rather than sitting beside it —
+including the voices and songs folders, so a voice withdrawn in a later release actually
+goes away instead of surviving forever because nothing overwrote it.
+
+The shortcuts start in your Documents rather than in Program Files. Loading looks beside
+the executable either way, but Save Voice and Save WAV open wherever the program started,
+and Program Files is not a folder you can write to. It does not touch your PATH: a stock
+NSIS holds a string in 1024 characters, and on a machine with a lot of software installed
+what would get written back is a *truncated* PATH. The portable `.zip` is still published
+for anyone who would rather not install anything.
+
+**Fixed: a formant above what the sample rate can represent is now bypassed rather than
+folded down onto the top of the band.** These sections are normalised to unity gain at
+DC, which is what lets five of them chain without a makeup stage — and that is only
+harmless while the poles stay away from Nyquist. Swept, it was a slope and not a cliff:
+peak 0.6 at 22050 and 11025, 2.1 at 8000, 458 at 7000, 1968 at 6000. Finite, and all of
+it wrong. The threshold is a measured 0.40 × the sample rate rather than a round number
+that looks like one.
+
+Inert at every rate the project ships — the highest formant in the table is about
+3020 Hz against a limit of 8820 at 22050 — so 22050 and 16000 render bit-identically to
+before and the pinned `BENCmouth Retro` reference does not move. Every rate from 4 kHz up
+now lands between 0.55 and 0.64.
+
+**Fixed: the GUI's ⓘ panel was reporting the wrong version.** It said 0.1.3 in both 0.2.0
+and 0.2.1 — the constant in the public header and the release tag were two independent
+facts, and nothing compared them. Now something does, and a tag that disagrees with the
+source fails the release before anything is published.
+
 ## New in 0.2.1
 
 **Song mode's tempo is a control, and it now does something.** It was displayed and

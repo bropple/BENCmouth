@@ -226,6 +226,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Before anything is published. v0.2.0 and v0.2.1 both shipped a GUI
+      # whose info panel said 0.1.3, because the constant in the public header
+      # and the tag were two independent facts and nothing compared them.
+      - name: The tag matches the source
+        run: |
+          V="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          tools/check_version.sh "$V"
+
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
       - run: ls -lR dist
