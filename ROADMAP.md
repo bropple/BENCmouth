@@ -681,9 +681,41 @@ that need an actual decision when we get there:
   what a soft limiter is for, so this is a level-headroom observation rather than
   distortion. CI reports it for those two and fails for everything else.
 
-  The real fix, if one is wanted, is a look-ahead normalisation pass in the host layer
-  rather than a per-voice trim - peak level is a property of the sentence as much as of
-  the voice, and no constant gain is right for both a word and a paragraph.
+  This used to end by proposing a look-ahead normalisation pass in the host layer as
+  "the real fix", on the reasoning that peak level is a property of the sentence as much
+  as of the voice and no constant gain is right for both a word and a paragraph. That was
+  built, measured and **not shipped**, and the answer is worth more than the proposal was.
+
+  It worked. A 4 ms look-ahead with a sliding-window minimum and a 120 ms release held
+  the ceiling at 0.841 against the soft clip's 0.85 knee, so the clip never engaged at
+  all; on voices that never reach the ceiling it was bit-for-bit inert, 0 of ~110,000
+  samples differing, once its own latency was compensated. Duchess through the vocoder
+  went from 797 clipped samples to none.
+
+  It was inaudible. The premise was that memoryless clipping of an isolated plosive
+  leaves an impulse-shaped error - and it does, measurably: 75 samples of 113,965 on the
+  test sentence, the error 27.4 dB below the signal, worst single sample 0.368. But
+  listened to against the unlimited render, the difference is not reliably identifiable;
+  what does come across is the level, 0.1 to 0.4 dB softer in the peaks, which is the
+  limiter doing arithmetic rather than an artifact going away.
+
+  So the trade was 4 ms of latency, ~4 KB of state, a sliding-window deque, a CLI flag
+  and a slightly quieter output, against a defect nobody can hear on this material. 75
+  clipped samples in five seconds measures worse than it sounds, which is roughly what a
+  synthesizer with this much deliberate buzz in it should do.
+
+  What would change the answer: material that clips far more than this does, or an
+  effect that pushes harder than the vocoder. If either turns up, the design above is
+  known to work and is worth rebuilding rather than rethinking.
+
+  Two things went wrong while measuring, recorded because both are easy to repeat.
+  Energy above 7 kHz is useless as a distortion metric here - it is dominated by the
+  voice's own fricatives and reported the clipped and limited paths as identical when
+  they are not; the error signal itself is the thing to measure. And a look-ahead
+  limiter that takes its target from the incoming sample alone does not work: a peak is
+  often one sample wide, so the very next sample asks for no reduction, the gain turns
+  round and has recovered by the time the peak reaches the output. 1.367 came out as
+  0.965. It needs the minimum across the whole window.
 
 ## Releases
 
