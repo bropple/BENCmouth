@@ -166,6 +166,73 @@ static void test_round_trip(void)
     remove(path);
 }
 
+/* The chain has to survive too, field by field, and it had not been:
+ * bm_song_save wrote eight of the fourteen fields bm_effects had, because the
+ * list was written before echo, reverb, ring_drift and level existed and
+ * nothing went back to it. A song saved with a room on it loaded without one,
+ * silently, and nothing here would have noticed - there was no coverage of the
+ * effects half of a song file at all.
+ *
+ * Named keys rather than a memcmp of the struct, so a failure says which field
+ * went missing instead of only that one did. */
+static void test_effects_round_trip(void)
+{
+    static const char *KEYS[] = {
+        "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus",
+        "chorus_hz", "drive", "vocoder", "vocoder_hz", "crush", "echo",
+        "echo_ms", "reverb", "reverb_size", "level"
+    };
+    const int n = (int)(sizeof KEYS / sizeof KEYS[0]);
+    bm_song a, b;
+    char    score_a[BM_SONG_SCORE_MAX], score_b[BM_SONG_SCORE_MAX];
+    char    err[192];
+    const char *path = "bm_song_fx_roundtrip.bmsong";
+    const float *fa, *fb;
+    int     k, bad = 0;
+
+    printf("round trip, effects\n");
+
+    if (bm_song_parse(GOOD, 0, &a, score_a, sizeof score_a, err, sizeof err) != 0) {
+        check(0, "the source song parses");
+        return;
+    }
+
+    /* Sixty-fourths, for the same reason test_voicefile.c uses them: the
+     * comparison below is exact, so the values fed to it have to be ones that
+     * survive being written as text and read back. */
+    fa = (const float *)(const void *)&a.effects.ring;
+    for (k = 0; k < n; k++) {
+        bm_effects_set_param(&a.effects, KEYS[k], 0,
+                             (float)(k + 1) * (1.0f / 64.0f));
+    }
+
+    check(bm_song_save(path, &a, score_a) == 0, "saves");
+    check(bm_song_load(path, &b, score_b, sizeof score_b, err, sizeof err) == 0,
+          "loads back");
+
+    fb = (const float *)(const void *)&b.effects.ring;
+    for (k = 0; k < n; k++) {
+        if (fa[k] != fb[k]) {
+            printf("      %s: saved %.6g, loaded back %.6g\n", KEYS[k],
+                   (double)fa[k], (double)fb[k]);
+            bad++;
+        }
+    }
+    check(bad == 0, "every effect parameter survives a save and a load");
+
+    /* And the span check the other two files carry, so a field added to
+     * bm_effects without a line in bm_song_save fails here rather than in a
+     * saved file six months later. */
+    {
+        size_t span = offsetof(bm_effects, level) + sizeof(float)
+                    - offsetof(bm_effects, ring);
+        check((size_t)n == span / sizeof(float),
+              "and the list above covers every field there is");
+    }
+
+    remove(path);
+}
+
 int main(void)
 {
     printf("\nBENCmouth song file tests\n\n");
@@ -173,6 +240,7 @@ int main(void)
     test_score_is_verbatim();
     test_errors();
     test_round_trip();
+    test_effects_round_trip();
     printf("\n%s (%d failure%s)\n\n", failures ? "FAILURES" : "all passed",
            failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

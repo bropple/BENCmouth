@@ -270,17 +270,35 @@ int bm_song_save(const char *path, const bm_song *song, const char *score)
     fprintf(f, "bandwidth_track= %.6g\n", (double)v->bandwidth_track);
     fprintf(f, "flatten        = %.6g\n", (double)v->flatten);
 
+    /* Every field, and it had been eight of fourteen. `ring_drift`, `echo`,
+     * `echo_ms`, `reverb`, `reverb_size` and `level` were all missing here -
+     * this list was written before those existed and nothing added to it
+     * afterwards, so saving a song with a room on it saved a song without one.
+     *
+     * The same fault bm_voicefile.c had, found the same way and only after a
+     * test saved a file and read it back field by field. tests/test_song.c does
+     * that now too, which is what stops the next field added to bm_effects from
+     * going quiet here. */
     if (song->effects.ring > 0.0f || song->effects.comb > 0.0f ||
-        song->effects.chorus > 0.0f ||
-        song->effects.drive > 0.0f || song->effects.crush > 0.0f) {
+        song->effects.chorus > 0.0f || song->effects.drive > 0.0f ||
+        song->effects.vocoder > 0.0f || song->effects.crush > 0.0f ||
+        song->effects.echo > 0.0f || song->effects.reverb > 0.0f) {
         fprintf(f, "\nring           = %.6g\n", (double)song->effects.ring);
         fprintf(f, "ring_hz        = %.6g\n", (double)song->effects.ring_hz);
+        fprintf(f, "ring_drift     = %.6g\n", (double)song->effects.ring_drift);
         fprintf(f, "comb           = %.6g\n", (double)song->effects.comb);
         fprintf(f, "comb_hz        = %.6g\n", (double)song->effects.comb_hz);
         fprintf(f, "chorus         = %.6g\n", (double)song->effects.chorus);
         fprintf(f, "chorus_hz      = %.6g\n", (double)song->effects.chorus_hz);
         fprintf(f, "drive          = %.6g\n", (double)song->effects.drive);
+        fprintf(f, "vocoder        = %.6g\n", (double)song->effects.vocoder);
+        fprintf(f, "vocoder_hz     = %.6g\n", (double)song->effects.vocoder_hz);
         fprintf(f, "crush          = %.6g\n", (double)song->effects.crush);
+        fprintf(f, "echo           = %.6g\n", (double)song->effects.echo);
+        fprintf(f, "echo_ms        = %.6g\n", (double)song->effects.echo_ms);
+        fprintf(f, "reverb         = %.6g\n", (double)song->effects.reverb);
+        fprintf(f, "reverb_size    = %.6g\n", (double)song->effects.reverb_size);
+        fprintf(f, "level          = %.6g\n", (double)song->effects.level);
     }
 
     fprintf(f, "\nscore =\n");
