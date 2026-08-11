@@ -4,7 +4,7 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
-## New in 0.2.3
+## New in 0.2.4
 
 **The Windows installer can put `bm` on your PATH.** A tickbox, off by default, and the
 uninstaller takes the entry out again — exactly the one it added, leaving everything
@@ -22,6 +22,8 @@ install leaves PATH untouched, that `/PATH` adds exactly one entry and that inst
 twice does not add it twice, and that after uninstalling PATH is byte-for-byte what it
 was. That last one is the assertion worth having — building an installer proves nothing
 about what it does to a registry.
+
+## New in 0.2.3
 
 **There is a vocoder.** A proper channel vocoder at the end of the signal path, not an
 imitation of one: sixteen third-octave channels measure how loud the voice is in each
