@@ -125,6 +125,7 @@ Var PrevUninst      ; the old version's uninstaller, "" if this is a fresh box
 Var PrevDir
 Var PrevVersion
 Var WorkDir         ; what the shortcuts start in - see the comment in .onInit
+Var WantPath        ; /PATH was on the command line
 
 ; The installer runs elevated, so anything it starts is elevated too, and a
 ; program launched that way saves files nobody can then edit. Handing the path
@@ -185,6 +186,29 @@ Function .onInit
     ${If} $PrevDir != ""
       StrCpy $INSTDIR "$PrevDir"
     ${EndIf}
+  ${EndIf}
+
+  ; /PATH asks for the optional PATH entry without anyone clicking anything.
+  ; A silent install takes the default selection and that section is off by
+  ; default, so without a switch there is no way to get it unattended - and no
+  ; way for CI to reach the code at all. That second reason is the load-bearing
+  ; one: makensis cannot check a System::Call, which is parsed by the plugin at
+  ; run time, so an installer that compiles is not an installer that works.
+  ; Registers rather than $0/$1, which the block above is using.
+  ClearErrors
+  ${GetParameters} $R8
+  ${GetOptions} $R8 "/PATH" $R9
+  ${IfNot} ${Errors}
+    StrCpy $WantPath 1
+  ${EndIf}
+
+  ; An upgrade keeps whatever the previous install was asked for. The tickbox
+  ; cannot express this - a silent upgrade never sees it, and ${SEC_PATH} does
+  ; not exist yet at this point in the script - so it goes through the same
+  ; variable the switch uses.
+  ReadRegDWORD $R7 HKLM "${REGKEY}" "OnPath"
+  ${If} $R7 == 1
+    StrCpy $WantPath 1
   ${EndIf}
 FunctionEnd
 
@@ -261,6 +285,35 @@ Section "Desktop shortcut" SEC_DESKTOP
   SetOutPath "$INSTDIR"
 SectionEnd
 
+; Unticked by default - the /o. Everything else this installer does lives in
+; its own directory, its own Start Menu folder and its own uninstall key; this
+; is the one thing that reaches into a setting somebody else owns, so it is
+; asked for rather than assumed. See the PATH block below for how it is done
+; and what it cannot promise.
+Section /o "Add bm to PATH" SEC_PATH
+  Call bm_PathAdd
+  ; Remembered so that an upgrade keeps it. The upgrade runs the old
+  ; uninstaller first, which takes the entry back out, and this box is off by
+  ; default - so without this a person who asked for PATH once would lose it
+  ; silently at the next release, which is a worse surprise than not having had
+  ; it. Read back in .onInit.
+  WriteRegDWORD HKLM "${REGKEY}" "OnPath" 1
+SectionEnd
+
+; The same thing for /PATH on the command line. Separate from the section
+; because a section's tick state is what a silent install cannot set, and
+; declared after it so that the switch and the checkbox cannot get out of order
+; on the components page.
+;
+; Calling bm_PathAdd twice is harmless - it declines when the directory is
+; already there - so this does not need to know whether the box was ticked.
+Section -PathFromSwitch
+  ${If} $WantPath == 1
+    Call bm_PathAdd
+    WriteRegDWORD HKLM "${REGKEY}" "OnPath" 1
+  ${EndIf}
+SectionEnd
+
 ; ---------------------------------------------------------------- finish
 
 Section -Post
@@ -281,21 +334,262 @@ Section -Post
   WriteRegDWORD HKLM "${REGKEY}" "EstimatedSize" "$0"
 SectionEnd
 
-; PATH is deliberately not touched. bm.exe is a console program and belonging
-; on PATH is exactly what it wants, but a stock NSIS build holds a string in
-; 1024 characters: read a longer PATH, and what gets written back is a
-; truncated one. Breaking the system PATH of a machine that has a lot of
-; software on it, to save typing a directory name, is not a trade worth making.
+; ---------------------------------------------------------------- PATH
+;
+; bm.exe is a console program, and a console program belongs on PATH.
+;
+; This edits the *account's* PATH - HKCU\Environment - and not the machine's,
+; and that choice is most of what makes it safe. The machine PATH on a
+; developer's box is routinely thousands of characters; the account's is
+; usually a handful of entries, and getting it wrong costs one login rather
+; than one computer.
+;
+; The value never enters an NSIS variable. A stock NSIS holds a string in 1024
+; characters, so the obvious implementation - ReadRegStr, append, WriteRegStr -
+; silently truncates any PATH longer than that, which is why this installer
+; shipped without the feature rather than with that. Here System.dll reads the
+; value into memory it allocated, edits it in place, and writes back exactly
+; what it holds, so the length of what is already there never matters.
+;
+; Nothing is written unless every step before it succeeded. The failure mode of
+; a PATH editor has to be "did nothing", never "wrote half".
+;
+; One limitation, stated because it cannot be fixed from here: an elevated
+; installer sees the *elevating* account's HKCU. When Windows shows a consent
+; prompt to somebody who is already an administrator - the ordinary case - that
+; is the same account and this does what it says. When somebody types a
+; different administrator's credentials into the prompt, the entry lands on
+; that administrator's PATH. The alternative is editing the machine PATH, which
+; is the one with the bad failure mode, so this is the trade taken.
+
+!define ENV_HKCU      0x80000001
+!define ENV_KEY       "Environment"
+!define ENV_ACCESS    0x2001F            ; KEY_READ | KEY_WRITE
+!define ENV_REG_SZ    1
+!define ENV_REG_EXP   2
+
+; Tells every running program that the environment moved. Without it the entry
+; is real but nothing that is already open can see it, and the first thing
+; anyone does is open a terminal and report that it did not work.
+!macro BM_ENV_BROADCAST
+  System::Call 'user32::SendMessageTimeoutW(p 0xFFFF, i 0x1A, p 0, \
+                                            t "Environment", i 2, i 5000, *p .r0)'
+!macroend
+
+; Opens HKCU\Environment and reads Path into a fresh buffer.
+;   out  $1 = key handle, 0 if this failed
+;        $2 = the value's type, to be written back unchanged
+;        $3 = bytes read, 0 when there is no Path at all
+;        $4 = buffer, 0 if this failed; `extra` bytes larger than needed
+!macro BM_PATH_READ EXTRA
+  StrCpy $1 0
+  StrCpy $2 ${ENV_REG_EXP}
+  StrCpy $3 0
+  StrCpy $4 0
+
+  System::Call 'advapi32::RegCreateKeyExW(p ${ENV_HKCU}, w "${ENV_KEY}", i 0, \
+                p 0, i 0, i ${ENV_ACCESS}, p 0, *p .r1, *i) i .r0'
+  ${If} $0 <> 0
+    DetailPrint "  cannot open HKCU\${ENV_KEY} (error $0) - PATH left alone"
+    StrCpy $1 0
+    Goto bm_read_done
+  ${EndIf}
+
+  ; Ask for the size first. A missing Path is not an error - a fresh profile
+  ; genuinely has none - and leaves $3 at zero.
+  System::Call 'advapi32::RegQueryValueExW(p r1, w "Path", p 0, *i .r2, p 0, \
+                *i .r3) i .r0'
+  ${If} $0 <> 0
+    StrCpy $2 ${ENV_REG_EXP}
+    StrCpy $3 0
+  ${ElseIf} $2 <> ${ENV_REG_SZ}
+  ${AndIf}  $2 <> ${ENV_REG_EXP}
+    ; REG_MULTI_SZ or something stranger. Not ours to reinterpret.
+    DetailPrint "  PATH is registry type $2, not a string - left alone"
+    System::Call 'advapi32::RegCloseKey(p r1)'
+    StrCpy $1 0
+    Goto bm_read_done
+  ${EndIf}
+
+  IntOp $5 $3 + ${EXTRA}
+  System::Alloc $5
+  Pop $4
+  ${If} $4 = 0
+    DetailPrint "  out of memory - PATH left alone"
+    System::Call 'advapi32::RegCloseKey(p r1)'
+    StrCpy $1 0
+    Goto bm_read_done
+  ${EndIf}
+
+  ${If} $3 > 0
+    System::Call 'advapi32::RegQueryValueExW(p r1, w "Path", p 0, p 0, p r4, \
+                  *i r3) i .r0'
+    ${If} $0 <> 0
+      DetailPrint "  cannot read PATH (error $0) - left alone"
+      System::Free $4
+      StrCpy $4 0
+      System::Call 'advapi32::RegCloseKey(p r1)'
+      StrCpy $1 0
+    ${EndIf}
+  ${EndIf}
+  bm_read_done:
+!macroend
+
+; Writes $4 back to Path as type $2, closes $1, and tells the world.
+!macro BM_PATH_WRITE
+  System::Call 'kernel32::lstrlenW(p r4) i .r5'
+  IntOp $5 $5 + 1
+  IntOp $5 $5 * 2
+  System::Call 'advapi32::RegSetValueExW(p r1, w "Path", i 0, i r2, p r4, \
+                i r5) i .r0'
+  ${If} $0 <> 0
+    DetailPrint "  cannot write PATH (error $0) - unchanged"
+  ${Else}
+    !insertmacro BM_ENV_BROADCAST
+  ${EndIf}
+!macroend
+
+; Two macros rather than one, because the installer needs only the add and
+; the uninstaller only the remove - and makensis -WX rejects a generated
+; un.bm_PathAdd that nothing calls, which is the warning doing its job.
+!macro BM_PATH_ADD_FUNC UN
+Function ${UN}bm_PathAdd
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+
+  ; Room for a separator, the directory, and the terminator.
+  StrLen $0 "$INSTDIR"
+  IntOp $0 $0 + 4
+  IntOp $0 $0 * 2
+  !insertmacro BM_PATH_READ $0
+  ${If} $1 = 0
+    Goto add_done
+  ${EndIf}
+
+  ${If} $3 > 2
+    ; Substring, so "C:\...\BENCmouth" also matches "C:\...\BENCmouth2" and we
+    ; decline to add. Declining when we should have added is a directory
+    ; somebody types by hand; adding twice is a PATH that grows on every
+    ; reinstall, so the conservative direction is the right one.
+    System::Call 'shlwapi::StrStrIW(p r4, w "$INSTDIR") p .r0'
+    ${If} $0 <> 0
+      DetailPrint "  $INSTDIR is already on PATH"
+      Goto add_free
+    ${EndIf}
+    System::Call 'kernel32::lstrcatW(p r4, w ";$INSTDIR")'
+  ${Else}
+    ; No Path, or an empty one. No leading separator: a PATH that starts with
+    ; a semicolon has an empty first entry, which is the current directory.
+    System::Call 'kernel32::lstrcpyW(p r4, w "$INSTDIR")'
+  ${EndIf}
+
+  DetailPrint "  adding $INSTDIR to your PATH"
+  !insertmacro BM_PATH_WRITE
+
+  add_free:
+  System::Free $4
+  System::Call 'advapi32::RegCloseKey(p r1)'
+  add_done:
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+!macroend
+
+!macro BM_PATH_REMOVE_FUNC UN
+Function ${UN}bm_PathRemove
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $R0
+  Push $R1
+  Push $R2
+
+  !insertmacro BM_PATH_READ 2
+  ${If} $1 = 0
+    Goto rm_done
+  ${EndIf}
+  ${If} $3 <= 2
+    Goto rm_free                      ; nothing there to remove
+  ${EndIf}
+
+  ; The whole of PATH is us: it becomes empty rather than a stray semicolon.
+  System::Call 'kernel32::lstrcmpiW(p r4, w "$INSTDIR") i .r0'
+  ${If} $0 = 0
+    System::Call 'kernel32::lstrcpyW(p r4, w "")'
+    DetailPrint "  removing $INSTDIR from your PATH"
+    !insertmacro BM_PATH_WRITE
+    Goto rm_free
+  ${EndIf}
+
+  ; Otherwise take out exactly the ";$INSTDIR" this installer put in, and shift
+  ; the tail down over it. Anything else in the string is somebody else's and
+  ; is not touched.
+  System::Call 'shlwapi::StrStrIW(p r4, w ";$INSTDIR") p .r0'
+  ${If} $0 = 0
+    DetailPrint "  $INSTDIR was not on your PATH"
+    Goto rm_free
+  ${EndIf}
+
+  System::Call 'kernel32::lstrlenW(p r4) i .R0'   ; characters in the whole value
+  IntOp $R1 $0 - $4                               ; bytes from the start to the match
+  IntOp $R1 $R1 / 2                               ; ... as characters
+  StrLen $R2 ";$INSTDIR"                          ; characters we are cutting out
+
+  IntOp $5 $R0 - $R1
+  IntOp $5 $5 - $R2
+  IntOp $5 $5 + 1                                 ; keep the terminator
+  IntOp $5 $5 * 2                                 ; bytes to move
+  IntOp $R2 $R2 * 2
+  IntOp $R2 $0 + $R2                              ; source: just past the match
+
+  System::Call 'kernel32::RtlMoveMemory(p r0, p $R2, i $5)'
+  DetailPrint "  removing $INSTDIR from your PATH"
+  !insertmacro BM_PATH_WRITE
+
+  rm_free:
+  System::Free $4
+  System::Call 'advapi32::RegCloseKey(p r1)'
+  rm_done:
+  Pop $R2
+  Pop $R1
+  Pop $R0
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+!macroend
+
+!insertmacro BM_PATH_ADD_FUNC ""
+!insertmacro BM_PATH_REMOVE_FUNC "un."
 
 LangString DESC_APP ${LANG_ENGLISH} \
   "The BENCmouth window, the bm command-line program, the twenty-five voices \
 and the songs. Adds a Start Menu entry."
 LangString DESC_DESKTOP ${LANG_ENGLISH} \
   "A BENCmouth shortcut on the desktop."
+LangString DESC_PATH ${LANG_ENGLISH} \
+  "Add BENCmouth to your account's PATH, so that typing bm in a terminal \
+finds it. Off by default: it is the only thing here that changes a setting \
+outside BENCmouth's own folder. Removed again when you uninstall."
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_APP}     $(DESC_APP)
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_DESKTOP} $(DESC_DESKTOP)
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_PATH}    $(DESC_PATH)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ---------------------------------------------------------------- uninstall
@@ -326,6 +620,11 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\BENCmouth\Uninstall BENCmouth.lnk"
   RMDir  "$SMPROGRAMS\BENCmouth"
   Delete "$DESKTOP\BENCmouth.lnk"
+
+  ; Unconditional, and it has to be: whether the box was ticked is not recorded
+  ; anywhere, and the remove is a no-op when the entry is not there. Taking out
+  ; exactly the one entry it put in is what makes that safe to run blind.
+  Call un.bm_PathRemove
 
   ; Voices and songs saved anywhere else are untouched, and so is anything
   ; under Documents.

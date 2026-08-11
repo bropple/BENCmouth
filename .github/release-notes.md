@@ -6,6 +6,23 @@ See `ref/README.md` for provenance, including the sources deliberately not consu
 
 ## New in 0.2.3
 
+**The Windows installer can put `bm` on your PATH.** A tickbox, off by default, and the
+uninstaller takes the entry out again — exactly the one it added, leaving everything
+else in the string alone. `setup.exe /S /PATH` does it unattended.
+
+0.2.2 shipped without this on the grounds that a stock NSIS holds a string in 1024
+characters, so reading a long PATH and writing it back truncates it. That reasoning was
+right about the danger and wrong about the conclusion: the value never has to enter an
+NSIS string at all. It is read into memory, edited there and written back, so its length
+stops being a factor. It also writes your *account's* PATH rather than the machine's,
+which is the shorter string and the recoverable mistake.
+
+CI installs the built `setup.exe` on a real Windows runner, checks that a default
+install leaves PATH untouched, that `/PATH` adds exactly one entry and that installing
+twice does not add it twice, and that after uninstalling PATH is byte-for-byte what it
+was. That last one is the assertion worth having — building an installer proves nothing
+about what it does to a registry.
+
 **There is a vocoder.** A proper channel vocoder at the end of the signal path, not an
 imitation of one: sixteen third-octave channels measure how loud the voice is in each
 band, and a carrier generated inside the stage is cut into the same sixteen bands and
@@ -175,9 +192,10 @@ and uninstalls from Apps & Features like anything else. Run it over an older BEN
 and it replaces that install rather than sitting beside it — including the voices and
 songs folders, so a voice withdrawn in a later release actually goes away.
 
-It does not touch your PATH: a stock NSIS holds a string in 1024 characters, and a
-machine with enough software on it would get a *truncated* PATH written back. The `.zip`
-is still published for anyone who would rather unpack a folder than install anything.
+There is a tickbox for putting `bm` on your PATH, off by default, and the uninstaller
+takes the entry out again. It edits your account's PATH rather than the machine's, and
+`setup.exe /S /PATH` does the same unattended. The `.zip` is still published for anyone
+who would rather unpack a folder than install anything.
 
 ```
 ./bm "Hello world" -o hello.wav

@@ -429,6 +429,93 @@ jobs:
           path: bencmouth-*-windows-setup.exe
           if-no-files-found: error
 
+  # Building the installer is not the same as running it, and the difference
+  # matters most for the one thing in it that edits a setting outside its own
+  # folder. makensis cannot check a System::Call - the plugin parses those at
+  # run time - so the PATH code compiles clean whether or not it works, and the
+  # only way to know is to install on a real Windows and read the registry.
+  #
+  # The strong assertion is the last one: after the uninstaller has run, PATH
+  # has to be byte-for-byte what it was before the install. Anything less would
+  # pass while leaving a stray semicolon or eating a neighbouring entry.
+  installer-run:
+    name: Windows installer, installed
+    runs-on: windows-latest
+    needs: [installer]
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: bencmouth-windows-installer, path: dl }
+
+      - name: The default install leaves PATH alone
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem dl\*.exe)[0].FullName
+          $before = [Environment]::GetEnvironmentVariable('Path', 'User')
+          Start-Process -FilePath $exe -ArgumentList '/S' -Wait
+          $after = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($after -ne $before) {
+            throw "a plain /S install changed PATH`n  before: $before`n  after:  $after"
+          }
+          Write-Host "  ok  PATH untouched by the default install"
+
+          $bm = 'C:\Program Files\BENCmouth\bm.exe'
+          if (-not (Test-Path $bm)) { throw "bm.exe was not installed" }
+          & $bm --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "bm.exe --help exited $LASTEXITCODE" }
+          Write-Host "  ok  bm.exe installed and runs"
+
+          # _?= keeps the uninstaller from copying itself to temp and returning
+          # before it has finished, which is what makes -Wait meaningless.
+          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          Remove-Item -Recurse -Force 'C:\Program Files\BENCmouth' `
+                      -ErrorAction SilentlyContinue
+
+      - name: /PATH adds exactly one entry, and the uninstaller takes it back
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem dl\*.exe)[0].FullName
+          $before = [Environment]::GetEnvironmentVariable('Path', 'User')
+          Write-Host "  before: $before"
+
+          Start-Process -FilePath $exe -ArgumentList '/S', '/PATH' -Wait
+          $after = [Environment]::GetEnvironmentVariable('Path', 'User')
+          Write-Host "  after:  $after"
+
+          if ($after -notmatch [regex]::Escape('BENCmouth')) {
+            throw "/PATH did not add anything to PATH"
+          }
+          $added = @($after -split ';' | Where-Object { $_ -match 'BENCmouth' })
+          if ($added.Count -ne 1) {
+            throw "expected one BENCmouth entry, found $($added.Count): $($added -join ' | ')"
+          }
+          if ($added[0] -ne 'C:\Program Files\BENCmouth') {
+            throw "the entry is not the install directory: $($added[0])"
+          }
+          Write-Host "  ok  one entry, and it is the install directory"
+
+          # Installing over the top *without* /PATH stands in for an upgrade,
+          # and tests two things at once. The entry must survive - the upgrade
+          # runs the old uninstaller first, which removes it, and the tickbox is
+          # off by default, so it comes back only because the previous install
+          # recorded OnPath. And it must not come back twice.
+          Start-Process -FilePath $exe -ArgumentList '/S' -Wait
+          $twice = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $again = @($twice -split ';' | Where-Object { $_ -match 'BENCmouth' })
+          if ($again.Count -ne 1) {
+            throw "after an upgrade there are $($again.Count) entries, not 1: $twice"
+          }
+          Write-Host "  ok  an upgrade keeps the entry, and keeps exactly one"
+
+          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          $end = [Environment]::GetEnvironmentVariable('Path', 'User')
+          Write-Host "  end:    $end"
+          if ($end -ne $before) {
+            throw "PATH was not restored exactly`n  before: $before`n  end:    $end"
+          }
+          Write-Host "  ok  PATH is byte-for-byte what it was"
+
   gui-macos:
     name: GUI (macOS)
     runs-on: macos-latest

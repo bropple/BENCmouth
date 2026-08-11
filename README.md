@@ -688,11 +688,20 @@ Each desktop platform also has the form its own users expect:
 | **macOS** | `bencmouth-gui-VERSION-macos-ARCH.dmg` — mount it and drag BENCmouth to Applications. |
 | **Linux** | the tarballs. Unpack and run; there is nothing to install. |
 
-The installer does not put `bm` on your PATH. It could, and a stock NSIS holds a string
-in 1024 characters, so on a machine with a lot of software on it what gets written back
-is a *truncated* PATH. Breaking that to save typing a directory name is not a trade
-worth making — run `bm` from the install directory, or copy it somewhere already on
-PATH.
+**PATH is a tickbox, and it is off by default.** Tick *Add bm to PATH* and typing `bm`
+in a terminal finds it; the uninstaller takes the entry out again. It edits your
+account's PATH rather than the machine's, which is the choice that makes it safe to do
+at all: a stock NSIS holds a string in 1024 characters, so the obvious implementation
+truncates any PATH longer than that, and the machine PATH is the long one. The value
+here never enters an NSIS string — it is read into memory, edited there, and written
+back — so length stops mattering either way.
+
+For an unattended install, `setup.exe /S /PATH` does the same thing without the tickbox.
+
+One thing it cannot promise: an elevated installer sees the *elevating* account's
+settings. If you are an administrator and clicked through the usual consent prompt, that
+is you. If somebody typed a different administrator's password into the prompt, the entry
+lands on that administrator's PATH instead.
 
 Every push also builds on all three platforms and attaches the result to its
 [workflow run](https://github.com/bropple/BENCmouth/actions/workflows/ci.yml) — useful
