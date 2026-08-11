@@ -42,7 +42,8 @@ static const char *VOICE_KEYS[] = {
 
 static const char *FX_KEYS[] = {
     "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus", "chorus_hz",
-    "drive", "crush", "echo", "echo_ms", "reverb", "reverb_size", "level"
+    "drive", "vocoder", "vocoder_hz", "crush", "echo", "echo_ms", "reverb",
+    "reverb_size", "level"
 };
 
 #define NVOICE_KEYS ((int)(sizeof VOICE_KEYS / sizeof VOICE_KEYS[0]))

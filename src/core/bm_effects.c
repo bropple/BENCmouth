@@ -16,24 +16,40 @@
  * hearing it alone - or a combination that needed all of its parts.
  * ------------------------------------------------------------------ */
 
+/* Sixteen floats a row, in the order the chain runs them and in the order
+ * bm_effects declares them:
+ *
+ *   ring ring_hz ring_drift | comb comb_hz | chorus chorus_hz | drive |
+ *   vocoder vocoder_hz | crush | echo echo_ms reverb reverb_size | level
+ *
+ * Positional, so a field added to bm_effects has to be added here too, in the
+ * right place, sixteen times. test_presets_are_plausible exists because that is
+ * exactly the kind of edit that goes wrong quietly - a row shifted by one puts
+ * an echo time into a mix control and every value is still a valid float. */
 static const bm_effects BM_EFFECT_PRESETS[] = {
     /* The bypass. Present as a named entry so a dropdown has something to
      * return to, and so "no effects" is a choice rather than the absence of
      * one. */
-    { "None",      0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+    { "None",      0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f,  0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
 
     /* Ring modulation alone, at a carrier low enough that the sidebands stay
      * inside the formants rather than scattering above them. This is the one
      * to listen to first: it is the effect that most obviously is not a
      * person. */
-    { "Metal",     0.85f, 62.0f, 0.0f,  0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+    { "Metal",     0.85f, 62.0f, 0.0f,  0.0f, 0.0f,   0.0f, 0.0f,   0.0f,  0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
 
     /* Drive alone, so the waveshaper can be heard without anything else
      * happening. Loud in character and not in level - the trim compensates. */
-    { "Overdrive", 0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+    { "Overdrive", 0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.72f, 0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
 
     /* Sample-rate reduction alone. The aliasing is the sound. */
-    { "Crushed",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.62f, 0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+    { "Crushed",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f,  0.0f, 0.0f,   0.62f, 0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+
+    /* The vocoder alone, fully wet, at a carrier around the bottom of a man's
+     * range. Nothing else, because there is nothing else to hear past it: it
+     * replaces the voice rather than colouring it, and anything stacked on top
+     * would be describing the carrier and not the effect. */
+    { "Vocoder",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,   0.0f,  1.0f, 110.0f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.0f },
 
     /* The metallic sentry. Ring modulation for the inharmonic edge, a comb
      * tuned low for the sense of a voice coming out of a chest cavity, and
@@ -44,14 +60,14 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * where the dry and wet paths partly cancel, and stacking a comb on top of
      * it put the whole thing 3.7 dB down - far enough that selecting it in a
      * dropdown read as a fault. 1.5 brings it back to within 0.2 dB. */
-    { "Sentinel",  0.62f, 108.0f, 0.0f, 0.55f, 150.0f, 0.0f, 0.0f,   0.30f, 0.22f, 0.0f, 0.0f, 0.0f, 0.0f,  1.5f },
+    { "Sentinel",  0.62f, 108.0f, 0.0f, 0.55f, 150.0f, 0.0f, 0.0f,   0.30f, 0.0f, 0.0f,   0.22f, 0.0f, 0.0f, 0.0f, 0.0f,  1.5f },
 
     /* The aggressive one. Drive carries it - harmonics that were not in the
      * voice are what the ear reads as force - with a tight comb for the metal
      * and only a trace of ring, because too much of it turns menace into
      * novelty. Crush left off: it makes a thing sound old, and this is not
      * supposed to sound old. */
-    { "Enforcer",  0.22f, 47.0f, 0.0f,  0.42f, 240.0f, 0.0f, 0.0f,   0.88f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
+    { "Enforcer",  0.22f, 47.0f, 0.0f,  0.42f, 240.0f, 0.0f, 0.0f,   0.88f, 0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  0.0f },
 
     /* Three of it. A modulated delay is a pitch shift, so three taps swept a
      * third of a cycle apart really are three detuned copies - which a fixed
@@ -59,7 +75,7 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * above about 1 Hz a chorus stops sounding like several voices and starts
      * sounding like one voice being wobbled, which is a different effect and
      * already available as vibrato. */
-    { "Trinode",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.4f },
+    { "Trinode",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.85f, 0.42f, 0.10f, 0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.4f },
 
     /* ---- chains that arrived with a voice -------------------------------
      *
@@ -75,33 +91,33 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
     /* A small resonant body. One comb, spaced wide enough that its teeth land
      * between the formants rather than on them, so it colours without
      * swallowing the vowels. */
-    { "Chamber",   0.0f, 0.0f, 0.0f,   0.30f, 190.0f, 0.0f, 0.0f,  0.0f,  0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.0f },
+    { "Chamber",   0.0f, 0.0f, 0.0f,   0.30f, 190.0f, 0.0f, 0.0f,  0.0f,  0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.0f },
 
     /* A voice arriving over a bad link. The crush is the sample rate of the
      * channel, the high comb is the pipe it came down, and the ring at 33 Hz is
      * below pitch - too low to be heard as a tone, so it reads as the thing
      * being modulated rather than as a modulator. */
-    { "Downlink",  0.18f, 33.0f, 0.0f, 0.60f, 520.0f, 0.0f, 0.0f,  0.20f, 0.45f, 0.0f, 0.0f, 0.0f, 0.0f,  1.2f },
+    { "Downlink",  0.18f, 33.0f, 0.0f, 0.60f, 520.0f, 0.0f, 0.0f,  0.20f, 0.0f, 0.0f,   0.45f, 0.0f, 0.0f, 0.0f, 0.0f,  1.2f },
 
     /* Ring modulation almost to the exclusion of the dry signal, at a carrier
      * just under a typical fundamental. Harder than Metal and deliberately
      * plainer - no comb, so nothing gives it a body to be inside. */
-    { "Alloy",     0.90f, 74.0f, 0.0f, 0.0f, 0.0f,    0.0f, 0.0f,  0.15f, 0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.3f },
+    { "Alloy",     0.90f, 74.0f, 0.0f, 0.0f, 0.0f,    0.0f, 0.0f,  0.15f, 0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.3f },
 
     /* Amplified and slightly broken. The comb is tuned high, where a small horn
      * resonates, and the crush and drive between them do what a cheap speaker
      * driven too hard does to a voice. */
-    { "Bullhorn",  0.0f, 0.0f, 0.0f,   0.50f, 700.0f, 0.0f, 0.0f,  0.60f, 0.38f, 0.0f, 0.0f, 0.0f, 0.0f,  1.05f },
+    { "Bullhorn",  0.0f, 0.0f, 0.0f,   0.50f, 700.0f, 0.0f, 0.0f,  0.60f, 0.0f, 0.0f,   0.38f, 0.0f, 0.0f, 0.0f, 0.0f,  1.05f },
 
     /* A low comb and nothing else: the wooden case an instrument sits in, which
      * is a resonance and not a distortion. The gentlest entry in this table. */
-    { "Cabinet",   0.0f, 0.0f, 0.0f,   0.35f, 105.0f, 0.0f, 0.0f,  0.0f,  0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.0f },
+    { "Cabinet",   0.0f, 0.0f, 0.0f,   0.35f, 105.0f, 0.0f, 0.0f,  0.0f,  0.0f, 0.0f,   0.0f,  0.0f, 0.0f, 0.0f, 0.0f,  1.0f },
 
     /* The harsh one. Ring at 92 Hz against a fundamental near 104 puts the
      * sidebands close enough to the pitch to beat against it rather than
      * scatter - a buzz rather than a shimmer - and the comb and drive stacked on
      * top are what make it sound loud before the level control touches it. */
-    { "Klaxon",    0.95f, 92.0f, 0.0f, 0.45f, 168.0f, 0.0f, 0.0f,  0.35f, 0.20f, 0.0f, 0.0f, 0.0f, 0.0f,  1.15f },
+    { "Klaxon",    0.95f, 92.0f, 0.0f, 0.45f, 168.0f, 0.0f, 0.0f,  0.35f, 0.0f, 0.0f,   0.20f, 0.0f, 0.0f, 0.0f, 0.0f,  1.15f },
 
     /* ---- the space around it ------------------------------------------ */
 
@@ -110,7 +126,7 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * worth being able to hear it on its own without anything else explaining
      * it away. Size well up but short of the top, where the tail starts
      * outlasting the sentence. */
-    { "Hall",      0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f,  0.0f,
+    { "Hall",      0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f,  0.0f, 0.0f,   0.0f,
                    0.0f, 0.0f,   0.55f, 0.85f,  1.0f },
 
     /* Outdoors, and a long way from anything. A slow echo for the distance and
@@ -118,8 +134,24 @@ static const bm_effects BM_EFFECT_PRESETS[] = {
      * without the other is either a delay pedal or a cathedral, and the pair is
      * what reads as open country. The echo time is deliberately past the point
      * where repeats belong to the syllable that caused them. */
-    { "Canyon",    0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f,  0.0f,
-                   0.62f, 330.0f, 0.30f, 0.75f,  1.1f }
+    { "Canyon",    0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f,  0.0f, 0.0f,   0.0f,
+                   0.62f, 330.0f, 0.30f, 0.75f,  1.1f },
+
+    /* The vocoder in a room, at a carrier an octave down from the plain one.
+     * A vocoder is dry to the point of being airless - every band is a filtered
+     * carrier and nothing in it was ever in a space - and a reverb is what puts
+     * it somewhere. The low carrier is what makes it a choir rather than a
+     * robot: at 55 Hz the bands are dense enough that the harmonics stop being
+     * separately audible and read as a section rather than as one machine.
+     *
+     * The level is the second one in the table, and for the opposite reason to
+     * Sentinel's: this one is trimmed *down*. A low carrier is the peakiest
+     * setting the vocoder has - fewer, larger impulses a second - and at 55 Hz
+     * with a room on top the peaks reached 0.81 against a dry 0.58 while the
+     * RMS sat 0.7 dB high. 0.8 puts both back where the rest of the table
+     * lives. */
+    { "Chorale",   0.0f, 0.0f, 0.0f,   0.0f, 0.0f,   0.0f, 0.0f,  0.0f,  1.0f, 55.0f, 0.0f,
+                   0.0f, 0.0f,   0.45f, 0.80f,  0.8f }
 };
 
 #define BM_EFFECT_COUNT \
@@ -213,6 +245,8 @@ bm_result bm_effects_set_param(bm_effects *effects, const char *key,
     else if (key_equals("chorus",  key, key_len)) effects->chorus = value;
     else if (key_equals("chorus_hz",key, key_len)) effects->chorus_hz = value;
     else if (key_equals("drive",   key, key_len)) effects->drive = value;
+    else if (key_equals("vocoder", key, key_len)) effects->vocoder = value;
+    else if (key_equals("vocoder_hz", key, key_len)) effects->vocoder_hz = value;
     else if (key_equals("crush",   key, key_len)) effects->crush = value;
     else if (key_equals("level",   key, key_len)) effects->level = value;
     else return BM_ERR_ARG;
@@ -329,6 +363,115 @@ static const unsigned BM_VERB_LEN[BM_REVERB_LINES] = {
  * path came back 17 dB hot, and this is what brings it level. */
 #define BM_VERB_GAIN 0.135f
 
+/* ---- vocoder ---------------------------------------------------------
+ *
+ * The band edges. 150 Hz is under the lowest fundamental anything here
+ * produces, so the bottom band has the pitch in it rather than beside it, and
+ * 6.3 kHz is where a fricative has stopped saying which fricative it is. Wider
+ * either way costs a channel that reports nothing. */
+#define BM_VOC_LOW_HZ   150.0f
+#define BM_VOC_HIGH_HZ 6300.0f
+
+/* Q of one section. Three cascaded sections make each channel - see
+ * BM_VOC_SECTIONS for why three - and cascading narrows a resonance: M
+ * identical two-pole bandpasses have a combined -3 dB width sqrt(2^(1/M) - 1)
+ * of one of them, which for three is 0.510. The bands are spaced
+ * log2(6300/150)/15 = 0.359 of an octave apart and want to cross their
+ * neighbours near -3 dB, which is a channel Q of 4.0, so a section Q of
+ * 4.0 * 0.510 = 2.04. */
+#define BM_VOC_Q 2.04f
+
+/* Envelope follower, as time constants in milliseconds.
+ *
+ * The release is the number that matters and 20 ms is a floor, not a taste. The
+ * thing being measured is a train of glottal pulses, so a follower quick enough
+ * to resolve them puts the *input's* pitch back onto the carrier as amplitude
+ * modulation - and the input's pitch is the one thing a vocoder is supposed to
+ * throw away. One pitch period at the bottom of a voice is about 10 ms, so the
+ * follower has to be slower than that and this is twice it.
+ *
+ * The attack is short for the opposite reason: a stop consonant releases in
+ * under 10 ms, and an envelope that cannot rise that fast turns every /t/ into
+ * a /d/ - the same softening a slow compressor does to a snare. */
+#define BM_VOC_ATT_MS  3.0f
+#define BM_VOC_REL_MS 20.0f
+
+/* Carrier pitch when none is given. A2, and low enough to be a machine rather
+ * than a person - a vocoder at 220 Hz sounds like a small robot, which is a
+ * narrower thing to be than it sounds. */
+#define BM_VOC_DEFAULT_HZ 110.0f
+
+/* The band above which a channel counts as "high" for the voiced/unvoiced
+ * decision, and the two ends of the decision itself.
+ *
+ * The carrier is a pitched pulse train while the input is voiced and noise
+ * while it is not, and what decides is the share of the envelope sum sitting
+ * in the bands at or above 2.5 kHz. Rendered one phoneme at a time and
+ * measured over the loud part of each, that share runs:
+ *
+ *   AA IY UW            0.000 - 0.034      T    0.81 - 0.91
+ *   M L                 0.000 - 0.004      K    0.40 - 0.73
+ *   S                   0.75  - 0.87       P    0.11 - 0.55
+ *   SH                  0.70  - 0.83
+ *   F TH                0.56  - 0.74
+ *   Z                   0.31  - 0.43
+ *
+ * Two orders of magnitude between a vowel and an /s/ does not need a clever
+ * detector. The crossfade runs from 0.08 to 0.55: everything voiced is below
+ * the first by a wide margin, the voiceless fricatives are all above the
+ * second, and the two things that legitimately sit between them do so for a
+ * reason - /z/ is a fricative with voicing in it and gets a carrier that is
+ * half of each, and a stop burst is a transient that starts noisy and lands in
+ * a vowel, so it slides across the crossfade in the time it takes to say it.
+ *
+ * Deliberately a crossfade and not a switch. A carrier that changes character
+ * in one sample clicks, and it would click on every consonant. */
+#define BM_VOC_HI_HZ    2500.0f
+#define BM_VOC_NOISE_LO    0.08f
+#define BM_VOC_NOISE_HI    0.55f
+
+/* Above this fraction of the sample rate a band is dropped rather than moved
+ * down to fit. The same 0.40 the vocal tract's resonators use - see
+ * BM_FORMANT_MAX_FRACTION in bm_resonator.c, where it was measured - and for a
+ * related reason rather than the same one: there the risk is a normalised
+ * resonator whose gain climbs as its pole nears Nyquist, here it is a bandpass
+ * whose upper skirt folds back down into the band it is supposed to be
+ * measuring. One number for both keeps them from drifting apart.
+ *
+ * At 22050 the limit is 8820 and the top band is 6300, so nothing is dropped at
+ * any rate this project ships. At 8000 the top four channels go, and the
+ * vocoder is a twelve-band one. */
+#define BM_VOC_MAX_FRACTION 0.40f
+
+/* Output gain, measured rather than derived, the same way BM_VERB_GAIN was.
+ * Sixteen bandpassed copies of a carrier summed do not arrive at any level a
+ * calculation predicts, because how much of each lands in the sum depends on
+ * the carrier's spectrum, the envelope of the speech and the overlap of the
+ * filters. Fitted against a rendered sentence, where it puts both the RMS and
+ * the peak within a decibel of the dry signal's - which it can do at all only
+ * because the two crest factors match.
+ *
+ * Fitted on the default voice, and it does not hold across all of them. The
+ * same sentence through the same settings, vocoded against dry:
+ *
+ *   Deep (f0 100)     -0.9 dB     BENCmouth (f0 118)  +0.6 dB
+ *   Operator (200)    +1.5 dB     Cadet (255)         +2.0 dB
+ *   Duchess (248)     +2.4 dB
+ *
+ * A high fundamental puts at most one harmonic in each of the low channels, so
+ * more of the bank is driven independently and more of it lines up; the peaks
+ * go with it, and on those voices they reach the host's limiter. Left as a
+ * measurement rather than corrected: the correction would have to be a function
+ * of the input's pitch, which is a thing the vocoder deliberately does not
+ * know, and `level` is the control for it. An RMS detector was tried in place
+ * of the rectifier and made the spread slightly worse. */
+#define BM_VOC_GAIN 26.0f
+
+/* 1/sqrt(3): white noise from a uniform generator over [-1, 1] has an RMS of
+ * 1/sqrt(3), and the two halves of the carrier have to arrive at the same
+ * level or the crossfade between them is a volume jump on every consonant. */
+#define BM_VOC_NOISE_G 1.7320508f
+
 void bm_effects_state_init(bm_effects_state *s, float sample_rate)
 {
     if (s == 0) return;
@@ -357,6 +500,23 @@ void bm_effects_state_init(bm_effects_state *s, float sample_rate)
     s->echo_trim = 1.0f;
     s->verb_fb = 0.0f;
     s->verb_wet = 0.0f;
+    {
+        int k;
+        for (k = 0; k < BM_VOCODER_BANDS; k++) {
+            s->voc_b0[k] = 0.0f;
+            s->voc_a1[k] = 0.0f;
+            s->voc_a2[k] = 0.0f;
+            s->voc_g[k]  = 0.0f;
+        }
+    }
+    s->voc_bands = 0;
+    s->voc_hi_from = BM_VOCODER_BANDS;
+    s->voc_att = 0.0f;
+    s->voc_rel = 0.0f;
+    s->voc_inc = 0.0f;
+    s->voc_pulse_g = 1.0f;
+    s->voc_out = 0.0f;
+    s->voc_wet = 0.0f;
 #endif
     bm_effects_state_reset(s);
 }
@@ -387,6 +547,20 @@ void bm_effects_state_reset(bm_effects_state *s)
         for (i = 0; i < BM_REVERB_LEN; i++) s->verb_buf[i] = 0.0f;
         for (i = 0; i < BM_REVERB_LINES; i++) s->verb_at[i] = 0u;
         for (i = 0; i < BM_REVERB_COMBS; i++) s->verb_damp_z[i] = 0.0f;
+
+        for (i = 0; i < BM_VOCODER_BANDS; i++) {
+            int j;
+            for (j = 0; j < BM_VOC_SECTIONS * 2; j++) {
+                s->voc_ana[i][j] = 0.0f;
+                s->voc_syn[i][j] = 0.0f;
+            }
+            s->voc_env[i] = 0.0f;
+        }
+        s->voc_phase = 0.0f;
+        s->voc_saw_z = 0.0f;
+        /* Any nonzero constant; xorshift is absorbing at zero. Fixed rather
+         * than seeded, because two renders of the same text have to match. */
+        s->voc_rng = 0x9E3779B9u;
     }
 #endif
 }
@@ -401,6 +575,7 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
     s->p.comb    = bm_clampf(s->p.comb, 0.0f, 1.0f);
     s->p.drive   = bm_clampf(s->p.drive, 0.0f, 1.0f);
     s->p.crush   = bm_clampf(s->p.crush, 0.0f, 1.0f);
+    s->p.vocoder = bm_clampf(s->p.vocoder, 0.0f, 1.0f);
     s->p.chorus  = bm_clampf(s->p.chorus, 0.0f, 1.0f);
     s->p.ring_hz = bm_clampf(s->p.ring_hz, 0.0f, s->sample_rate * 0.45f);
     s->p.ring_drift = bm_clampf(s->p.ring_drift, 0.0f, 1.0f);
@@ -548,6 +723,110 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
                       s->p.reverb_size * (BM_VERB_FB_MAX - BM_VERB_FB_MIN);
         s->verb_wet = s->p.reverb;
     }
+
+    /* ---- vocoder ---- */
+    {
+        float limit = s->sample_rate * BM_VOC_MAX_FRACTION;
+        float span  = bm_log2f(BM_VOC_HIGH_HZ / BM_VOC_LOW_HZ);
+        int   k;
+
+        s->voc_bands   = 0;
+        s->voc_hi_from = BM_VOCODER_BANDS;
+
+        for (k = 0; k < BM_VOCODER_BANDS; k++) {
+            /* Log-spaced: equal ratios, not equal differences. A vocoder
+             * spaced linearly spends most of its channels above 3 kHz, where
+             * speech has almost nothing to say, and gives the vowels two. */
+            float fc = BM_VOC_LOW_HZ *
+                       bm_exp2f(span * (float)k / (float)(BM_VOCODER_BANDS - 1));
+            float w0, sn, alpha, a0;
+
+            if (fc > limit) break;             /* and every one above it */
+
+            if (s->voc_hi_from == BM_VOCODER_BANDS && fc >= BM_VOC_HI_HZ) {
+                s->voc_hi_from = k;
+            }
+
+            /* The bandpass with constant peak gain, normalised so a0 is 1.
+             * b1 is 0 and b2 is -b0, which is why only three numbers are
+             * stored: the two zeros sit at DC and at Nyquist, where a
+             * bandpass wants them, and they are not free parameters. */
+            w0    = BM_TWO_PI * fc / s->sample_rate;
+            sn    = bm_sinf(w0);
+            alpha = sn / (2.0f * BM_VOC_Q);
+            a0    = 1.0f + alpha;
+
+            s->voc_b0[k] = alpha / a0;
+            s->voc_a1[k] = (-2.0f * bm_cosf(w0)) / a0;
+            s->voc_a2[k] = (1.0f - alpha) / a0;
+
+            /* What band k contributes to the sum, beyond what its envelope
+             * says. This is the correction that makes the output's spectrum
+             * the *input's* spectrum rather than the carrier's, and it is not
+             * optional - without it the vocoder is 16 dB brighter at the top of
+             * the bank than the voice it is imitating.
+             *
+             * The bands are constant-Q, so their widths grow with their
+             * centres: the top one is 42 times wider than the bottom one and
+             * collects 42 times as much of a flat carrier. The carrier here is
+             * flat by construction - see the differentiator in the tick - so
+             * the collected energy runs at 3 dB per octave and this takes it
+             * back out. Measured through the bank rather than assumed: a
+             * sawtooth came out at -17 dB across the range, its derivative at
+             * +15.5, and the geometric middle of those two is where a carrier
+             * has to sit. */
+            s->voc_g[k]  = bm_sqrtf(BM_VOC_LOW_HZ / fc);
+            s->voc_bands = k + 1;
+        }
+
+        /* If the rate is low enough to have taken every band above 2.5 kHz,
+         * the carrier decision has nothing high to look at. Split what is left
+         * in half rather than never switching to noise: a twelve-band vocoder
+         * at 8 kHz still has to be able to say /s/. */
+        if (s->voc_hi_from >= s->voc_bands) s->voc_hi_from = s->voc_bands / 2;
+
+        /* One-pole coefficients from the time constants. */
+        s->voc_att = 1.0f - bm_expf(-1000.0f / (BM_VOC_ATT_MS * s->sample_rate));
+        s->voc_rel = 1.0f - bm_expf(-1000.0f / (BM_VOC_REL_MS * s->sample_rate));
+
+        {
+            float hz = (s->p.vocoder_hz > 0.0f) ? s->p.vocoder_hz
+                                                : BM_VOC_DEFAULT_HZ;
+            /* A carrier above the top band would be a single partial in the
+             * bottom of nothing. Clamped rather than rejected, because the
+             * parameter is a slider. */
+            hz = bm_clampf(hz, 20.0f, BM_VOC_HIGH_HZ);
+            s->voc_inc = hz / s->sample_rate;
+
+            /* The pulse train's level is set by its pitch, not by anything the
+             * user asked for: the differentiator turns each cycle of the
+             * sawtooth into one impulse of fixed area, so a carrier at half the
+             * frequency delivers half as many per second and arrives 3 dB
+             * quieter. One impulse of amplitude 2 per period of 1/inc samples
+             * is a mean square of 4*inc, so this is 1/(2*sqrt(inc)) and the
+             * carrier comes out at unity however it is tuned.
+             *
+             * Without it the vocoder was 3 dB louder at 220 Hz than at 55, and
+             * a control labelled with a pitch is not allowed to be a volume
+             * control - the same rule the ring and drive trims exist for. */
+            s->voc_pulse_g = 1.0f / (2.0f * bm_sqrtf(s->voc_inc));
+        }
+
+        /* The carrier is normalised to unit RMS, but what a band collects from
+         * it is its *density* - power per hertz - and a signal of fixed total
+         * power spread over a wider Nyquist span is thinner everywhere. So the
+         * same channel takes less out of the same carrier as the sample rate
+         * rises, and the whole effect quietly changes level with a setting that
+         * has nothing to do with it.
+         *
+         * Measured on a 300 Hz tone before this existed: peak 1.28 at 8 kHz
+         * against 0.55 at 44.1, which is 7.3 dB of drift across the rates the
+         * library supports and a clipped output at the bottom of them. With the
+         * square root of the rate ratio in, all five land within 1%. */
+        s->voc_out = BM_VOC_GAIN * bm_sqrtf(s->sample_rate / 22050.0f);
+
+        s->voc_wet = s->p.vocoder;
+    }
 #endif
 
     /* Zero means unity, so that an all-zero bm_effects stays a bypass. The
@@ -560,6 +839,7 @@ void bm_effects_state_set(bm_effects_state *s, const bm_effects *e)
                 (s->p.comb > 0.0f && s->p.comb_hz > 0.0f) ||
                 (s->p.chorus > 0.0f) ||
                 (s->p.drive > 0.0f) ||
+                (s->p.vocoder > 0.0f) ||
                 (s->crush_step > 1u) ||
                 (s->p.echo > 0.0f) ||
                 (s->p.reverb > 0.0f) ||
@@ -639,6 +919,55 @@ static float softclip(float x)
     if (x >=  1.0f) return  2.0f / 3.0f;
     if (x <= -1.0f) return -2.0f / 3.0f;
     return x - x * x * x * (1.0f / 3.0f);
+}
+
+/* One vocoder channel: BM_VOC_SECTIONS identical two-pole bandpasses in series,
+ * each transposed direct form II.
+ *
+ * b1 is zero and b2 is -b0 for this filter, so what would be five coefficients
+ * and four state words per section is three and two. Transposed rather than
+ * direct because it holds its state in the output's units: ninety-six of these
+ * sections run per sample, and the direct form's delayed *inputs* are the ones
+ * that lose precision when a band is being fed something far outside its
+ * passband - which is most of what a vocoder's analysis bank is doing at any
+ * moment. */
+static float bp_chain(float x, float b0, float a1, float a2, float *z)
+{
+    int i;
+
+    for (i = 0; i < BM_VOC_SECTIONS * 2; i += 2) {
+        float y = b0 * x + z[i];
+        z[i]     = z[i + 1] - a1 * y;
+        z[i + 1] = -b0 * x - a2 * y;
+        x = y;
+    }
+    return x;
+}
+
+/* The correction that makes a sawtooth band-limited enough to be a carrier.
+ *
+ * A phase accumulator's jump from +1 to -1 happens between two samples, so it
+ * is a step with a fractional position, and the spectrum of that is every
+ * frequency including the ones above Nyquist - which fold back down and land
+ * between the harmonics, where nothing masks them. This subtracts a two-sample
+ * polynomial approximation of the band-limited step, which is the cheapest
+ * known fix and takes the aliasing down by around 20 dB.
+ *
+ * It matters here more than it would in a synthesizer's oscillator, because
+ * the carrier is about to be split into sixteen narrow bands and have each one
+ * held up to the ear on its own. Junk that would be masked in a full-band
+ * sawtooth is not masked in a 200 Hz slice of one. */
+static float polyblep(float t, float dt)
+{
+    if (t < dt) {
+        t /= dt;
+        return t + t - t * t - 1.0f;
+    }
+    if (t > 1.0f - dt) {
+        t = (t - 1.0f) / dt;
+        return t * t + t + t + 1.0f;
+    }
+    return 0.0f;
 }
 
 float bm_effects_tick(bm_effects_state *s, float x)
@@ -730,6 +1059,93 @@ float bm_effects_tick(bm_effects_state *s, float x)
     /* ---- drive ---- */
     if (s->p.drive > 0.0f) {
         y = softclip(y * s->drive_gain) * s->drive_trim;
+    }
+
+    /* ---- vocoder ----
+     *
+     * Analysis, then a carrier, then synthesis. Sixteen bandpasses measure how
+     * loud the voice is in each band; the same sixteen bandpasses then cut a
+     * locally generated carrier into the same bands, and each one is turned up
+     * or down to match what was measured. Nothing of the input reaches the
+     * output - only the sixteen numbers.
+     *
+     * Two passes over the bands rather than one, because the carrier depends on
+     * every envelope: whether it is a tone or noise is decided from how the
+     * measured energy is distributed, and that is not known until all sixteen
+     * have been read. */
+    if (s->voc_wet > 0.0f) {
+        float lo = 0.0f, hi = 0.0f;
+        float saw, pulse, noise, carrier, frac, amt;
+        float sum = 0.0f;
+        int   k;
+
+        for (k = 0; k < s->voc_bands; k++) {
+            float v = bp_chain(y, s->voc_b0[k], s->voc_a1[k], s->voc_a2[k],
+                               s->voc_ana[k]);
+            float m = (v < 0.0f) ? -v : v;
+            float e = s->voc_env[k];
+
+            /* Rectify and smooth, quick up and slow down. Two coefficients
+             * rather than one because the two directions are two different
+             * requirements - see BM_VOC_ATT_MS. */
+            e += ((m > e) ? s->voc_att : s->voc_rel) * (m - e);
+            s->voc_env[k] = e;
+
+            if (k >= s->voc_hi_from) hi += e; else lo += e;
+        }
+
+        /* The carrier.
+         *
+         * A sawtooth differentiated into a pulse train. The sawtooth is the
+         * waveform that can be generated without aliasing for one polynomial's
+         * worth of work; the difference is what makes it *flat*, since a
+         * sawtooth's harmonics fall at 6 dB per octave and a vocoder driven by
+         * one comes out with that tilt laid over the speech - all chest and no
+         * consonants.
+         *
+         * Flat is also what makes the two halves of the carrier
+         * interchangeable. Noise is flat already, so once the sawtooth is too,
+         * one per-band weight corrects both of them - see voc_g, which is where
+         * the tilt that actually matters gets taken out. Correcting a sawtooth
+         * per band instead would have been correct only while the carrier
+         * stayed a sawtooth, which it does not. */
+        s->voc_phase += s->voc_inc;
+        if (s->voc_phase >= 1.0f) s->voc_phase -= 1.0f;
+        saw = 2.0f * s->voc_phase - 1.0f - polyblep(s->voc_phase, s->voc_inc);
+
+        pulse = (saw - s->voc_saw_z) * s->voc_pulse_g;
+        s->voc_saw_z = saw;
+
+        /* White, and deliberately not the tract's noise source: that one is
+         * lowpassed at 5 kHz because real turbulence is, and the top of this
+         * bank is exactly where a carrier must not be rolling off. */
+        {
+            uint32_t r = s->voc_rng;
+            r ^= r << 13;
+            r ^= r >> 17;
+            r ^= r << 5;
+            s->voc_rng = r;
+            noise = ((float)(r >> 16) * (1.0f / 32768.0f) - 1.0f) * BM_VOC_NOISE_G;
+        }
+
+        frac = hi / (hi + lo + 1e-9f);
+        amt  = (frac - BM_VOC_NOISE_LO) / (BM_VOC_NOISE_HI - BM_VOC_NOISE_LO);
+        amt  = bm_clampf(amt, 0.0f, 1.0f);
+        carrier = pulse + (noise - pulse) * amt;
+
+        for (k = 0; k < s->voc_bands; k++) {
+            float v = bp_chain(carrier, s->voc_b0[k], s->voc_a1[k],
+                               s->voc_a2[k], s->voc_syn[k]);
+            sum += v * s->voc_env[k] * s->voc_g[k];
+        }
+
+        /* Mixed against the dry rather than added to it, unlike the echo and
+         * the reverb: this is not something that arrives alongside the voice,
+         * it is what the voice has been replaced by. Half wet is genuinely two
+         * signals at once - the words twice over, once articulated by a person
+         * and once by a machine - which is a real setting and is why the
+         * control is a mix at all rather than a switch. */
+        y = y + (sum * s->voc_out - y) * s->voc_wet;
     }
 
     /* ---- sample-rate reduction ----

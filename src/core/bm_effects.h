@@ -30,6 +30,27 @@
  * decaying silence because a slider went to the top is not a service. */
 #define BM_EFFECTS_TAIL_MAX_MS 2000u
 
+/* Two-pole sections per vocoder channel, in each of the two banks.
+ *
+ * Three, and the third one earns its keep. A channel's skirts are the steepest
+ * spectrum it can report: where the voice falls off faster than the filter
+ * does, a channel stops measuring its own band and starts measuring how much of
+ * its loud neighbours has leaked in, and the vocoder reproduces a flatter, and
+ * therefore brighter, spectrum than it was given. Measured against the voice it
+ * came from, over a sentence:
+ *
+ *   sections   skirts        error slope   scatter   output crest
+ *   2 (4-pole) 12 dB/oct     +1.9 dB/oct   +-6 dB      16.8 dB
+ *   3 (6-pole) 18 dB/oct     +0.7 dB/oct   +-3 dB      13.2 dB
+ *   4 (8-pole) 24 dB/oct     +0.7 dB/oct   +-4 dB      11.8 dB
+ *
+ * The fourth section buys nothing on the slope, which is where the argument
+ * for it would have to come from, and costs a third more arithmetic. Three also
+ * happens to land the output's crest factor on the voice's own 13.2 dB, which
+ * is what lets the vocoder be levelled against the dry signal without its peaks
+ * arriving somewhere different. */
+#define BM_VOC_SECTIONS 3
+
 typedef struct bm_effects_state {
     bm_effects p;
     float sample_rate;
@@ -78,6 +99,31 @@ typedef struct bm_effects_state {
     float    verb_damp_z[BM_REVERB_COMBS];/* the lowpass in each comb's loop */
     float    verb_fb;
     float    verb_wet;
+
+    /* Vocoder. Three coefficients per band, shared by the analysis and the
+     * synthesis filter - both banks are the same bank, which is what makes the
+     * measurement and the thing built from it line up. */
+    float    voc_b0[BM_VOCODER_BANDS];
+    float    voc_a1[BM_VOCODER_BANDS];
+    float    voc_a2[BM_VOCODER_BANDS];
+    float    voc_g[BM_VOCODER_BANDS];    /* what each band contributes */
+
+    /* Three biquad sections per band per path, two state words each. */
+    float    voc_ana[BM_VOCODER_BANDS][BM_VOC_SECTIONS * 2];
+    float    voc_syn[BM_VOCODER_BANDS][BM_VOC_SECTIONS * 2];
+    float    voc_env[BM_VOCODER_BANDS];
+
+    int      voc_bands;      /* how many centres the sample rate can carry */
+    int      voc_hi_from;    /* first band counted as "high" for the carrier */
+    float    voc_att;        /* envelope follower, rising */
+    float    voc_rel;        /* and falling */
+    float    voc_phase;      /* carrier, 0..1 */
+    float    voc_inc;        /* its advance per sample */
+    float    voc_saw_z;      /* previous saw, for the differentiator */
+    float    voc_pulse_g;    /* brings the pulse train to unit RMS */
+    float    voc_out;        /* output gain, once the rate is known */
+    uint32_t voc_rng;        /* the carrier's noise, when it is noise */
+    float    voc_wet;
 #endif
 
     float ring_trim;

@@ -334,12 +334,20 @@ float bm_voice_formant_scale(const bm_voice *voice, int index);
  * dropdown apart instead of being two more entries in a preset table that would
  * otherwise have to hold every combination.
  *
- * The chain runs ring -> comb -> chorus -> drive -> crush, and that order is
- * deliberate: ring modulation on the clean voice keeps its sidebands distinct,
- * the comb adds the resonance, the chorus multiplies whatever has been built so
- * far into several detuned copies, and the drive then saturates the lot - which
- * is what makes a robot sound angry rather than merely mechanical. Crush is
- * last because it is the digital layer, applied to a finished sound.
+ * The chain runs ring -> comb -> chorus -> drive -> vocoder -> crush, and that
+ * order is deliberate: ring modulation on the clean voice keeps its sidebands
+ * distinct, the comb adds the resonance, the chorus multiplies whatever has been
+ * built so far into several detuned copies, and the drive then saturates the lot
+ * - which is what makes a robot sound angry rather than merely mechanical. Crush
+ * is last because it is the digital layer, applied to a finished sound.
+ *
+ * The vocoder sits between drive and crush because it is the last thing done to
+ * the voice as a voice. It keeps only the band-by-band loudness of whatever
+ * reaches it, so everything before it survives to the output as spectrum and
+ * nothing else - a ring modulator ahead of it moves energy between bands and is
+ * audible; a chorus ahead of it detunes copies of a signal that is about to be
+ * discarded, and is very nearly not. Drive ahead of it is the useful one: the
+ * harmonics it adds are what open the top bands.
  *
  * Chorus before drive rather than after, because a chorus after distortion
  * smears the harmonics the distortion just made and the result is mud; every
@@ -390,6 +398,26 @@ float bm_voice_formant_scale(const bm_voice *voice, int index);
 
 #ifndef BM_CHORUS_LEN
 #define BM_CHORUS_LEN 1024
+#endif
+
+/* Vocoder channels. Sixteen bands from 150 Hz to 6.3 kHz, which works out at a
+ * third of an octave each - and third-octave spacing is chosen for a reason
+ * about hearing rather than about filters: across the speech range a third of
+ * an octave is close to a critical band, so one channel holds about as much
+ * spectrum as the ear resolves in one place. Below that the channels are
+ * reporting detail nobody can hear being lost; well above it the vowels start
+ * blurring into each other.
+ *
+ * Sixteen is a choice within that, not a derivation. Hardware vocoders ran
+ * anywhere from ten channels to a little over twenty; sixteen puts the span
+ * that matters for speech at a third of an octave apiece and stops.
+ *
+ * No delay lines - this is filters and envelopes, 272 floats in all. Sizeable
+ * in operations rather than in memory: 96 biquads per sample, which is the most
+ * expensive thing in the library by some distance and still nothing on a
+ * desktop. -DBM_WITH_EFFECTS=0 removes it with the rest of the stage. */
+#ifndef BM_VOCODER_BANDS
+#define BM_VOCODER_BANDS 16
 #endif
 
 typedef struct bm_effects {
@@ -444,6 +472,31 @@ typedef struct bm_effects {
      * merely synthetic. Output level is compensated, so this changes the
      * timbre and not the loudness. */
     float drive;         /* 0..1 */
+
+    /* A channel vocoder, in the original sense: the signal is split into bands,
+     * the loudness of each band is measured, and those measurements are used to
+     * shape a carrier generated here. What comes out has the *articulation* of
+     * the voice and the *pitch* of the carrier, because everything about the
+     * input except its band-by-band loudness is thrown away.
+     *
+     * That is the difference between this and everything else in the chain. The
+     * other effects alter the voice; this one measures it and then builds
+     * something new to those measurements. It is also why the controls are what
+     * they are - there is nothing to set about the input, only about the thing
+     * being driven.
+     *
+     * `vocoder_hz` is the carrier's pitch, and since it does not move, neither
+     * does the output's: the input's intonation is one of the things discarded.
+     * A vocoder is a monotone by construction, which is most of why it sounds
+     * like a machine.
+     *
+     * The carrier turns itself into noise when the input stops being voiced,
+     * decided from the same band measurements. Without that an /s/ arrives as a
+     * buzz at the carrier pitch, because a pitched carrier has nothing
+     * broadband to offer the bands where an /s/ lives - the oldest complaint
+     * there is about vocoders, and the oldest fix. */
+    float vocoder;       /* 0..1 wet mix */
+    float vocoder_hz;    /* carrier pitch; 0 selects the default, about 110 */
 
     /* Sample-rate reduction: hold every Nth sample. The aliasing it produces
      * is the point - it is the sound of a converter that could not keep up,
@@ -568,11 +621,19 @@ typedef struct bm_engine bm_engine;
  * static-asserts. Raised from 65536 when echo and reverb arrived: their delay
  * lines are 44 KB between them, and the engine went from 31 KB to 76 KB.
  *
- * That is a desktop number and it is meant to be. The embedded path has not
+ * 77,752 with the vocoder in it, which added 1,088 bytes of filter state and no
+ * delay line at all.
+ *
+ * That is a desktop number and it is meant to be. The embedded path has barely
  * moved: -DBM_WITH_EFFECTS=0 removes every one of these buffers along with the
- * stage that reads them, and the engine measures 19,072 bytes - so a
+ * stage that reads them, and the engine measures 19,120 bytes - so a
  * microcontroller build sets BM_ENGINE_RESERVED to 24576 and is done. Tuning
- * BM_ECHO_LEN and BM_REVERB_LEN down is the middle option. */
+ * BM_ECHO_LEN and BM_REVERB_LEN down is the middle option.
+ *
+ * The 16 bytes that build did gain are the two vocoder parameters, twice over.
+ * bm_effects is the settings, not the machinery, and it is not compiled out -
+ * a build without the stage still accepts and stores a chain, so a voice file
+ * written on a desktop loads on a microcontroller and simply does less. */
 #ifndef BM_ENGINE_RESERVED
 #define BM_ENGINE_RESERVED 131072
 #endif

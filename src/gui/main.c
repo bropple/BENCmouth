@@ -222,6 +222,12 @@ static const param_row FX_PARAMS[] = {
     { "chorus",  "chorus",     0.0f,   1.0f,  "%.2f"    },
     { "chorus_hz","chorus hz", 0.0f,   3.0f,  "%.2f Hz" },
     { "drive",   "drive",      0.0f,   1.0f,  "%.2f"    },
+    { "vocoder", "vocoder",    0.0f,   1.0f,  "%.2f"    },
+    /* The carrier's pitch. Top of the range is the top of a soprano; past that
+     * the bands are further apart than the harmonics and the vocoder has more
+     * channels than there is anything to put in them. 0 is the default, about
+     * 110, the same way chorus_hz and echo_ms work. */
+    { "vocoder_hz","voc. hz",  0.0f, 400.0f,  "%.0f Hz" },
     { "crush",   "crush",      0.0f,   1.0f,  "%.2f"    },
     { "echo",    "echo",       0.0f,   1.0f,  "%.2f"    },
     /* 0 is not "no delay" - it selects the default around 180 ms, the same way
@@ -1056,7 +1062,7 @@ int main(int argc, char **argv)
          * Briefly four columns instead, which fitted everything at once and
          * cost 100 px of width and a 940 px minimum. Scrolling one column is
          * cheaper than that, and it is the arrangement that keeps working: the
-         * effects list has grown four times and a layout that has to be redrawn
+         * effects list has grown five times and a layout that has to be redrawn
          * on each occasion is a layout that will be wrong again.
          *
          * The slider metrics are proportional, so the columns lay themselves

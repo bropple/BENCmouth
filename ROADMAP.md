@@ -531,7 +531,7 @@ that need an actual decision when we get there:
       - **The storage budget.** The two delay lines are 44 KB between them and the engine
         went from 31 KB to 76 KB, so `BM_ENGINE_RESERVED` doubled to 131072. The embedded
         path is unmoved: `-DBM_WITH_EFFECTS=0` removes every buffer along with the stage
-        and the engine measures 19,104 bytes, so a microcontroller build sets the reserve
+        and the engine measures 19,120 bytes, so a microcontroller build sets the reserve
         to 24576. `BM_ECHO_LEN` and `BM_REVERB_LEN` are the middle option.
 
       **The effects column scrolls.** Fourteen controls will not fit in the ten rows a
@@ -539,7 +539,7 @@ that need an actual decision when we get there:
       taller window runs out of screen, and a fourth column cost 100 px of width and a
       940 px minimum. Scrolling one column costs a 12 px gutter.
 
-      It is also the arrangement that keeps working. The effects list has grown four
+      It is also the arrangement that keeps working. The effects list has grown five
       times now, and a layout that has to be redrawn on each occasion is a layout that
       will be wrong again. `bm_scroll_rows` moves by whole rows rather than pixels,
       which is not cosmetic: a half-scrolled row is still a live control with its
@@ -547,6 +547,61 @@ that need an actual decision when we get there:
       would land on a slider nobody can see. Whole rows mean the ones out of range are
       simply not drawn. Slider ids follow the parameter rather than the screen row, so a
       number being typed into keeps its identity while the column moves under it.
+
+- [x] **A vocoder** — `vocoder` / `vocoder_hz`, between drive and crush, with `Vocoder`
+      and `Chorale` as presets.
+
+      The first effect here that does not alter the voice. Sixteen third-octave channels
+      measure how loud it is in each band; a carrier generated inside the stage is cut
+      into the same sixteen bands and each one is turned up or down to match. Nothing of
+      the input reaches the output — only the sixteen numbers — which is why the output
+      carries the words and the carrier's pitch, and why an effect placed ahead of it
+      survives to the output only insofar as it moved energy between bands.
+
+      Almost every constant in it is a measurement, and three of them were surprises:
+
+      - **Three sections a channel, not two.** A channel's skirts are the steepest
+        spectrum it can report: where the voice falls off faster than the filter does, a
+        channel stops measuring its own band and starts measuring what has leaked in from
+        its louder neighbours, and the vocoder reproduces something flatter — brighter —
+        than it was given. Against the voice it came from: 4-pole is +1.9 dB/octave out,
+        6-pole is +0.7, 8-pole is also +0.7 and costs a third more arithmetic. Six poles
+        also happens to land the output's crest factor on the voice's own 13.2 dB, which
+        is what lets the two be levelled against each other at all.
+
+      - **The carrier is a differentiated sawtooth, and each band is then weighted by
+        `sqrt(f_low/fc)`.** The bands are constant-Q, so the top one is 42 times wider
+        than the bottom one and collects 42 times as much of a flat carrier. Measured
+        through the bank: a sawtooth arrives 17 dB down across the range, its derivative
+        16 dB up, and a carrier has to sit at the geometric middle of those. Differencing
+        the sawtooth makes it flat and the per-band weight then takes the bandwidth back
+        out — and because *both* halves of the carrier are flat, one weight serves the
+        noise as well.
+
+      - **Both halves of the carrier are normalised to unit RMS, and the output by the
+        square root of the sample rate.** Neither is cosmetic. The differentiator turns
+        each cycle into one impulse of fixed area, so an untrimmed carrier is 3 dB
+        quieter at 55 Hz than at 220 — a pitch control acting as a volume control. And
+        what a channel collects is power *density*, so the same carrier is thinner
+        everywhere at a higher rate: before the rate term, a 300 Hz tone peaked at 1.28
+        at 8 kHz against 0.55 at 44.1. With both in, five rates land within 1%.
+
+      The carrier switches to noise when the voice stops being voiced, decided from the
+      share of the envelope sum above 2.5 kHz — 0.03 or less on vowels and nasals, 0.56
+      to 0.91 on the voiceless fricatives and stop bursts, which is two orders of
+      magnitude and does not need a clever detector. `/z/` and stop bursts sit in the
+      crossfade, correctly: one is a fricative with voicing in it, the other is a
+      transient on its way into a vowel.
+
+      What it costs: 96 biquads a sample, by a distance the most expensive thing in the
+      library, against five for the entire vocal tract. Only 272 floats of state, though —
+      no delay lines — and `-DBM_WITH_EFFECTS=0` removes all of it.
+
+      Recorded rather than fixed: on high-pitched voices it runs 1 to 3 dB hot and its
+      peaks reach the host limiter — Deep at −0.9 dB against Duchess at +2.4. A high
+      fundamental puts at most one harmonic in each low channel, so more of the bank is
+      driven independently and more of it lines up. Correcting it would need a function
+      of the input's pitch, which is exactly the thing the vocoder is built not to know.
 
 - [x] **Tempo is a control, and it does something.** Song mode showed a tempo but had no
       way to change it, and changing it would not have mattered: nothing outside the

@@ -16,7 +16,7 @@ public-domain 1976 US Naval Research Laboratory report. See `ref/README.md` for 
 provenance.
 
 **No dynamic allocation. No libm in the core. No I/O below the host layer.** The engine
-holds all its state in caller-supplied storage — 19 KB without the effects stage, 75 KB
+holds all its state in caller-supplied storage — 19 KB without the effects stage, 76 KB
 with it, since two of those effects are delay lines — which means it drops into a
 microcontroller, an audio callback, or a WASM module unchanged.
 
@@ -443,12 +443,14 @@ bm -v cadet -e metal "resistance is useless"
 | `comb` / `comb_hz` | feedback comb, evenly spaced resonances | speaking through a metal tube, literally |
 | `chorus` / `chorus_hz` | three delay taps swept by an LFO | three detuned copies — a *moving* delay is a pitch shift, a fixed one is not |
 | `drive` | cubic soft clip with pre-gain | harmonics that were not there — this is what *aggressive* is |
+| `vocoder` / `vocoder_hz` | sixteen bands measured, then rebuilt on a carrier | the words, on a pitch you choose — see below |
 | `crush` | hold every Nth sample | aliasing; the sound of a converter that could not keep up |
 | `echo` / `echo_ms` | one delayed copy, fed back | repeats — the same mechanism as the comb, at a length the ear separates |
 | `reverb` / `reverb_size` | four combs into two allpasses | a room: many arrivals rather than a few countable ones |
 | `level` | output gain | see below |
 
-The chain runs **ring → comb → chorus → drive → crush → echo → reverb**, and the order is
+The chain runs **ring → comb → chorus → drive → vocoder → crush → echo → reverb**, and
+the order is
 deliberate:
 ring modulation on the clean voice keeps its sidebands distinct, the comb adds the
 resonance, the chorus multiplies whatever has been built into several detuned copies,
@@ -456,6 +458,27 @@ and the drive then saturates the lot — which is what makes a robot sound angry
 than merely mechanical. Crush ends the signal path because it is the digital layer, applied to a
 finished sound. Chorus goes *before* drive because modulation after distortion smears
 the harmonics the distortion just made; every guitar rig is wired the same way.
+
+**The vocoder is the odd one out**, and where it sits follows from that. Everything else
+alters the voice; this one *measures* it — sixteen third-octave channels, each reporting
+how loud the voice is in its band — and then builds something new to those sixteen
+numbers, by cutting an internally generated carrier into the same sixteen bands and
+turning each one up or down to match. Nothing of the input reaches the output. So it goes
+last of the things done to the voice as a voice: whatever happens before it survives only
+as spectrum, which makes a ring modulator ahead of it audible, a chorus ahead of it very
+nearly not, and drive ahead of it genuinely useful, because the harmonics it adds are what
+open the top channels.
+
+`vocoder_hz` is the carrier's pitch and it does not move, so neither does the output's —
+a vocoder is a monotone by construction, and that is most of why it sounds like a machine.
+The carrier turns itself into noise when the voice stops being voiced, decided from the
+same sixteen measurements: without that an `/s/` arrives as a buzz at the carrier pitch,
+which is the oldest complaint there is about vocoders. Two presets use it: `Vocoder` on
+its own, and `Chorale`, an octave lower and in a room.
+
+It is by a distance the most expensive thing in the library — 96 biquads a sample against
+five for the whole vocal tract — and like the rest of the stage it disappears entirely
+under `-DBM_WITH_EFFECTS=0`.
 
 Echo and reverb come after all of it, because they are not done to the voice but to the
 space around it. Distorting an echo squashes the repeats up against the dry signal until

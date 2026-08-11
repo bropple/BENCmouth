@@ -590,11 +590,203 @@ static void test_ambience_keeps_level(void)
     }
 }
 
+/* The claim a vocoder makes: the output's pitch is the carrier's and not the
+ * voice's. Everything else it does follows from that, so it is the thing to
+ * measure - and it is measurable, because a fundamental is a spike in a
+ * spectrum and there are two candidate places for it to be.
+ *
+ * Deliberately with the input at a pitch nowhere near the carrier and unrelated
+ * to it by any simple ratio, so neither can be mistaken for a harmonic of the
+ * other. */
+static void test_vocoder_takes_the_carrier_pitch(void)
+{
+    bm_voice   v;
+    bm_effects fx;
+    size_t     n;
+    double     dry_in, dry_car, wet_in, wet_car;
+    const double in_hz = 110.0, car_hz = 174.0;
+
+    printf("vocoder pitch\n");
+
+    bm_voice_default(&v);
+    v.f0_flutter = 0.0f;
+    v.prosody = 0.0f;
+
+    bm_effects_default(&fx);
+    n = render(&v, &fx, "[note A2][hold 600] AA1 AA1 AA1", a, sizeof a / sizeof a[0]);
+    if (n < 20000) { check(0, "renders"); return; }
+    dry_in  = bin(a + n / 3, 8192, in_hz);
+    dry_car = bin(a + n / 3, 8192, car_hz);
+
+    fx.vocoder = 1.0f;
+    fx.vocoder_hz = (float)car_hz;
+    n = render(&v, &fx, "[note A2][hold 600] AA1 AA1 AA1", b, sizeof b / sizeof b[0]);
+    wet_in  = bin(b + n / 3, 8192, in_hz);
+    wet_car = bin(b + n / 3, 8192, car_hz);
+
+    printf("    at the voice's 110 Hz:  dry %.3e  vocoded %.3e\n", dry_in, wet_in);
+    printf("    at the carrier's 174 Hz: dry %.3e  vocoded %.3e\n", dry_car, wet_car);
+
+    check(wet_car > wet_in * 10.0, "the output is at the carrier's pitch");
+    check(wet_in < dry_in * 0.05, "and the voice's own pitch is gone from it");
+    check(wet_car > dry_car * 10.0, "which is not where the voice had energy");
+}
+
+/* And the other half of the claim: the words survive. A vocoder that took the
+ * pitch and lost the vowels would pass the test above and be useless.
+ *
+ * Two vowels with formants in different places, measured where each of them
+ * puts its second formant. The vocoded pair have to differ in the same
+ * direction as the spoken pair - that is what "it still says which vowel it is"
+ * means in a number. */
+static void test_vocoder_keeps_the_vowel(void)
+{
+    bm_voice   v;
+    bm_effects fx;
+    size_t     n;
+    double     aa_dry, iy_dry, aa_wet, iy_wet;
+    /* F2 of IY is around 2200 and of AA around 1100, so this bin separates
+     * them by a wide margin in either direction. */
+    const double f2 = 2200.0;
+
+    printf("vocoder intelligibility\n");
+
+    bm_voice_default(&v);
+    v.f0_flutter = 0.0f;
+    v.prosody = 0.0f;
+
+    bm_effects_default(&fx);
+    n = render(&v, &fx, "[hold 500] AA1 AA1 AA1", a, sizeof a / sizeof a[0]);
+    aa_dry = bin(a + n / 3, 8192, f2) / (bin(a + n / 3, 8192, 700.0) + 1e-30);
+    n = render(&v, &fx, "[hold 500] IY1 IY1 IY1", a, sizeof a / sizeof a[0]);
+    iy_dry = bin(a + n / 3, 8192, f2) / (bin(a + n / 3, 8192, 700.0) + 1e-30);
+
+    fx.vocoder = 1.0f;
+    fx.vocoder_hz = 110.0f;
+    n = render(&v, &fx, "[hold 500] AA1 AA1 AA1", b, sizeof b / sizeof b[0]);
+    aa_wet = bin(b + n / 3, 8192, f2) / (bin(b + n / 3, 8192, 700.0) + 1e-30);
+    n = render(&v, &fx, "[hold 500] IY1 IY1 IY1", b, sizeof b / sizeof b[0]);
+    iy_wet = bin(b + n / 3, 8192, f2) / (bin(b + n / 3, 8192, 700.0) + 1e-30);
+
+    printf("    2200 Hz over 700 Hz:  spoken  AA %.3e  IY %.3e  (%.0fx apart)\n",
+           aa_dry, iy_dry, iy_dry / aa_dry);
+    printf("                          vocoded AA %.3e  IY %.3e  (%.0fx apart)\n",
+           aa_wet, iy_wet, iy_wet / aa_wet);
+
+    check(iy_dry > aa_dry * 10.0, "the two vowels differ when spoken");
+
+    /* Far less than the spoken pair, and that is not a defect being tolerated -
+     * it is the mechanism. Sixteen channels with 18 dB/octave skirts cannot
+     * reproduce a valley deeper than those skirts, and a synthesized AA has
+     * nearly 50 dB of nothing where IY has its second formant. The contrast
+     * comes back as several times rather than several thousand, which is what a
+     * vocoder sounds like and is still unmistakably the vowel. */
+    check(iy_wet > aa_wet * 4.0, "and they still differ after the vocoder");
+}
+
+/* An /s/ has to arrive as an /s/. A pitched carrier has nothing broadband to
+ * offer the bands a fricative lives in, so without the switch to noise the
+ * output at 5 kHz is a handful of carrier harmonics - periodic where the input
+ * was not. Measured as periodicity rather than as level, because the level is
+ * roughly right either way and it is the wrong kind of energy that is the
+ * problem: a buzz and a hiss of the same loudness differ in how well the signal
+ * predicts itself one pitch period later. */
+static void test_vocoder_says_s(void)
+{
+    bm_voice   v;
+    bm_effects fx;
+    size_t     n, i, lag;
+    double     num, den, corr_s, corr_v;
+
+    printf("vocoder on unvoiced sound\n");
+
+    bm_voice_default(&v);
+    bm_effects_default(&fx);
+    fx.vocoder = 1.0f;
+    fx.vocoder_hz = 110.0f;
+    lag = (size_t)(FS / 110.0f + 0.5f);           /* one carrier period */
+
+    /* /s/: the carrier should have gone to noise, so the output must not
+     * correlate with itself a carrier period later. */
+    n = render(&v, &fx, "[hold 400] S S S", a, sizeof a / sizeof a[0]);
+    if (n < 8000) { check(0, "renders"); return; }
+    num = den = 0.0;
+    for (i = n / 3; i + lag < n / 3 + 8192; i++) {
+        num += (double)a[i] * a[i + lag];
+        den += (double)a[i] * a[i];
+    }
+    corr_s = (den > 0.0) ? num / den : 0.0;
+
+    /* A vowel through the same settings, as the control: there the carrier is
+     * a pulse train and the output had better be strongly periodic. */
+    n = render(&v, &fx, "[hold 400] AA1 AA1 AA1", b, sizeof b / sizeof b[0]);
+    num = den = 0.0;
+    for (i = n / 3; i + lag < n / 3 + 8192; i++) {
+        num += (double)b[i] * b[i + lag];
+        den += (double)b[i] * b[i];
+    }
+    corr_v = (den > 0.0) ? num / den : 0.0;
+
+    printf("    self-correlation one carrier period later: S %.3f, AA %.3f\n",
+           corr_s, corr_v);
+
+    check(corr_v > 0.6, "a vowel comes out periodic at the carrier's pitch");
+    check(corr_s < 0.3, "and an /s/ comes out as noise rather than a buzz");
+}
+
+/* Sample rates the bank does not entirely fit into. Nothing may blow up, go
+ * silent, or land at a wildly different level - the vocoder simply becomes a
+ * vocoder with fewer channels. */
+static void test_vocoder_survives_low_rates(void)
+{
+    static const float RATES[] = { 8000.0f, 11025.0f, 16000.0f, 22050.0f,
+                                   44100.0f };
+    int   k;
+    int   bad = 0;
+
+    printf("vocoder across sample rates\n");
+
+    for (k = 0; k < (int)(sizeof RATES / sizeof RATES[0]); k++) {
+        bm_effects_state st;
+        bm_effects       fx;
+        size_t i, n;
+        double energy = 0.0, peak = 0.0;
+
+        bm_effects_default(&fx);
+        fx.vocoder = 1.0f;
+        fx.vocoder_hz = 110.0f;
+
+        bm_effects_state_init(&st, RATES[k]);
+        bm_effects_state_set(&st, &fx);
+
+        /* A second of a 300 Hz tone: something every band arrangement has
+         * energy for, at every rate here. */
+        n = (size_t)RATES[k];
+        for (i = 0; i < n; i++) {
+            float x = (float)sin(2.0 * 3.14159265358979 * 300.0 *
+                                 (double)i / (double)RATES[k]) * 0.3f;
+            float y = bm_effects_tick(&st, x);
+            double m = fabs((double)y);
+            if (i > n / 4) {
+                energy += (double)y * y;
+                if (m > peak) peak = m;
+            }
+            if (!(y == y) || m > 100.0) { bad++; break; }
+        }
+        printf("    %5.0f Hz  rms %.4f  peak %.4f\n", RATES[k],
+               sqrt(energy / (double)(n - n / 4)), peak);
+        if (peak < 0.005) { printf("      ^ silent\n"); bad++; }
+        if (peak > 2.0)   { printf("      ^ runaway\n"); bad++; }
+    }
+    check(bad == 0, "every rate produces a finite, audible, sane output");
+}
+
 static void test_presets_and_params(void)
 {
     static const char *KEYS[] = {
         "ring", "ring_hz", "ring_drift", "comb", "comb_hz", "chorus", "chorus_hz",
-        "drive", "crush", "echo", "echo_ms", "reverb", "reverb_size", "level"
+        "drive", "vocoder", "vocoder_hz", "crush", "echo", "echo_ms", "reverb",
+        "reverb_size", "level"
     };
     const int nkeys = (int)(sizeof KEYS / sizeof KEYS[0]);
     int p, k, bad = 0;
@@ -657,6 +849,62 @@ static void test_presets_and_params(void)
     check(bad == 0, "every preset survives a set_param round-trip");
 }
 
+/* The preset table is positional: sixteen bare floats a row, in struct order.
+ * Adding a field to bm_effects means editing every row, in the right place, and
+ * a row that ends up shifted by one is still sixteen valid floats - it just
+ * quietly puts an echo time into a mix control.
+ *
+ * So: every field has a range it can plausibly hold, and a shifted row violates
+ * one of them. This is not a check on the values chosen; it is a check that
+ * they are in the columns they were written for. */
+static void test_presets_are_plausible(void)
+{
+    static const struct { const char *key; float lo, hi; } RANGE[] = {
+        { "ring",        0.0f,    1.0f },
+        { "ring_hz",     0.0f, 2000.0f },
+        { "ring_drift",  0.0f,    1.0f },
+        { "comb",        0.0f,    1.0f },
+        { "comb_hz",     0.0f, 2000.0f },
+        { "chorus",      0.0f,    1.0f },
+        { "chorus_hz",   0.0f,   12.0f },
+        { "drive",       0.0f,    1.0f },
+        { "vocoder",     0.0f,    1.0f },
+        { "vocoder_hz",  0.0f,  400.0f },
+        { "crush",       0.0f,    1.0f },
+        { "echo",        0.0f,    1.0f },
+        { "echo_ms",     0.0f,  400.0f },
+        { "reverb",      0.0f,    1.0f },
+        { "reverb_size", 0.0f,    1.0f },
+        { "level",       0.0f,    8.0f }
+    };
+    const int n = (int)(sizeof RANGE / sizeof RANGE[0]);
+    int p, k, bad = 0;
+
+    printf("preset field ranges\n");
+
+    for (p = 0; p < bm_effects_preset_count(); p++) {
+        const bm_effects *fx = bm_effects_preset_at(p);
+        const float *f = (const float *)(const void *)&fx->ring;
+        for (k = 0; k < n; k++) {
+            if (f[k] < RANGE[k].lo || f[k] > RANGE[k].hi) {
+                printf("    %s: %s = %.6g, outside [%.6g, %.6g]\n",
+                       fx->name, RANGE[k].key, (double)f[k],
+                       (double)RANGE[k].lo, (double)RANGE[k].hi);
+                bad++;
+            }
+        }
+    }
+    check(bad == 0, "every preset's values sit in the columns they belong to");
+
+    /* And the ranges themselves have to cover the struct, or a field added at
+     * the end would be unchecked by the loop above. */
+    {
+        size_t span = offsetof(bm_effects, level) + sizeof(float)
+                    - offsetof(bm_effects, ring);
+        check((size_t)n == span / sizeof(float), "and every field has a range");
+    }
+}
+
 /* No preset may push the output into the host limiter, and none may be so far
  * below the others that switching to it sounds like a mistake. */
 static void test_presets_are_level_matched(void)
@@ -701,6 +949,7 @@ int main(void)
     printf("  built with BM_WITH_EFFECTS=0; the stage is compiled out\n");
     test_bypass_is_exact();
     test_presets_and_params();
+    test_presets_are_plausible();
 #else
     test_bypass_is_exact();
     test_ring_makes_sidebands();
@@ -709,10 +958,15 @@ int main(void)
     test_crush_holds_samples();
     test_comb_resonates();
     test_chorus_detunes();
+    test_vocoder_takes_the_carrier_pitch();
+    test_vocoder_keeps_the_vowel();
+    test_vocoder_says_s();
+    test_vocoder_survives_low_rates();
     test_echo_repeats();
     test_reverb_is_dense();
     test_ambience_keeps_level();
     test_presets_and_params();
+    test_presets_are_plausible();
     test_presets_are_level_matched();
 #endif
     printf("\n%s (%d failure%s)\n\n", failures ? "FAILURES" : "all passed",
