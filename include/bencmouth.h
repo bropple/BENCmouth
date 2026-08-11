@@ -30,7 +30,7 @@ extern "C" {
  * both shipped an About box saying 0.1.3, because nothing compared the two. */
 #define BM_VERSION_MAJOR 0
 #define BM_VERSION_MINOR 2
-#define BM_VERSION_PATCH 2
+#define BM_VERSION_PATCH 3
 
 /* ------------------------------------------------------------------ *
  * Compile-time configuration

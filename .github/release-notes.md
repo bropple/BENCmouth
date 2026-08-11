@@ -4,6 +4,59 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.2.3
+
+**There is a vocoder.** A proper channel vocoder at the end of the signal path, not an
+imitation of one: sixteen third-octave channels measure how loud the voice is in each
+band, and a carrier generated inside the stage is cut into the same sixteen bands and
+turned up or down to match. Nothing of the input reaches the output except those sixteen
+numbers, which is why what comes out has the *words* and the *carrier's* pitch. A vocoder
+is a monotone by construction, and that is most of why it sounds like a machine.
+
+Two controls, `vocoder` and `vocoder_hz`, and two presets: `Vocoder` on its own, and
+`Chorale` an octave lower with a room around it. The chain now runs **ring → comb →
+chorus → drive → vocoder → crush → echo → reverb** — it goes last of the things done to
+the voice as a voice, because everything before it survives to the output only as
+spectrum. A ring modulator ahead of it is audible, a chorus ahead of it very nearly is
+not, and drive ahead of it is the useful one: the harmonics it adds are what open the top
+channels.
+
+The carrier turns itself into noise when the voice stops being voiced, decided from the
+same sixteen measurements — the share of energy above 2.5 kHz runs 0.03 or less on vowels
+and nasals against 0.56 to 0.91 on the voiceless fricatives, which is two orders of
+magnitude and does not need a clever detector. Without it an `/s/` arrives as a buzz at
+the carrier pitch, which is the oldest complaint there is about vocoders.
+
+Nearly every constant in it is a measurement rather than a choice. Three sections per
+channel rather than two, because a channel's filter skirts are the steepest spectrum it
+can report and a shallower one reproduces something brighter than it was given — 4-pole
+came out +1.9 dB/octave wrong, 6-pole +0.7, and 8-pole also +0.7 for a third more
+arithmetic. The carrier is a differentiated sawtooth with a per-band weight of
+`sqrt(f_low/fc)`, because measured through the bank a sawtooth arrives 17 dB down across
+the range and its derivative 16 dB up, and a carrier has to sit at the geometric middle of
+those. Both halves of the carrier are held to unit RMS and the output is scaled by the
+square root of the sample rate, without which a pitch control was also a volume control
+and a 300 Hz tone peaked at 1.28 at 8 kHz against 0.55 at 44.1.
+
+It costs 96 biquads a sample — by a distance the most expensive thing in the library,
+against five for the entire vocal tract — and 272 floats of state, with no delay line at
+all. Like the rest of the stage it disappears under `-DBM_WITH_EFFECTS=0`, and an all-zero
+chain is still a bit-for-bit bypass, so `BENCmouth Retro` has not moved.
+
+Known and recorded rather than hidden: on high-pitched voices it runs 1 to 3 dB hot and
+its peaks reach the limiter. A high fundamental puts at most one harmonic in each low
+channel, so more of the bank is driven independently and more of it lines up. Correcting
+that would need a function of the input's pitch, which is exactly the thing a vocoder is
+built not to know; `level` is the control for it.
+
+**Fixed: saving a song dropped six of its effect settings.** `ring_drift`, `echo`,
+`echo_ms`, `reverb`, `reverb_size` and `level` were never written to a `.bmsong` — the
+list was fixed in place before those parameters existed and nothing went back to it — so a
+song saved with a room on it loaded back without one, silently. The same fault the voice
+file had, found the same way and only once something saved a file and read it back field
+by field. The song tests do that now, so the next parameter added cannot go quiet there
+either.
+
 ## New in 0.2.2
 
 **Windows has an installer.** `bencmouth-VERSION-windows-setup.exe` puts BENCmouth in
