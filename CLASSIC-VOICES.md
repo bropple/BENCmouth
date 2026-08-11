@@ -160,7 +160,7 @@ and it turned out to be the more useful arrangement anyway, because the two now
 the same ring on the child are one dropdown apart, rather than two more entries in a
 preset table that would otherwise have to hold every combination.
 
-Four effects ship, in a fixed chain:
+Four effects came out of this exercise, in a fixed chain:
 
 | Stage | What it is | What it is for |
 |---|---|---|
@@ -169,11 +169,19 @@ Four effects ship, in a fixed chain:
 | `drive` | cubic soft clip with pre-gain | harmonics that were not there — *aggression* |
 | `crush` | hold every Nth sample | aliasing; the sound of a converter that could not keep up |
 
-Order matters and it is `ring → comb → drive → crush`: ring modulation on the clean
+Order matters and it was `ring → comb → drive → crush`: ring modulation on the clean
 voice keeps its sidebands distinct, the comb adds the resonance, and the drive then
 saturates everything above it, which is what makes a robot sound angry rather than
 merely mechanical. Crush is last because it is the digital layer, applied to a
 finished sound.
+
+Those four are what the classic-voice work needed and they are what this section is an
+account of. The stage has grown since — a chorus, an echo, a reverb, a carrier drift, an
+output level and a vocoder — and the chain now runs
+`ring → comb → chorus → drive → vocoder → crush → echo → reverb`. **README.md carries the
+current list**; this page is deliberately left as the record of the four that the
+archetypes called for, because the argument above is about those four and does not
+improve by being restated every time another one lands.
 
 Two presets are the point of the exercise. **Sentinel** is the metallic sentry — ring
 for the inharmonic edge, a low comb, only a little drive, because it is meant to sound
@@ -183,9 +191,11 @@ novelty. The `Sentry` and `Aggressor` presets pair each with a voice — see *Wh
 live*, below, for how that pairing is expressed.
 
 `-DBM_WITH_EFFECTS=0` removes the whole stage, and that is worth doing on a
-microcontroller: it drops the code *and* the comb delay line, which is 8 KB and the
-only sizeable buffer in the library. The engine measures 27,184 bytes with effects and
-18,976 without.
+microcontroller: it drops the code *and* every buffer the stage owns. When this was
+written that meant the comb's 8 KB delay line, and the engine measured 27,184 bytes
+with effects against 18,976 without. The echo, the reverb and the vocoder have arrived
+since, so the figures today are **77,752 with and 19,120 without** — the embedded path
+is where it always was, and it is the desktop one that grew.
 
 Three things had to be measured rather than chosen, and all three were wrong on the
 first attempt:
