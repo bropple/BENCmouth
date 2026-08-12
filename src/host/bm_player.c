@@ -4,6 +4,7 @@
  */
 
 #include "bm_player.h"
+#include "bm_fence.h"
 
 #include <string.h>
 
@@ -19,12 +20,20 @@ void bm_player_set_source(bm_player *p, const float *pcm, size_t len,
 {
     if (p == 0) return;
 
-    /* Stopped, emptied, moved, and only then given its new length. A callback
-     * that arrives partway through this sees either no audio or the right
-     * audio, and never a new pointer measured by an old length. */
+    /* Stopped, emptied, moved, and only then given its new length, with a
+     * fence between each step that matters. A callback arriving partway
+     * through sees either no audio or the right audio, and never a new pointer
+     * measured by an old length - which on a shorter render is a read off the
+     * end of the buffer.
+     *
+     * The fences are the point. `volatile` keeps the compiler from reordering
+     * these four lines and does nothing at all about the processor, which on
+     * arm64 may make them visible in any order it likes. See bm_fence.h. */
     p->playing = 0;
     p->len = 0;
+    BM_FENCE();
     p->pcm = pcm;
+    BM_FENCE();
     p->len = len;
     if (rate > 0u) p->rate = rate;
     if (p->pos > len) p->pos = len;
@@ -87,6 +96,7 @@ size_t bm_player_read(bm_player *p, float *out, size_t frames)
      * from the next - which is how a block ends up copying from outside the
      * buffer. Everything below works from this snapshot. */
     pcm = (const float *)p->pcm;
+    BM_FENCE();
     len = p->len;
     if (pcm == 0 || len == 0) {
         memset(out, 0, frames * sizeof *out);

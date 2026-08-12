@@ -401,10 +401,25 @@ Still open:
 
       Each channel is a seqlock, and `tests/test_shm.c` tests it the only way that means
       anything: across a real fork, with the child publishing four thousand songs while the
-      parent reads. Every song read was a whole one. The first version of that test caught
-      seven of the four thousand and would have missed a tear in the rest - the reader is a
-      sequence compare and the writer is a 64 KB memcpy, so a counted loop finishes long
-      before the writer does.
+      parent reads. The first version of that test caught seven of the four thousand and
+      would have missed a tear in the rest - the reader is a sequence compare and the writer
+      is a 64 KB memcpy, so a counted loop finishes long before the writer does.
+
+      **And then it found a real one.** Both the seqlock and the player published across
+      threads with `volatile` and a compiler barrier, under a comment asserting that was
+      all that was needed "on the architectures this runs on". That is false: `volatile`
+      orders the compiler and says nothing about the processor, and arm64 is weakly
+      ordered. Four thousand rounds passed on the x86 machine it was written on - x86
+      orders stores for you - and the first Apple Silicon runner it met read two halves of
+      two different songs.
+
+      The same mistake was in `bm_player_set_source`, where it is worse: a callback that
+      saw the new length against the old pointer would read off the end of a shorter
+      render, in a DAW, on the audio thread. One real fence now, in `src/host/bm_fence.h`,
+      used by both - a second copy would be right until the day one of them changed.
+
+      Worth keeping as the general lesson: a lock-free test that passes on x86 has told you
+      nothing about arm64, and CI on both is the only way to find out.
 
       **The editor is asked to close, not killed**, so it can put its own window away; it
       is killed only if it will not go. An editor that dies leaves the plugin holding the

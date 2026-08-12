@@ -569,7 +569,11 @@ CLAP_TEST := bm_clap_test$(EXE)
 clap-test: clap
 	$(CC) $(filter-out -MMD -MP,$(CFLAGS)) -isystem $(CLAP_INCLUDE) \
 	    -o $(CLAP_TEST) tools/clap_host.c $(CLAP_DL) -lm
-	./$(CLAP_TEST) $(CLAP_BINARY) render/legato-demo.bmsong
+	# A song out of songs/, which is in the repository. It was pointed at
+	# render/ - which is generated and gitignored, so the file existed on the
+	# machine this was written on and nowhere else, and every CI runner failed
+	# the preset test on a file it had never had.
+	./$(CLAP_TEST) $(CLAP_BINARY) songs/daisy.bmsong
 	@rm -f $(CLAP_TEST)
 
 # The plugin and the editor, against each other. Needs a display, because the

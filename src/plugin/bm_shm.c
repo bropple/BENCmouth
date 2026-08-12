@@ -25,16 +25,13 @@
 #  include <unistd.h>
 #endif
 
-/* A compiler barrier, which is all a seqlock needs on the architectures this
- * runs on: the point is to stop the compiler moving the payload copy across
- * the sequence writes. x86 and Apple Silicon both give the store ordering, and
- * the alternative - C11 atomics - would put stdatomic.h into a file that two
- * separate programs map, for a guarantee neither of them needs. */
-#if defined(_MSC_VER)
-#  define BM_BARRIER() _ReadWriteBarrier()
-#else
-#  define BM_BARRIER() __asm__ __volatile__("" ::: "memory")
-#endif
+/* The barrier lives in one place, because the player needs the same one for
+ * the same reason - see src/host/bm_fence.h, which is also where the story of
+ * how this was got wrong is written down. Included by a relative path so that
+ * this file goes on depending on nothing but a compiler. */
+#include "../host/bm_fence.h"
+
+#define BM_BARRIER() BM_FENCE()
 
 void bm_shm_name(char *out, size_t cap, unsigned counter)
 {
