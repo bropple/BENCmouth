@@ -651,6 +651,12 @@ ifeq ($(CLAP_FOUND),yes)
 	cmake --build $(VST3_BUILD) --target bencmouth_as_vst3 --config Release -j
 	rm -rf $(VST3_BUNDLE)
 	cp -r "$$(find $(VST3_BUILD) -name 'BENCmouth.vst3' -maxdepth 4 | head -1)" $(VST3_BUNDLE)
+	# The module inside the bundle has to be named after the bundle, or a host
+	# opens it, finds nothing it recognises, and lists no plugin - with no error
+	# anywhere. MinGW shipped a libBENCmouth.vst3 exactly once.
+	@test -n "$$(find $(VST3_BUNDLE)/Contents -type f -name 'BENCmouth.*')" || { \
+	    echo "  the module in $(VST3_BUNDLE) is not named BENCmouth - no host will load it:"; \
+	    find $(VST3_BUNDLE) -type f; false; }
 	@echo "built $(VST3_BUNDLE)  (loads BENCmouth.clap at run time)"
 else
 	@echo "  no CLAP headers - run 'make clap-fetch' first."

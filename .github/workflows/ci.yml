@@ -814,6 +814,7 @@ jobs:
           D="bencmouth-clap-windows-$(git rev-parse --short HEAD)"
           mkdir -p "$D"
           cp build/BENCmouth.clap "$D"/
+          cp -r build/BENCmouth.vst3 "$D"/
           cp README.md LICENSE NOTICE "$D"/
           tar czf "$D.tar.gz" "$D"
           echo "PKG=$D.tar.gz" >> "$GITHUB_ENV"
@@ -857,12 +858,21 @@ jobs:
       - name: It loads, follows the transport, and restores its state
         run: make clap-test
 
+      # `tail -n +2` is right for a single-architecture binary and wrong for a
+      # universal one: otool prints an "(architecture x):" header and the
+      # bundle's own install name for *each* slice, so dropping one line leaves
+      # the rest to be reported as foreign libraries. Only the indented lines
+      # are dependencies, and the self-reference is not one of them.
       - name: No non-system dynamic libraries
         run: |
-          otool -L build/BENCmouth.clap/Contents/MacOS/BENCmouth
-          if otool -L build/BENCmouth.clap/Contents/MacOS/BENCmouth | tail -n +2 | \
-             grep -vE '^[[:space:]]+(/usr/lib/|/System/)'; then
-            echo "links a library that will not be present on a stock macOS"
+          BIN=build/BENCmouth.clap/Contents/MacOS/BENCmouth
+          otool -L "$BIN"
+          bad=$(otool -L "$BIN" | grep '^[[:space:]]' \
+                | grep -v 'BENCmouth.clap' \
+                | grep -vE '^[[:space:]]+(/usr/lib/|/System/)' || true)
+          if [ -n "$bad" ]; then
+            echo "links a library that will not be present on a stock macOS:"
+            echo "$bad"
             exit 1
           fi
           echo "self-contained"

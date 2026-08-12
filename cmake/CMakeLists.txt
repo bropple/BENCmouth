@@ -79,6 +79,16 @@ if(EXISTS "${VST3_SDK_ROOT}/public.sdk/source/main/pluginfactory.cpp")
         BUNDLE_IDENTIFIER "net.ropple.bencmouth"
         BUNDLE_VERSION "${BM_VERSION}"
     )
+    # CMake prefixes a MODULE library with "lib" on anything Unix-shaped, and
+    # under MinGW that includes Windows - so the bundle came out containing
+    # Contents/x86_64-win/libBENCmouth.vst3. A host opens the bundle and looks
+    # for a module named after it; a "lib" on the front means it finds nothing,
+    # says nothing, and the plugin is simply absent from the list.
+    #
+    # Empty on every platform rather than only under MinGW: the name inside the
+    # bundle is decided by the bundle, and there is no target here whose file
+    # name should ever begin with lib.
+    set_target_properties(bencmouth_as_vst3 PROPERTIES PREFIX "")
 else()
     message(STATUS "bencmouth: no VST3 SDK at '${VST3_SDK_ROOT}' - skipping the VST3 wrapper")
 endif()
@@ -104,6 +114,7 @@ if(APPLE AND EXISTS "${AUDIOUNIT_SDK_ROOT}/src/AudioUnitSDK")
         SUBTYPE_CODE "BNCM"
         INSTRUMENT_TYPE "aumu"
     )
+    set_target_properties(bencmouth_as_auv2 PROPERTIES PREFIX "")
 elseif(APPLE)
     message(STATUS "bencmouth: no AudioUnit SDK at '${AUDIOUNIT_SDK_ROOT}' - skipping the AU wrapper")
 endif()
