@@ -38,6 +38,7 @@
 #define BM_SONGFILE_H
 
 #include "bencmouth.h"
+#include "bm_roll.h"
 
 #include <stddef.h>
 
@@ -57,6 +58,22 @@ typedef struct bm_song {
      * reason the voice is: a melody written through a ring modulator is a
      * different piece without it. */
     bm_effects effects;
+
+    /* The notes the score was drawn from, when it was drawn rather than typed.
+     *
+     * Written as repeated `note =` lines in the header - one more key rather
+     * than a second block, so the file stays one lexical form and `score =`
+     * goes on being the thing that ends the header.
+     *
+     *     note = C4 0 400 M IY1 ; me
+     *
+     * The score is still written out in full and is still what sings, so `bm -S`
+     * and every older reader need to know nothing about any of this. The roll is
+     * how the score is *edited*; the score is what it *is*. A file with no note
+     * lines opens with an empty roll, which is the honest answer for a song
+     * somebody typed - see bm_roll.h on why a score does not become a roll.
+     */
+    bm_roll  roll;
 
     /* Beats per minute. Nothing in the engine reads this - note lengths are
      * absolute milliseconds, set by [hold N] - so it is metadata for the
@@ -86,6 +103,21 @@ int bm_song_parse(const char *text, size_t len, bm_song *song,
 
 int bm_song_load(const char *path, bm_song *song,
                  char *score, size_t score_cap, char *err, size_t err_cap);
+
+/* A whole file, header and score, big enough for the largest of each. */
+#define BM_SONG_FILE_MAX 65536
+
+/* Writes the file into memory instead of onto disk. Returns the number of bytes
+ * written, not counting the terminator, or -1 if it did not fit.
+ *
+ * The parser has worked on a memory buffer since it was written, with the file
+ * reader as a thin wrapper over it - that is what makes it testable without
+ * touching the filesystem. This is the same arrangement for the other
+ * direction, and it arrived when a plugin needed to hand a song to a host as a
+ * blob of state: there is no file there to write, and inventing a temporary one
+ * to read straight back would be a filesystem dependency in an audio plugin. */
+long bm_song_format(const bm_song *song, const char *score,
+                    char *out, size_t cap);
 
 /* Writes the header and then the score verbatim. Every voice key is written,
  * not only the ones that differ from a preset, so a song reloads as exactly the

@@ -187,15 +187,55 @@ bm -m "[pitch 70] low ... [reset] and back to normal"
 |---|---|
 | `[pitch N]` | base pitch in Hz, 20–500, for everything after it |
 | `[speed X]` | rate multiplier, 0.1–10 |
-| `[pause N]` | N milliseconds of silence, inserted here (max 10000) |
+| `[pause N]` | N milliseconds of silence, inserted here (max 10000) — N in total, transition included |
 | `[note NAME]` | absolute pitch by name — `C4`, `A#3`, `Bb5`, `G` |
 | `[hold N]` | length in ms of the vowels that follow |
+| `[dur N]` | total length in ms of the run that follows, consonants included |
+| `[glide N]` | reach the notes that follow over N ms instead of at once — a slur |
 | `[reset]` | back to the voice's own settings |
 
 `[note]` and `[hold]` are what make it sing. `[note]` is absolute where `[pitch]` is a
 transposition — a sung note should be that pitch, not that pitch plus whatever accent the
 prosody planner had in mind. `[hold]` applies only to vowels, because that is where a
 note's duration lives; stretching the consonants turns the word into a groan.
+
+`[dur]` is the other way of asking, and it exists because `[hold]` cannot be put on a
+grid. Under `[hold 400]` the syllable `IY1` sounds for 450 ms, `M IY1` for 560 ms and
+`S T R EY1 T` for a full second: the vowel is the length you asked for and the consonants
+are however long they are, on top. That is right for a score you are reading, and wrong
+for anything with a bar line in it, because the error is different for every note and it
+accumulates.
+
+`[dur 400]` means the run occupies 400 ms in total. The consonants keep the lengths they
+need to be recognizable and the time they take comes out of the vowel; when there is not
+enough vowel left to take it from, the consonants compress, up to about half length —
+which is what a singer does with a word too long for its beat. Past that a note cannot be
+sung in the time asked for, and it overruns rather than being faked. `bm_measure()` (see
+below) then reports the length it really came out at.
+
+```
+$ bm -m -P "[dur 400][note C4] M IY1 [dur 400][note D4] S T R EY1 T ..."
+```
+
+Eight notes written 400 ms each run 5.85 s under `[hold]` and 3.29 s under `[dur]`, which
+is 8 × 400 ms and the ring-out.
+
+`[glide N]` is legato, and it is the *pitch* half of it. The tone half needs no command at
+all: put the same vowel on the next note with no consonant in front of it and nothing
+re-articulates — measured, the envelope is indistinguishable from one held note, where
+re-singing the consonant dips it to silence. What was missing was that a note was always
+*reached* in a single frame, so a slur stepped. `[glide 60]` moves onto it over 60 ms
+instead, geometrically, so the middle of the interval is where the ear expects it:
+
+```
+$ bm -m -P "[dur 400][note C4] AA1 [glide 60][dur 400][note G4] AA1"
+262 → 280 299 320 343 366 → 392 Hz, six equal semitone steps
+```
+
+40 to 80 ms is where a sung slur lives. It applies onward until changed, like everything
+else here, so `[glide 0]` is how a stepped note comes back. The first note of a phrase is
+never glided into — there is nothing to glide from, and a phrase that scooped up to its
+own first note out of silence would be an effect nobody asked for.
 
 ```
 bm -m -P "[note C4][hold 520] D EY1 [note A3][hold 260] Z IY0 ..." -o daisy.wav
@@ -627,6 +667,40 @@ never allocates and never blocks, so it is safe to call from an audio callback.
 Link against `libbencmouth.a` and `-lm` (the maths library is only needed by the host
 layer; the core has its own).
 
+### Asking what it will sound like, before it does
+
+`bm_measure()` answers where every phoneme starts and how long it lasts, without
+rendering anything:
+
+```c
+bm_span  spans[256];
+size_t   n = 0;
+uint32_t total_ms = 0;
+
+bm_measure(&storage, &config, "[dur 400][note C4] M IY1", 0,
+           spans, 256, &n, &total_ms);
+```
+
+It exists for editors. Anything drawing a score on a timeline has to know how long a note
+really is, and that is not the number written beside it — see `[dur]` above. Working it
+out outside the library would mean a second implementation of the frame generator's
+timing, free to disagree with the one actually making the sound; a timeline that is
+approximately right is worse than none, because it looks authoritative and drifts.
+
+So the numbers come from the renderer's own arithmetic. `tests/test_timing.c` renders
+through `bm_read()` and checks the samples against what was predicted before any existed:
+the difference is the filter ring-out and nothing else. Both are quantized to the frame
+rate — 10 ms at the default 100 frames per second — and that is reported rather than
+smoothed over.
+
+Each span carries the byte offset of the token that produced it, and the `[dur]` group it
+belongs to. A score compiled from a note grid writes one `[dur]` per note, so folding the
+spans by group gives the timeline back, note for note.
+
+The `scratch` argument is working space the call owns for its duration and nothing
+survives the return; it is a parameter for the same reason `bm_engine_init` takes storage
+rather than allocating.
+
 ### Embedded builds
 
 Compile only `src/core/*.c`. It includes no `<stdio.h>`, `<stdlib.h>`, `<math.h>` or
@@ -667,6 +741,90 @@ render/               generated audio; gitignored
 `ROADMAP.md` covers what is done and what is not.
 `CLASSIC-VOICES.md` covers the classic-era presets, and which classic voices this engine
 cannot reach and why.
+
+---
+
+## In a DAW
+
+```sh
+make clap-fetch     # the CLAP headers, MIT, a tagged tarball
+make clap           # build/BENCmouth.clap
+make clap-test      # load it the way a host does and play it
+make clap-install   # ~/.clap, or the platform's CLAP folder
+
+make vst3-fetch     # clap-wrapper and the Steinberg SDK
+make vst3           # build/BENCmouth.vst3
+make vst3-test      # ask its factory what is in it
+make vst3-install   # and the CLAP with it, because it loads it
+
+make au-fetch       # macOS only: clap-wrapper and Apple's AudioUnit SDK
+make au             # build/BENCmouth.component
+```
+
+**VST3 and AU are shims, not ports.** Each one finds `BENCmouth.clap` at run time and
+loads it, so neither does anything without the CLAP beside it — which is why
+`vst3-install` installs both, and why the Windows installer ticks the CLAP when you tick
+the VST3. A shim on its own appears in a host's plugin list and then fails to load, which
+looks like a broken plugin rather than a missing one.
+
+Windows and macOS builds carry all of this: the installer offers **CLAP** and **VST3** as
+components, and the macOS release ships a second disk image,
+`bencmouth-plugins-*-macos-universal.dmg`, with every format in it plus an
+**Install Plug-Ins** script — a plug-in belongs in
+`~/Library/Audio/Plug-Ins/<format>`, which is a hidden directory three levels down and not
+a gesture anyone should have to be told. That image carries the application too, because
+the plugin opens its window by starting it.
+
+**It is a score player, not a synthesizer you play notes on**, and that is what the
+instrument is rather than a shortcut. What BENCmouth sings is a syllable at a pitch for a
+length, and MIDI has no channel to carry the syllable — a note list and a lyric list
+matched by order would come apart the moment either was edited. So the plugin owns the
+song, the host owns the transport, and the two meet at a position in seconds. Press play
+in the host and it sings; scrub, loop, or drop the playhead into the middle of a bar and it
+follows exactly, because it is located every block rather than free-running.
+
+It arrives with a song in it, so an empty track makes a sound immediately — otherwise
+"installed wrong" and "working, and silent because it has nothing to sing" look identical.
+
+**State is the `.bmsong` text.** A project file therefore contains something a person can
+read, the same bytes open in the editor and in `bm -S`, and the format only had to be got
+right once.
+
+**There are two parameters**, and that is a consequence of the design rather than a gap in
+it. The audio is rendered ahead of the transport, so anything that changes how the voice
+sounds means rendering it again — fine for an edit, useless for automation, since a filter
+sweep made of re-renders is a stutter. So the parameters are the ones that can be applied
+to samples that already exist: `Gain` is a multiply, `Follow transport` is a decision about
+where to read. Everything else about the voice lives in the song.
+
+**The editor is the standalone, in a second process.** Open the plugin's window in your
+host and it starts `bencmouth-gui --editor`, attached to a block the two share. It opens on
+the project's song, publishes every edit back, and draws its playhead from the host's
+transport. Its own SING and STOP are greyed out — the plugin is what makes the sound.
+
+That it is a separate process is forced rather than chosen: raylib keeps its window, GL
+context and input in one file-scope global, so a process gets exactly one window however
+many instances a host loads. Threading cannot fix a singleton; a process boundary gives
+each instance its own by construction, and a crashing editor does not take the DAW with it.
+The window is **floating**, which CLAP supports outright and which is what raylib needs.
+
+What crosses is the `.bmsong` text and nothing else — no note structs, no versioned binary
+layout, nothing two builds compiled a month apart have to agree about. Each channel is a
+seqlock, so a hung or killed editor can never block the audio thread; the worst it can do
+is stop publishing, and the plugin goes on playing the last song it was given.
+
+If the window does not open, the plugin looked beside itself, in the usual install
+directories, and at `$BENCMOUTH_EDITOR` — set that to the full path of `bencmouth-gui` if
+your layout is none of those.
+
+**A song also gets in from a file.** The plugin implements CLAP's preset-load extension, so a
+host that offers a preset browser can point it at a `.bmsong` — write it in the standalone,
+save it, load it on the track. Whether that is reachable depends on the host; not all of
+them offer one yet.
+
+Not yet: the editor. The plugin holds a song, plays it and saves it with the project, but
+the window you draw notes in is still the standalone, and connecting the two is the next
+piece of work — see `ROADMAP.md`.
 
 ---
 
@@ -789,6 +947,25 @@ Points worth knowing:
   Bell runs 11.9 s at 116 BPM and 9.9 s at 160, not 8.6 s. That is what singing does as
   well — a note's duration lives in its vowel, which is why `[hold]` only touches
   vowels.
+- **A song that was drawn carries its notes too**, as repeated `note =` lines in the
+  header:
+
+  ```
+  note = C4 0 500 S T R EY1 T ; straight
+  note = A4 500 500 ~
+  ```
+
+  Pitch, start and length in milliseconds, the phonemes, and after a semicolon the word
+  they were spelled from. A `~` where the phonemes would be is a tie: it has none of its
+  own and sings what the note before it was singing. One more key rather than a second
+  block, so the file stays one lexical form and `score =` goes on being the thing that
+  ends the header.
+
+  The score is still written out in full and is still what sings, so `bm -S` and every
+  older reader need to know nothing about any of this. The roll is how a score is
+  *edited*; the score is what it *is*. A file with no `note` lines opens with an empty
+  roll, which is the honest answer for a song somebody typed: a score can say things a
+  grid cannot draw, so it does not decompile into one.
 - An **unknown voice name is not fatal** — the score is the part that cannot be
   reconstructed, so the file still opens and only the starting point is lost. An unknown
   *setting* is fatal, for the reason voice files give: one that is quietly dropped
@@ -830,12 +1007,56 @@ switches between the two at runtime so you can hear the difference on any word, 
 is also how you find the ones worth adding to the exception list; it greys out in a
 build that has no dictionary to switch to. The status line says which build you have.
 
-The window has two tabs. **TEXT** is the speech side: type, and the phoneme readout under
-the field updates as you go. **SONG** is a score editor — a phoneme field with `[note]`
-and `[hold]` in it, a word-to-phoneme translator with an INSERT button so you do not have
-to know ARPABET by heart, a FORMAT button opening the full reference for the notation,
-and LOAD/SAVE for `.bmsong` files. SPEAK becomes SING, and SAVE WAV renders whichever tab
-is in front.
+The window has three tabs. **TEXT** is the speech side: type, and the phoneme readout
+under the field updates as you go. **SONG** is a score editor — a phoneme field with
+`[note]` and `[hold]` in it, a word-to-phoneme translator with an INSERT button so you do
+not have to know ARPABET by heart, a FORMAT button opening the full reference for the
+notation, and LOAD/SAVE for `.bmsong` files. SPEAK becomes SING, and SAVE WAV renders
+whichever tab is in front.
+
+**ROLL** is the same song written as notes on a grid instead of as a line of text. Click
+an empty lane to draw a note and drag right to set its length; whatever you type goes into
+the selected note, as a word that gets spelled for you or as ARPABET typed over the
+spelling. Drag a note to move it, drag its right edge to lengthen it, Delete removes it.
+The wheel scrolls pitch, shift-wheel scrolls time, control-wheel zooms, and SNAP is in
+beats so it follows the tempo.
+
+**TIE** is legato: the selected note carries on the vowel already sounding instead of
+starting a syllable of its own, and glides onto its pitch rather than stepping. Tied notes
+draw joined — no line cutting them apart in the same lane, a stroke connecting them across
+lanes — and the note's word field is replaced by the vowel it inherits. A word's closing
+consonants move to the end of the slur, which is what a singer does: `straight` held over
+two notes is `S T R EY` and then `EY T`, not the whole word and then a vowel. A tie is only
+a tie while the two notes touch, so dragging one away drops it.
+
+Two more things are worth knowing before you draw anything. **Notes cannot overlap** —
+this is a monophonic synthesizer, so dragging one onto another makes the other give way,
+and a chord is not something it can be asked for. And **a note can run over the length it
+asks for**: a syllable's consonants take the time they take, and when they will not fit
+they are compressed to about half length and then the note overruns. That is drawn, in
+amber, past the note's right edge, and the readout says how long it really sounds for. The
+figure is measured with `bm_measure()` from the same code that makes the sound, so a roll
+with no amber in it plays exactly as drawn.
+
+**The ROLL tab has a transport, and the other two do not.** Drag in the ruler above the
+grid to put the playhead anywhere; SING starts from there, LOOP repeats, and the head
+follows the samples actually going out rather than a frame clock. That is possible because
+the roll is *rendered* and then played rather than spoken: the engine is a pull interface
+with no seek in it, so a timeline that has to start at bar nine cannot be built on it
+directly. Rendering the whole score once and indexing into it makes scrubbing a memcpy —
+and the synthesizer is fast enough that this is not a trade: a 45-second song renders in
+70 ms, about 640× real time. Editing does not re-render; only pressing SING does.
+
+That split is also what a plugin needs, which is why it was built this way in the
+standalone first — `src/host/bm_render.c` renders, `src/host/bm_player.c` is the
+audio-callback half that allocates nothing and locks nothing, and a host with its own
+transport drives it by setting the position each block instead of letting it advance
+itself.
+
+The roll is saved inside the `.bmsong` as `note =` lines beside the score it compiles to,
+so a song you draw still opens in the SONG tab and `bm -S` still sings it. It does not
+work the other way round: a score can say things a grid cannot draw, so opening a typed
+song in the ROLL tab says so rather than showing an empty grid.
 
 Each tab keeps its own voice. Song mode wants prosody off and a little vibrato; speech
 wants the opposite, and one shared voice would mean every trip through the song tab

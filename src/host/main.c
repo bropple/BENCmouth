@@ -51,7 +51,7 @@ static void usage(void)
 "  -P           input is ARPABET phonemes, not text\n"
 "  -S FILE      sing a .bmsong: its score is the input, its voice the voice\n"
 "  -m           enable inline markup: [pitch N] [speed X] [pause N] [reset]\n"
-"               and, for singing, [note NAME] [hold MS]\n"
+"               and, for singing, [note NAME] [hold MS] [dur MS]\n"
 "  -t           print phonemes and exit; render nothing\n"
 "  -w FILE      write the resolved voice to a voice file and exit\n"
 "  -l           list voice and effects presets\n"

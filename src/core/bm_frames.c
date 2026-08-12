@@ -411,6 +411,10 @@ void bm_frame_gen_reset(bm_frame_gen *g)
     g->frames_done = 0;
     g->f0_smooth = 0.0f;
     g->f0_started = 0;
+    g->f0_glide_from = 0.0f;
+    g->f0_glide_to = 0.0f;
+    g->f0_glide_len = 0;
+    g->f0_glide_at = 0;
 
     /* Start from silence at a neutral vocal tract, so the first transition
      * glides out of rest rather than starting mid-articulation.
@@ -538,15 +542,21 @@ static int word_is(const char *s, size_t len, const char *word)
 }
 
 /* Parses one command's contents (between the brackets). Sets `cur` for
- * subsequent phonemes, or reports a pause to insert here. */
+ * subsequent phonemes, reports a pause to insert here, or opens a [dur] group.
+ *
+ * `open_group` is an out-parameter rather than something the command sets on
+ * `cur` because only the caller knows how many groups have been opened so far,
+ * and the id has to be one nobody else has used. */
 static bm_result parse_command(const char *s, size_t len,
-                               bm_phoneme_mod *cur, unsigned *pause_ms)
+                               bm_phoneme_mod *cur, unsigned *pause_ms,
+                               int *open_group)
 {
     size_t k = 0, name_end;
     int    ok = 0;
     float  value;
 
     *pause_ms = 0u;
+    *open_group = 0;
 
     while (k < len && is_ws(s[k])) k++;
     name_end = k;
@@ -557,6 +567,9 @@ static bm_result parse_command(const char *s, size_t len,
         cur->f0 = 0.0f;
         cur->speed = 0.0f;
         cur->dur_ms = 0u;
+        cur->dur_total = 0u;
+        cur->dur_group = 0u;
+        cur->f0_glide_ms = 0u;
         cur->f0_absolute = 0u;
         return BM_OK;
     }
@@ -588,6 +601,24 @@ static bm_result parse_command(const char *s, size_t len,
     } else if (word_is(s + k, name_end - k, "pause")) {
         if (value < 0.0f || value > 10000.0f) return BM_ERR_ARG;
         *pause_ms = (unsigned)value;
+        /* A rest ends the note before it. The alternative - carrying the group
+         * across the silence - would mean the phonemes either side of a pause
+         * shared one length between them, which is not what "rest" means
+         * anywhere else in music. */
+        cur->dur_total = 0u;
+        cur->dur_group = 0u;
+    } else if (word_is(s + k, name_end - k, "glide")) {
+        /* Applies to the notes after it, like every other setting here. Two
+         * seconds is far beyond anything musical and is a bound rather than a
+         * suggestion; 40 to 80 ms is where a sung slur lives. */
+        if (value < 0.0f || value > 2000.0f) return BM_ERR_ARG;
+        cur->f0_glide_ms = (unsigned short)value;
+    } else if (word_is(s + k, name_end - k, "dur")) {
+        /* Total length for the run that follows, consonants included. See the
+         * note above apply_dur_groups. */
+        if (value < 1.0f || value > 10000.0f) return BM_ERR_ARG;
+        cur->dur_total = (unsigned short)value;
+        *open_group = 1;
     } else if (word_is(s + k, name_end - k, "hold")) {
         /* Absolute length for the vowels that follow. Applied to vowels only:
          * a sung note's duration lives in its vowel, and stretching the
@@ -602,12 +633,279 @@ static bm_result parse_command(const char *s, size_t len,
 
 #endif /* BM_WITH_MARKUP */
 
+/* The vowel length below which a [dur] group starts taking the time out of its
+ * consonants instead. Six frames - 60 ms at the nominal rate - which is short
+ * but still a vowel you can hear and identify. */
+#define BM_DUR_SOFT_STEADY 6
+
+/* The floor under that, for a request that cannot be met even with the
+ * consonants compressed as far as they go. Two frames. It exists so that an
+ * impossible length degrades into a very short note rather than a negative one;
+ * it is not a length anyone should be aiming at. */
+#define BM_DUR_MIN_STEADY 2
+
+/* How far the consonants of an over-full note may be compressed. At 2 a
+ * cluster plays in half its natural time, which is audibly clipped and about
+ * where a singer lands when a word is too long for the beat it is on. Past
+ * that the consonants stop being identifiable, and a note that cannot be sung
+ * in the time asked for is better reported than faked - see bm_measure(). */
+#define BM_DUR_MAX_COMPRESS 2.0f
+
+/* Makes a [pause] last as long as it says.
+ *
+ * The length a pause is given lands on its steady segment, and the silence
+ * phoneme also has a 30 ms transition in front of it - so [pause 400] was
+ * really 430 ms of silence, every time, and had been since pauses existed. Not
+ * enough to hear on its own, and it is the rest between two phrases so nothing
+ * ever pointed at it. On a grid it is a note that starts 30 ms late, then 60,
+ * then 90, which is the same failure [dur] exists to fix and it would have
+ * arrived through the rests instead.
+ *
+ * Only silences that carry an explicit length are touched, which is exactly the
+ * ones [pause] made: a SIL written into a score has no length of its own here
+ * and keeps the timing the phoneme table gives it.
+ */
+static void apply_pause_lengths(bm_frame_gen *g)
+{
+    int k;
+
+    for (k = 0; k < g->count; k++) {
+        int fixed = 0, want, s;
+        unsigned short asked = g->mod[k].dur_ms;
+
+        if (g->seq[k]->cls != BM_CLS_SILENCE || asked == 0u) continue;
+
+        for (s = 0; s < SEG_COUNT; s++) {
+            if (s != SEG_STEADY) fixed += segment_frames(g, k, s);
+        }
+
+        want = ms_to_frames(g, asked, 1.0f, 1.0f) - fixed;
+        if (want < 1) want = 1;
+
+        {
+            float ms = (float)want * 1000.0f / g->frame_rate;
+            if (ms < 1.0f) ms = 1.0f;
+            if (ms > 10000.0f) ms = 10000.0f;
+            g->mod[k].dur_ms = (unsigned short)(ms + 0.5f);
+        }
+    }
+}
+
+/* Resolves every [dur] group into explicit steady lengths.
+ *
+ * This is what [hold] cannot be. [hold] sets the length of the vowels after it
+ * and deliberately leaves the consonants alone, because a sung note's duration
+ * lives in its vowel and stretching "STRAIGHT" bodily would make a groan of it.
+ * That is right for a score written as text, and it is measurably wrong for a
+ * grid: at [hold 400] the syllable "IY1" sounds for 0.55 s, "M IY1" for 0.66 s
+ * and "S T R EY1 T" for 1.10 s, so three notes drawn the same width on a piano
+ * roll play at three different lengths and everything after the first bar is in
+ * the wrong place. The error accumulates and never comes back.
+ *
+ * [dur N] means the run occupies N milliseconds in total. The consonants keep
+ * the lengths they need to be recognizable - the cues to which stop you heard
+ * live in the transitions, and scaling those is what turns a consonant into a
+ * different consonant - so the time they take is subtracted from the vowel
+ * rather than shared out across everything. That is also what a singer does
+ * with a consonant cluster on the beat.
+ *
+ * When the consonants alone are longer than N, the vowel has already gone as
+ * short as a vowel can be and the time has to come from somewhere else, so the
+ * consonants are compressed - up to a point, because past about half length a
+ * cluster stops being the word it was. A note that will not fit even then
+ * overruns, and is not clamped silently: bm_measure() reports the length it
+ * really came out at, and an editor can draw that in red. Pretending otherwise
+ * would only move the lie one level down.
+ */
+static void apply_dur_groups(bm_frame_gen *g)
+{
+    int a = 0;
+
+    while (a < g->count) {
+        unsigned short gid = g->mod[a].dur_group;
+        int b, k, s;
+        int fixed = 0, natural = 0, elastic = 0, target, budget, spent = 0;
+        int vowels_only;
+
+        if (gid == 0u) { a++; continue; }
+
+        b = a;
+        while (b + 1 < g->count && g->mod[b + 1].dur_group == gid) b++;
+
+        /* The vowels carry the length. A group with no vowel in it - a lone
+         * "S T", which a lyric can legitimately produce - has nothing to
+         * stretch, so there every phoneme's steady segment is elastic instead.
+         * Falling back like this rather than refusing keeps the rule "a note is
+         * as long as it says" true for every note. */
+        for (vowels_only = 1; vowels_only >= 0; vowels_only--) {
+            elastic = 0;
+            for (k = a; k <= b; k++) {
+                const bm_phoneme *p = g->seq[k];
+                if (!vowels_only ||
+                    p->cls == BM_CLS_VOWEL || p->cls == BM_CLS_DIPHTHONG) {
+                    elastic++;
+                }
+            }
+            if (elastic > 0) break;
+        }
+        if (elastic == 0) { a = b + 1; continue; }
+
+        for (k = a; k <= b; k++) {
+            const bm_phoneme *p = g->seq[k];
+            int is_elastic = (vowels_only <= 0) ||
+                             p->cls == BM_CLS_VOWEL ||
+                             p->cls == BM_CLS_DIPHTHONG;
+
+            for (s = 0; s < SEG_COUNT; s++) {
+                int n = segment_frames(g, k, s);
+                if (s == SEG_STEADY && is_elastic) natural += n;
+                else                               fixed  += n;
+            }
+        }
+
+        target = ms_to_frames(g, g->mod[a].dur_total, 1.0f, 1.0f);
+
+        /* Not enough room left for the vowels to be vowels: take it out of the
+         * consonants instead, which is what a singer does with a word too long
+         * for its beat. Speed is the lever because it is the one segment_frames
+         * already applies to transitions, closures and bursts alike - the parts
+         * of a consonant that a note cannot simply do without. */
+        if (target - fixed < elastic * BM_DUR_SOFT_STEADY && fixed > 0) {
+            int   room = target - elastic * BM_DUR_SOFT_STEADY;
+            float squeeze = (room > 0) ? (float)fixed / (float)room
+                                       : BM_DUR_MAX_COMPRESS;
+
+            if (squeeze > BM_DUR_MAX_COMPRESS) squeeze = BM_DUR_MAX_COMPRESS;
+            if (squeeze > 1.0f) {
+                /* Both totals are remeasured, not just the one that changed.
+                 * `natural` is only ever used as shares of the budget between
+                 * several vowels in one note, and a share is a ratio - but the
+                 * ratio has to be taken between two numbers measured the same
+                 * way. Leaving it at its pre-squeeze value while the individual
+                 * lengths below are read post-squeeze would put the shares out
+                 * by the squeeze factor, and the last vowel would silently
+                 * absorb the difference. */
+                fixed = 0;
+                natural = 0;
+                for (k = a; k <= b; k++) {
+                    const bm_phoneme *p = g->seq[k];
+                    int is_elastic = (vowels_only <= 0) ||
+                                     p->cls == BM_CLS_VOWEL ||
+                                     p->cls == BM_CLS_DIPHTHONG;
+
+                    g->mod[k].speed = phoneme_speed(g, k) * squeeze;
+
+                    for (s = 0; s < SEG_COUNT; s++) {
+                        int n = segment_frames(g, k, s);
+                        if (s == SEG_STEADY && is_elastic) natural += n;
+                        else                               fixed  += n;
+                    }
+                }
+            }
+        }
+
+        budget = target - fixed;
+        if (budget < elastic * BM_DUR_MIN_STEADY) budget = elastic * BM_DUR_MIN_STEADY;
+
+        for (k = a; k <= b; k++) {
+            const bm_phoneme *p = g->seq[k];
+            int is_elastic = (vowels_only <= 0) ||
+                             p->cls == BM_CLS_VOWEL ||
+                             p->cls == BM_CLS_DIPHTHONG;
+            int want;
+
+            if (!is_elastic) continue;
+
+            elastic--;
+            if (elastic == 0) {
+                /* The last one takes the remainder rather than its share, so
+                 * that the rounding of the others cannot leave the group a
+                 * frame short of what was asked for. A note with one vowel in
+                 * it - which is most of them - therefore lands exactly. */
+                want = budget - spent;
+            } else if (natural > 0) {
+                int mine = segment_frames(g, k, SEG_STEADY);
+                want = (int)((float)budget * (float)mine / (float)natural + 0.5f);
+            } else {
+                want = budget / (elastic + 1);
+            }
+            if (want < BM_DUR_MIN_STEADY) want = BM_DUR_MIN_STEADY;
+            spent += want;
+
+            /* Back to milliseconds, which is the only length segment_frames
+             * takes. An explicit dur_ms is exempt from stress and speed scaling
+             * there, so this round-trips: the frames asked for here are the
+             * frames the renderer will produce. */
+            {
+                float ms = (float)want * 1000.0f / g->frame_rate;
+                if (ms > 10000.0f) ms = 10000.0f;
+                /* Never round down to zero, which would mean "no override" and
+                 * hand the phoneme back its own length. Only reachable at an
+                 * implausible frame rate, and a silent revert is exactly the
+                 * kind of failure this whole change exists to prevent. */
+                if (ms < 1.0f) ms = 1.0f;
+                g->mod[k].dur_ms = (unsigned short)(ms + 0.5f);
+            }
+        }
+
+        /* Then check, and correct.
+         *
+         * Every length above has been rounded to whole frames and converted
+         * back through milliseconds, and a segment is never shorter than one
+         * frame however little time it was given - so the errors are all in the
+         * same direction and do not cancel. Predicting them is possible and
+         * would be a second model of segment_frames sitting beside the first,
+         * which is the arrangement this whole change exists to get rid of. So
+         * measure what was actually built and put the difference on the vowel.
+         *
+         * A few passes, because moving the vowel re-rounds it. It converges
+         * immediately in practice; the bound is there so that an impossible
+         * request - where the correction is refused by the floor - stops
+         * instead of spinning. */
+        {
+            int pass, last_elastic = -1;
+
+            for (k = a; k <= b; k++) {
+                const bm_phoneme *p = g->seq[k];
+                if ((vowels_only <= 0) || p->cls == BM_CLS_VOWEL ||
+                    p->cls == BM_CLS_DIPHTHONG) {
+                    last_elastic = k;
+                }
+            }
+
+            for (pass = 0; pass < 4 && last_elastic >= 0; pass++) {
+                int actual = 0, delta, want, ms;
+
+                for (k = a; k <= b; k++) {
+                    for (s = 0; s < SEG_COUNT; s++) actual += segment_frames(g, k, s);
+                }
+                delta = target - actual;
+                if (delta == 0) break;
+
+                want = segment_frames(g, last_elastic, SEG_STEADY) + delta;
+                if (want < BM_DUR_MIN_STEADY) want = BM_DUR_MIN_STEADY;
+
+                ms = (int)((float)want * 1000.0f / g->frame_rate + 0.5f);
+                if (ms > 10000) ms = 10000;
+                if (ms < 1) ms = 1;
+                if ((unsigned short)ms == g->mod[last_elastic].dur_ms) break;
+                g->mod[last_elastic].dur_ms = (unsigned short)ms;
+            }
+        }
+
+        a = b + 1;
+    }
+}
+
 bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
                                     size_t len)
 {
     bm_phoneme_mod cur;
     size_t i = 0;
     int    total = 0, k, s;
+#if BM_WITH_MARKUP
+    int    groups = 0;      /* [dur] groups opened so far; ids are 1-based */
+#endif
 
     if (g == 0 || phonemes == 0) return BM_ERR_ARG;
 
@@ -619,6 +917,9 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
     cur.f0 = 0.0f;
     cur.speed = 0.0f;
     cur.dur_ms = 0u;
+    cur.dur_total = 0u;
+    cur.dur_group = 0u;
+    cur.f0_glide_ms = 0u;
     cur.f0_absolute = 0u;
 
     while (i < len) {
@@ -634,6 +935,7 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
 #if BM_WITH_MARKUP
             size_t   cs = ++i;
             unsigned pause_ms = 0u;
+            int      open_group = 0;
             bm_result rc;
 
             /* Scan to the closing bracket regardless of whitespace: a command
@@ -641,14 +943,24 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
             while (i < len && phonemes[i] != ']') i++;
             if (i >= len) return BM_ERR_ARG;      /* unterminated */
 
-            rc = parse_command(phonemes + cs, i - cs, &cur, &pause_ms);
+            rc = parse_command(phonemes + cs, i - cs, &cur, &pause_ms,
+                               &open_group);
             if (rc != BM_OK) return rc;
             i++;                                  /* past the ']' */
+
+            if (open_group) {
+                /* One group per [dur], even where two of them ask for the same
+                 * length. More groups than phonemes cannot happen, so the id
+                 * cannot collide with a live one. */
+                if (groups < BM_MAX_PHONEMES) groups++;
+                cur.dur_group = (unsigned short)groups;
+            }
 
             if (pause_ms > 0u) {
                 if (g->count >= BM_MAX_PHONEMES) return BM_ERR_OVERFLOW;
                 g->seq[g->count] = bm_phoneme_silence();
                 g->stress[g->count] = BM_STRESS_UNMARKED;
+                g->src[g->count] = (uint32_t)(cs - 1u);
                 g->mod[g->count] = cur;
                 g->mod[g->count].dur_ms = (unsigned short)pause_ms;
                 g->count++;
@@ -676,6 +988,7 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
         if (g->count >= BM_MAX_PHONEMES) return BM_ERR_OVERFLOW;
         g->seq[g->count] = p;
         g->stress[g->count] = stress;
+        g->src[g->count] = (uint32_t)start;
         g->mod[g->count] = cur;
         /* [hold] applies to vowels only; everything else keeps its own timing.
          * [pause] sets a length directly on the silence it inserts, above. */
@@ -692,6 +1005,12 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
     bm_prosody_plan(g->seq, g->stress, g->count, &g->voice,
                     g->f0_plan, g->dur_plan);
 
+    /* After planning, because a [dur] group has to fit around the lengths the
+     * planner actually chose rather than the nominal ones - and before the
+     * total is measured, because they change it. */
+    apply_pause_lengths(g);
+    apply_dur_groups(g);
+
     bm_frame_gen_reset(g);
 
     for (k = 0; k < g->count; k++) {
@@ -705,6 +1024,55 @@ bm_result bm_frame_gen_set_phonemes(bm_frame_gen *g, const char *phonemes,
 int bm_frame_gen_length(const bm_frame_gen *g)
 {
     return (g == 0) ? 0 : g->frames_total;
+}
+
+int bm_frame_gen_phoneme_frames(const bm_frame_gen *g, int index)
+{
+    int n = 0, s;
+
+    if (g == 0 || index < 0 || index >= g->count) return 0;
+    for (s = 0; s < SEG_COUNT; s++) n += segment_frames(g, index, s);
+    return n;
+}
+
+/* Where the pitch has got to on its way to `target`, for a note that asked to
+ * be reached over time rather than at once.
+ *
+ * Geometric rather than linear in hertz, for the reason glide_freq() gives
+ * about formants: equal ratios per unit time is where the ear expects the
+ * middle of an interval to be. A fifth from 262 Hz glided linearly passes
+ * through 327 Hz at the halfway point and geometrically through 321, and the
+ * second one is the note a singer would be on.
+ *
+ * The first pitch of an utterance is not glided into - there is nothing to
+ * glide from, and a phrase that scooped up to its own first note out of silence
+ * would be an effect nobody asked for.
+ */
+static float glide_pitch(bm_frame_gen *g, float target, unsigned short ms)
+{
+    if (!g->f0_started) {
+        g->f0_started = 1;
+        g->f0_glide_from = target;
+        g->f0_glide_to = target;
+        g->f0_glide_len = 0;
+        g->f0_glide_at = 0;
+        return target;
+    }
+
+    if (target != g->f0_glide_to) {
+        /* From wherever the last frame actually left the pitch, which is not
+         * the previous note when one glide is interrupted by the next. */
+        g->f0_glide_from = (g->last.f0 > 1.0f) ? g->last.f0 : target;
+        g->f0_glide_to = target;
+        g->f0_glide_len = ms_to_frames(g, ms, 1.0f, 1.0f);
+        g->f0_glide_at = 0;
+    }
+
+    if (g->f0_glide_at >= g->f0_glide_len) return target;
+
+    g->f0_glide_at++;
+    return glide_freq(g->f0_glide_from, target,
+                      (float)g->f0_glide_at / (float)g->f0_glide_len, 1.0f);
 }
 
 /* Pulls a computed pitch toward the voice's flat base by `flatten`.
@@ -769,8 +1137,20 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
                     target *= g->mod[g->index].f0 / g->voice.f0_base;
                 }
             }
-            if (!g->f0_started) { g->f0_smooth = target; g->f0_started = 1; }
-            g->f0_smooth += F0_SMOOTH * (target - g->f0_smooth);
+            /* An absolute note that named its own glide governs how it is
+             * reached; everything else chases as it always did. Keeping the
+             * smoother in step means a score that goes back to relative pitch
+             * afterwards carries on from where the glide left the voice rather
+             * than from where the contour last was. */
+            if (g->mod[g->index].f0_absolute &&
+                g->mod[g->index].f0_glide_ms > 0u) {
+                g->f0_smooth = glide_pitch(g, target,
+                                           g->mod[g->index].f0_glide_ms);
+            } else {
+                if (!g->f0_started) { g->f0_smooth = target; g->f0_started = 1; }
+                g->f0_smooth += F0_SMOOTH * (target - g->f0_smooth);
+                g->f0_glide_to = target;   /* so a later [glide] starts here */
+            }
             out->f0 = g->f0_smooth;
             out->f0 = flattened(g, out->f0);
         } else {
@@ -785,6 +1165,19 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out)
             float f0;
             if (g->mod[g->index].f0_absolute) {
                 f0 = base;              /* no declination, no stress bump */
+                /* This is the branch song mode and the roll run in, prosody
+                 * being speech planning and a written melody wanting none of
+                 * it. Before [glide] existed there was no way to reach a note
+                 * other than instantly here, so a tied note stepped - which is
+                 * the one thing legato is not. */
+                if (g->mod[g->index].f0_glide_ms > 0u) {
+                    f0 = glide_pitch(g, f0, g->mod[g->index].f0_glide_ms);
+                } else if (!g->f0_started) {
+                    g->f0_started = 1;
+                    g->f0_glide_to = f0;
+                } else {
+                    g->f0_glide_to = f0;
+                }
             } else {
                 f0 = base * (1.0f + (F0_DECLINATION - 1.0f) * t);
                 if (g->stress[g->index] == 1u) f0 *= F0_STRESS_BUMP;

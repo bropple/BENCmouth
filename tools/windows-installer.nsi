@@ -20,6 +20,9 @@
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+; Sections.nsh, for SelectSection and SectionIsSelected in .onSelChange -
+; ticking the VST3 has to tick the CLAP, and neither macro is in LogicLib.
+!include "Sections.nsh"
 
 !ifndef VERSION
   !define VERSION "dev"
@@ -284,6 +287,53 @@ Section "Desktop shortcut" SEC_DESKTOP
                  "$INSTDIR\bencmouth-gui.exe" "" "$INSTDIR\bencmouth-gui.exe" 0
   SetOutPath "$INSTDIR"
 SectionEnd
+
+; ---------------------------------------------------------------- plugins
+;
+; The plugin formats install where a host looks for them, which is outside
+; $INSTDIR - so each one is asked for, each one records where it put itself,
+; and the uninstaller takes back exactly what it wrote.
+;
+; The CLAP is the instrument. The VST3 is a shim that finds BENCmouth.clap at
+; run time and loads it, so it is useless on its own - which is why ticking it
+; ticks the CLAP too (see .onSelChange). That is not a convenience: a VST3
+; installed alone appears in a host's list and then fails to load, which looks
+; like a broken plugin rather than a missing one.
+;
+; Both are ticked by default. Somebody running an installer for a synthesizer
+; that ships plugins almost certainly wants the plugins, and the person who
+; does not is one untick away.
+
+Section "CLAP plugin" SEC_CLAP
+  ; %COMMONPROGRAMFILES%\CLAP, which is the machine-wide location in the CLAP
+  ; specification. Machine-wide and not per-user, because this installer is
+  ; elevated - and an elevated installer sees the *elevating* account's
+  ; LOCALAPPDATA, so a "per-user" install would land in whichever account
+  ; approved the consent prompt. The PATH block below has the same problem and
+  ; cannot avoid it; this one can.
+  SetOutPath "$COMMONFILES64\CLAP"
+  SetOverwrite on
+  File "${SRCDIR}/BENCmouth.clap"
+  WriteRegStr HKLM "${REGKEY}" "ClapPath" "$COMMONFILES64\CLAP\BENCmouth.clap"
+  SetOutPath "$INSTDIR"
+SectionEnd
+
+; Only when one was built. The VST3 needs clap-wrapper and the Steinberg SDK,
+; which are a fetch and a cmake build rather than part of `make` - so an
+; installer assembled without them is a normal thing to want, and a missing
+; File would otherwise stop makensis dead.
+!ifdef HAVE_VST3
+Section "VST3 plugin" SEC_VST3
+  SetOutPath "$COMMONFILES64\VST3"
+  SetOverwrite on
+  ; A .vst3 on Windows is a directory laid out the way the specification says,
+  ; not a bare DLL - hosts that scan for the bundle shape will not see a loose
+  ; file. /r keeps the layout the build produced.
+  File /r "${SRCDIR}/BENCmouth.vst3"
+  WriteRegStr HKLM "${REGKEY}" "Vst3Path" "$COMMONFILES64\VST3\BENCmouth.vst3"
+  SetOutPath "$INSTDIR"
+SectionEnd
+!endif
 
 ; Unticked by default - the /o. Everything else this installer does lives in
 ; its own directory, its own Start Menu folder and its own uninstall key; this
@@ -586,11 +636,36 @@ LangString DESC_PATH ${LANG_ENGLISH} \
 finds it. Off by default: it is the only thing here that changes a setting \
 outside BENCmouth's own folder. Removed again when you uninstall."
 
+LangString DESC_CLAP ${LANG_ENGLISH} \
+  "The instrument, for a DAW. Installs BENCmouth.clap where hosts look for \
+CLAP plugins. The window you draw notes in is the BENCmouth program above, \
+which the plugin starts for you."
+
+LangString DESC_VST3 ${LANG_ENGLISH} \
+  "The same instrument as a VST3, for hosts that do not load CLAP. It is a \
+shim that loads the CLAP, so it needs the CLAP alongside it - ticking this \
+ticks that."
+
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_APP}     $(DESC_APP)
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_DESKTOP} $(DESC_DESKTOP)
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_CLAP}    $(DESC_CLAP)
+!ifdef HAVE_VST3
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_VST3}    $(DESC_VST3)
+!endif
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_PATH}    $(DESC_PATH)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+; A VST3 without the CLAP beside it loads nothing at all, so asking for one
+; asks for the other. Done here rather than by making the CLAP read-only,
+; because somebody who wants only the CLAP is making a perfectly good choice.
+Function .onSelChange
+!ifdef HAVE_VST3
+  ${If} ${SectionIsSelected} ${SEC_VST3}
+    !insertmacro SelectSection ${SEC_CLAP}
+  ${EndIf}
+!endif
+FunctionEnd
 
 ; ---------------------------------------------------------------- uninstall
 
@@ -615,6 +690,23 @@ Section "Uninstall"
   RMDir  "$INSTDIR\voices"
   RMDir  "$INSTDIR\songs"
   RMDir  "$INSTDIR"
+
+  ; The plugins, from wherever they were put. Read back from the registry
+  ; rather than assumed, so a future release that changes the location still
+  ; removes what this one wrote.
+  ReadRegStr $0 HKLM "${REGKEY}" "ClapPath"
+  ${If} $0 != ""
+    Delete "$0"
+  ${EndIf}
+  ReadRegStr $0 HKLM "${REGKEY}" "Vst3Path"
+  ${If} $0 != ""
+    ; A bundle, so the whole directory - and only after checking it is the one
+    ; we wrote, because RMDir /r on a path read from a registry key is a thing
+    ; worth being careful about.
+    ${If} ${FileExists} "$0\Contents\*.*"
+      RMDir /r "$0"
+    ${EndIf}
+  ${EndIf}
 
   Delete "$SMPROGRAMS\BENCmouth\BENCmouth.lnk"
   Delete "$SMPROGRAMS\BENCmouth\Uninstall BENCmouth.lnk"

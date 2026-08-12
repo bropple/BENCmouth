@@ -54,6 +54,7 @@ void bm_song_init(bm_song *song)
              song->voice.name ? song->voice.name : "BENCmouth");
     song->voice.name = song->voice_name;
     bm_effects_default(&song->effects);
+    bm_roll_init(&song->roll);
     song->tempo = 0.0f;
 }
 
@@ -151,6 +152,27 @@ int bm_song_parse(const char *text, size_t len, bm_song *song,
             continue;
         }
 
+        if (strcmp(key, "note") == 0) {
+            bm_note note;
+            char    why[128];
+
+            if (song->roll.count >= BM_ROLL_NOTES_MAX) {
+                FAIL("line %d: more than %d notes", lineno, BM_ROLL_NOTES_MAX);
+            }
+            if (bm_roll_note_read(value, &note, why, sizeof why) != 0) {
+                FAIL("line %d: %s", lineno, why);
+            }
+            /* Through bm_roll_add rather than appended, so a hand-written file
+             * whose notes are out of order opens sorted - everything downstream
+             * of here assumes that, including which note a click lands on. */
+            {
+                int at = bm_roll_add(&song->roll, note.start, note.length,
+                                     note.midi, note.phon, note.lyric);
+                if (at >= 0) song->roll.note[at].tie = note.tie;
+            }
+            continue;
+        }
+
         if (strcmp(key, "tempo") == 0) {
             char  *endp;
             double v = strtod(value, &endp);
@@ -179,6 +201,11 @@ int bm_song_parse(const char *text, size_t len, bm_song *song,
     if (!in_score) {
         FAIL("no \"score =\" line, so this file has no song in it");
     }
+
+    /* A tie is only a tie when the note it is tied to is touching it and has a
+     * vowel to carry on. A hand-edited file can say otherwise, and dropping the
+     * tie is better than compiling a slur that would not sound like one. */
+    (void)bm_roll_check_ties(&song->roll);
 
     return 0;
 }
@@ -231,44 +258,53 @@ int bm_song_load(const char *path, bm_song *song,
     return rc;
 }
 
-int bm_song_save(const char *path, const bm_song *song, const char *score)
+/* Appends to `out`, tracking the position and refusing to write half a line.
+ *
+ * A macro rather than a function because every call has a different format and
+ * argument list, and the alternative is a vprintf wrapper that would have to be
+ * given the buffer, the position and the cap at every call anyway. */
+#define PUT(...)                                                              \
+    do {                                                                      \
+        int n_ = snprintf(out + at, cap - at, __VA_ARGS__);                   \
+        if (n_ < 0 || (size_t)n_ >= cap - at) return -1;                      \
+        at += (size_t)n_;                                                     \
+    } while (0)
+
+long bm_song_format(const bm_song *song, const char *score,
+                    char *out, size_t cap)
 {
-    FILE *f;
-    int   to_stdout;
     const bm_voice *v;
+    size_t at = 0;
 
-    if (path == 0 || song == 0) return -1;
+    if (song == 0 || out == 0 || cap == 0) return -1;
     v = &song->voice;
+    out[0] = '\0';
 
-    to_stdout = (path[0] == '-' && path[1] == '\0');
-    f = to_stdout ? stdout : fopen(path, "w");
-    if (f == 0) return -1;
+    PUT("# BENCmouth song\n");
+    PUT("title          = %s\n", song->title);
+    PUT("voice          = %s\n", song->voice_name);
+    if (song->tempo > 0.0f) PUT("tempo          = %.6g\n", (double)song->tempo);
+    PUT("\n");
 
-    fprintf(f, "# BENCmouth song\n");
-    fprintf(f, "title          = %s\n", song->title);
-    fprintf(f, "voice          = %s\n", song->voice_name);
-    if (song->tempo > 0.0f) fprintf(f, "tempo          = %.6g\n", (double)song->tempo);
-    fprintf(f, "\n");
-
-    fprintf(f, "f0_base        = %.6g\n", (double)v->f0_base);
-    fprintf(f, "f0_range       = %.6g\n", (double)v->f0_range);
-    fprintf(f, "f0_flutter     = %.6g\n", (double)v->f0_flutter);
-    fprintf(f, "vibrato        = %.6g\n", (double)v->vibrato);
-    fprintf(f, "vibrato_rate   = %.6g\n", (double)v->vibrato_rate);
-    fprintf(f, "source         = %.6g\n", (double)v->source);
-    fprintf(f, "speed          = %.6g\n", (double)v->speed);
-    fprintf(f, "throat         = %.6g\n", (double)v->throat);
-    fprintf(f, "mouth          = %.6g\n", (double)v->mouth);
-    fprintf(f, "breathiness    = %.6g\n", (double)v->breathiness);
-    fprintf(f, "tilt           = %.6g\n", (double)v->tilt);
-    fprintf(f, "open_quotient  = %.6g\n", (double)v->open_quotient);
-    fprintf(f, "whisper        = %.6g\n", (double)v->whisper);
-    fprintf(f, "gain           = %.6g\n", (double)v->gain);
-    fprintf(f, "coarticulation = %.6g\n", (double)v->coarticulation);
-    fprintf(f, "prosody        = %.6g\n", (double)v->prosody);
-    fprintf(f, "formant_glide  = %.6g\n", (double)v->formant_glide);
-    fprintf(f, "bandwidth_track= %.6g\n", (double)v->bandwidth_track);
-    fprintf(f, "flatten        = %.6g\n", (double)v->flatten);
+    PUT("f0_base        = %.6g\n", (double)v->f0_base);
+    PUT("f0_range       = %.6g\n", (double)v->f0_range);
+    PUT("f0_flutter     = %.6g\n", (double)v->f0_flutter);
+    PUT("vibrato        = %.6g\n", (double)v->vibrato);
+    PUT("vibrato_rate   = %.6g\n", (double)v->vibrato_rate);
+    PUT("source         = %.6g\n", (double)v->source);
+    PUT("speed          = %.6g\n", (double)v->speed);
+    PUT("throat         = %.6g\n", (double)v->throat);
+    PUT("mouth          = %.6g\n", (double)v->mouth);
+    PUT("breathiness    = %.6g\n", (double)v->breathiness);
+    PUT("tilt           = %.6g\n", (double)v->tilt);
+    PUT("open_quotient  = %.6g\n", (double)v->open_quotient);
+    PUT("whisper        = %.6g\n", (double)v->whisper);
+    PUT("gain           = %.6g\n", (double)v->gain);
+    PUT("coarticulation = %.6g\n", (double)v->coarticulation);
+    PUT("prosody        = %.6g\n", (double)v->prosody);
+    PUT("formant_glide  = %.6g\n", (double)v->formant_glide);
+    PUT("bandwidth_track= %.6g\n", (double)v->bandwidth_track);
+    PUT("flatten        = %.6g\n", (double)v->flatten);
 
     /* Every field, and it had been eight of fourteen. `ring_drift`, `echo`,
      * `echo_ms`, `reverb`, `reverb_size` and `level` were all missing here -
@@ -283,29 +319,72 @@ int bm_song_save(const char *path, const bm_song *song, const char *score)
         song->effects.chorus > 0.0f || song->effects.drive > 0.0f ||
         song->effects.vocoder > 0.0f || song->effects.crush > 0.0f ||
         song->effects.echo > 0.0f || song->effects.reverb > 0.0f) {
-        fprintf(f, "\nring           = %.6g\n", (double)song->effects.ring);
-        fprintf(f, "ring_hz        = %.6g\n", (double)song->effects.ring_hz);
-        fprintf(f, "ring_drift     = %.6g\n", (double)song->effects.ring_drift);
-        fprintf(f, "comb           = %.6g\n", (double)song->effects.comb);
-        fprintf(f, "comb_hz        = %.6g\n", (double)song->effects.comb_hz);
-        fprintf(f, "chorus         = %.6g\n", (double)song->effects.chorus);
-        fprintf(f, "chorus_hz      = %.6g\n", (double)song->effects.chorus_hz);
-        fprintf(f, "drive          = %.6g\n", (double)song->effects.drive);
-        fprintf(f, "vocoder        = %.6g\n", (double)song->effects.vocoder);
-        fprintf(f, "vocoder_hz     = %.6g\n", (double)song->effects.vocoder_hz);
-        fprintf(f, "crush          = %.6g\n", (double)song->effects.crush);
-        fprintf(f, "echo           = %.6g\n", (double)song->effects.echo);
-        fprintf(f, "echo_ms        = %.6g\n", (double)song->effects.echo_ms);
-        fprintf(f, "reverb         = %.6g\n", (double)song->effects.reverb);
-        fprintf(f, "reverb_size    = %.6g\n", (double)song->effects.reverb_size);
-        fprintf(f, "level          = %.6g\n", (double)song->effects.level);
+        PUT("\nring           = %.6g\n", (double)song->effects.ring);
+        PUT("ring_hz        = %.6g\n", (double)song->effects.ring_hz);
+        PUT("ring_drift     = %.6g\n", (double)song->effects.ring_drift);
+        PUT("comb           = %.6g\n", (double)song->effects.comb);
+        PUT("comb_hz        = %.6g\n", (double)song->effects.comb_hz);
+        PUT("chorus         = %.6g\n", (double)song->effects.chorus);
+        PUT("chorus_hz      = %.6g\n", (double)song->effects.chorus_hz);
+        PUT("drive          = %.6g\n", (double)song->effects.drive);
+        PUT("vocoder        = %.6g\n", (double)song->effects.vocoder);
+        PUT("vocoder_hz     = %.6g\n", (double)song->effects.vocoder_hz);
+        PUT("crush          = %.6g\n", (double)song->effects.crush);
+        PUT("echo           = %.6g\n", (double)song->effects.echo);
+        PUT("echo_ms        = %.6g\n", (double)song->effects.echo_ms);
+        PUT("reverb         = %.6g\n", (double)song->effects.reverb);
+        PUT("reverb_size    = %.6g\n", (double)song->effects.reverb_size);
+        PUT("level          = %.6g\n", (double)song->effects.level);
     }
 
-    fprintf(f, "\nscore =\n");
+    /* The notes last in the header, because they are the longest run of lines
+     * in the file and everything above them is one screen of settings. A song
+     * that was typed rather than drawn writes none of this. */
+    if (song->roll.count > 0) {
+        int i;
+        PUT("\n");
+        for (i = 0; i < song->roll.count; i++) {
+            char line[128];
+            if (bm_roll_note_write(&song->roll.note[i], line, sizeof line) == 0) {
+                PUT("note = %s\n", line);
+            }
+        }
+    }
+
+    PUT("\nscore =\n");
     if (score != 0 && score[0] != '\0') {
         size_t n = strlen(score);
-        fwrite(score, 1, n, f);
-        if (score[n - 1] != '\n') fputc('\n', f);
+        PUT("%s", score);
+        if (score[n - 1] != '\n') PUT("\n");
+    }
+
+    return (long)at;
+}
+
+#undef PUT
+
+int bm_song_save(const char *path, const bm_song *song, const char *score)
+{
+    FILE *f;
+    int   to_stdout;
+    long  n;
+    /* Static because it is 64 KB and this is called from a GUI's draw loop by
+     * way of a button; the alternative is that much stack in a frame that also
+     * holds an engine. Single-threaded, and dead between calls. */
+    static char text[BM_SONG_FILE_MAX];
+
+    if (path == 0 || song == 0) return -1;
+
+    n = bm_song_format(song, score, text, sizeof text);
+    if (n < 0) return -1;
+
+    to_stdout = (path[0] == '-' && path[1] == '\0');
+    f = to_stdout ? stdout : fopen(path, "w");
+    if (f == 0) return -1;
+
+    if (fwrite(text, 1, (size_t)n, f) != (size_t)n) {
+        if (!to_stdout) fclose(f);
+        return -1;
     }
 
     if (to_stdout) { fflush(f); return 0; }

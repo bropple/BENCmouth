@@ -223,8 +223,12 @@ EMBED     := src/gui/bm_embed.c
 EMBED_IN  := assets/fonts/TerminusTTF.ttf assets/brand/BENCO_Logo_Terminal.png \
              assets/icon/hex-64.png LICENSE NOTICE assets/fonts/OFL.txt
 
+# bm_shm.c comes with it: the GUI is also the plugin's editor, and that mode
+# attaches to the block the plugin created. Nothing else in src/plugin/ is
+# needed here - spawning is the plugin's side of the arrangement.
 GUI_SRC  := src/gui/main.c src/gui/bm_ui.c src/gui/bm_filedlg.c \
-            src/gui/bm_song_ui.c $(EMBED)
+            src/gui/bm_song_ui.c src/gui/bm_roll_ui.c \
+            src/plugin/bm_shm.c $(EMBED)
 
 # Windows: embed the icon, and link as a GUI subsystem binary so double-clicking
 # it does not also open a console behind the window. Both apply to the GUI only -
@@ -346,7 +350,7 @@ gui-dict: $(DICT_DATA)
 	$(MAKE) gui OPT="$(OPT) -DBM_WITH_DICT=1"
 
 $(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
-	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui $(RL_CFLAGS) \
+	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui -Isrc/plugin $(RL_CFLAGS) \
 	  -o $@ $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB) \
 	  $(RL_LIBS) $(RL_SYS) $(GUI_LINK) -lm
 
@@ -421,8 +425,283 @@ ifeq (yes,$(HAVE_WASM_CC))
 else
 	@echo "== wasm: skipped - $(WASM_CC) not found."
 endif
+ifeq (yes,$(CLAP_FOUND))
+	@echo "== CLAP"
+	$(MAKE) clap
+else
+	@echo "== CLAP: skipped - no headers. Run 'make clap-fetch'."
+endif
 	@echo
 	@echo "everything built."
+
+# ------------------------------------------------------------------ #
+# CLAP
+#
+# The plugin is a score player: it owns the song, the host owns the transport,
+# and the two meet at a position in seconds. See src/clap/bencmouth_clap.c.
+#
+# The headers are fetched rather than vendored in history - MIT, a tagged
+# tarball, and an input the build can reproduce. `make clap-fetch` gets them.
+# ------------------------------------------------------------------ #
+
+# Read from the public header, so the bundle and the library cannot disagree
+# about what version this is.
+BM_VERSION := $(shell awk '/define BM_VERSION_MAJOR/{a=$$3} /define BM_VERSION_MINOR/{b=$$3} /define BM_VERSION_PATCH/{c=$$3} END{print a"."b"."c}' include/bencmouth.h)
+
+CLAP_VERSION := 1.2.10
+CLAP_INCLUDE ?= vendor/clap/include
+CLAP_FOUND   := $(if $(wildcard $(CLAP_INCLUDE)/clap/clap.h),yes,)
+
+# The host-layer pieces the plugin needs, which is everything except the CLI's
+# own main and the audio backend: a plugin is given its samples to fill and
+# must never open a device of its own.
+CLAP_HOST_SRC := src/host/bm_songfile.c src/host/bm_roll.c \
+                 src/host/bm_render.c src/host/bm_player.c \
+                 src/plugin/bm_shm.c src/plugin/bm_spawn.c
+
+# The core goes in as source rather than as libbencmouth.a. A shared object
+# needs position-independent code throughout and the static library is not
+# built that way - `ld` says so, in a message about relocations that takes a
+# minute to recognise as "you cannot put a .a in a .so". Compiling the sources
+# in also keeps the plugin one file with nothing to install beside it.
+#
+# The dictionary is deliberately not part of it. A score is phonemes, so the
+# only thing that spells words is the editor, and that is a different process
+# with its own copy - carrying 1.5 MB of compiled CMUdict into every plugin
+# instance would be paying for a lookup this side never does.
+CLAP_SRC      := src/clap/bencmouth_clap.c $(CLAP_HOST_SRC) \
+                 $(filter-out src/core/bm_dict_data.c,$(CORE_SRC))
+
+CW_VERSION   := v0.16.0
+CW_DIR       := vendor/clap-wrapper
+VST3_SDK_DIR := vendor/vst3sdk
+VST3_SDK_COMMIT := 58f8da7936800732561402d7936584ca4505de07
+AU_SDK_DIR   := vendor/AudioUnitSDK
+VST3_BUILD   := build/vst3
+AU_BUILD     := build/au
+
+# The mini-host dlopen()s the bundle, so it needs whatever provides that.
+CLAP_DL := -ldl
+EXE     :=
+
+ifeq ($(UNAME),Darwin)
+  CLAP_BUNDLE := build/BENCmouth.clap
+  CLAP_BINARY := $(CLAP_BUNDLE)/Contents/MacOS/BENCmouth
+  # Both architectures, always. A runner - and most machines now - is Apple
+  # Silicon, so a plain build is arm64-only and simply absent for anyone on an
+  # Intel Mac. This is one of the three things that make macOS report a plugin
+  # as damaged or missing, and BENCsynth shipped a release failing all three.
+  MAC_ARCHS   := -arch x86_64 -arch arm64
+  CLAP_SHARED := -dynamiclib $(MAC_ARCHS)
+  CLAP_DL     :=
+  CLAP_INSTALL_DIR ?= $(HOME)/Library/Audio/Plug-Ins/CLAP
+else ifneq (,$(WINDOWS))
+  CLAP_BUNDLE := build/BENCmouth.clap
+  CLAP_BINARY := $(CLAP_BUNDLE)
+  CLAP_SHARED := -shared
+  # Static for the reason the GUI is: a host will not have MSYS2's runtime
+  # DLLs on its PATH, and LoadLibrary failing looks exactly like the plugin
+  # not being installed.
+  CLAP_LINK   := -static-libgcc
+  CLAP_DL     :=
+  EXE         := .exe
+  CLAP_INSTALL_DIR ?= $(LOCALAPPDATA)/Programs/Common/CLAP
+else
+  CLAP_BUNDLE := build/BENCmouth.clap
+  CLAP_BINARY := $(CLAP_BUNDLE)
+  CLAP_SHARED := -shared
+  CLAP_INSTALL_DIR ?= $(HOME)/.clap
+endif
+
+.PHONY: clap clap-fetch clap-test clap-install editor-test
+
+clap:
+ifeq ($(CLAP_FOUND),yes)
+	@$(MAKE) --no-print-directory $(CLAP_BINARY)
+else
+	@echo "  no CLAP headers at $(CLAP_INCLUDE)."
+	@echo "  run 'make clap-fetch', or point CLAP_INCLUDE at the include/"
+	@echo "  directory of a CLAP checkout."
+	@false
+endif
+
+clap-fetch:
+	mkdir -p vendor
+	curl -sL -o /tmp/clap-$(CLAP_VERSION).tar.gz \
+	    https://github.com/free-audio/clap/archive/refs/tags/$(CLAP_VERSION).tar.gz
+	tar xzf /tmp/clap-$(CLAP_VERSION).tar.gz -C vendor
+	rm -rf vendor/clap
+	mv vendor/clap-$(CLAP_VERSION) vendor/clap
+	@echo "CLAP $(CLAP_VERSION) headers in vendor/clap"
+
+# -isystem, not -I: the CLAP headers use unnamed unions, which are C11 and
+# which -Wpedantic reports on every file that includes them. They are correct
+# and not ours to fix, and turning the warning off for our own code to silence
+# theirs would be the wrong trade.
+$(CLAP_BINARY): $(CLAP_SRC) include/bencmouth.h $(wildcard src/clap/Info.plist)
+	@mkdir -p $(dir $(CLAP_BINARY))
+	$(CC) $(filter-out -MMD -MP,$(CFLAGS)) -isystem $(CLAP_INCLUDE) \
+	    -Isrc/core -Isrc/host -Isrc/plugin \
+	    -fPIC -fvisibility=hidden $(CLAP_SHARED) $(CLAP_LINK) \
+	    -o $(CLAP_BINARY) $(CLAP_SRC) -lm
+ifeq ($(UNAME),Darwin)
+	# A .clap on macOS is a bundle, and a bundle without an Info.plist is a
+	# folder the host will not look inside. The version comes from the header
+	# so there is one place it is written down.
+	sed 's/@BM_VERSION@/$(BM_VERSION)/g' src/clap/Info.plist \
+	    > $(CLAP_BUNDLE)/Contents/Info.plist
+	# Ad-hoc, which identifies nobody and is not the point: unsigned arm64
+	# code does not load at all, and the message a host shows when it refuses
+	# says nothing about signatures. Notarization is a separate question.
+	@command -v codesign >/dev/null 2>&1 && { \
+	    codesign --force --sign - --timestamp=none $(CLAP_BUNDLE) && \
+	    codesign --verify --deep --strict $(CLAP_BUNDLE) && \
+	    echo "signed $(CLAP_BUNDLE)"; } || \
+	    echo "warning: no codesign - the bundle will not load on Apple Silicon"
+endif
+	@echo "built $(CLAP_BUNDLE)"
+
+# Loads it the way a host does and plays it. Compiling proves nothing about
+# whether the transport lands on the right sample or whether a project's state
+# survives a round trip; this does.
+CLAP_TEST := bm_clap_test$(EXE)
+
+clap-test: clap
+	$(CC) $(filter-out -MMD -MP,$(CFLAGS)) -isystem $(CLAP_INCLUDE) \
+	    -o $(CLAP_TEST) tools/clap_host.c $(CLAP_DL) -lm
+	./$(CLAP_TEST) $(CLAP_BINARY) render/legato-demo.bmsong
+	@rm -f $(CLAP_TEST)
+
+# The plugin and the editor, against each other. Needs a display, because the
+# editor is a real window - so it is its own target rather than part of
+# clap-test, which needs nothing.
+EDITOR_TEST := bm_editor_test$(EXE)
+
+editor-test: clap $(GUI)
+	$(CC) $(filter-out -MMD -MP,$(CFLAGS)) -isystem $(CLAP_INCLUDE) -Isrc/plugin \
+	    -o $(EDITOR_TEST) tools/editor_test.c src/plugin/bm_shm.c $(CLAP_DL) -lm
+	BENCMOUTH_EDITOR="$(CURDIR)/$(GUI)" ./$(EDITOR_TEST) $(CLAP_BINARY)
+	@rm -f $(EDITOR_TEST)
+
+# ------------------------------------------------------------------ #
+# VST3, and AU on macOS.
+#
+# Both are wrappers around the CLAP rather than ports of anything: the shim
+# finds BENCmouth.clap at runtime and loads it. So they always install together
+# with it, and a shim on its own does nothing - which is worth knowing before
+# debugging why a VST3 that is definitely installed does not appear.
+#
+# VST3 has been MIT since October 2025, so this is a build problem and not a
+# licensing one.
+# ------------------------------------------------------------------ #
+
+ifeq ($(UNAME),Darwin)
+  VST3_BUNDLE := build/BENCmouth.vst3
+  AU_BUNDLE   := build/BENCmouth.component
+  VST3_INSTALL_DIR ?= $(HOME)/Library/Audio/Plug-Ins/VST3
+  AU_INSTALL_DIR   ?= $(HOME)/Library/Audio/Plug-Ins/Components
+else ifneq (,$(WINDOWS))
+  VST3_BUNDLE := build/BENCmouth.vst3
+  VST3_INSTALL_DIR ?= $(COMMONPROGRAMFILES)/VST3
+else
+  VST3_BUNDLE := build/BENCmouth.vst3
+  VST3_INSTALL_DIR ?= $(HOME)/.vst3
+endif
+
+.PHONY: vst3 vst3-fetch vst3-install vst3-test au au-fetch au-install
+
+vst3-fetch:
+	mkdir -p vendor
+	rm -rf $(CW_DIR) $(VST3_SDK_DIR)
+	git clone -q --depth 1 --branch $(CW_VERSION) \
+	    https://github.com/free-audio/clap-wrapper.git $(CW_DIR)
+	git clone -q --depth 1 https://github.com/steinbergmedia/vst3sdk.git $(VST3_SDK_DIR)
+	# Pinned, not taken at tip. The SDK at 3.8.1 declares `iid` in more than
+	# one base class, and every clap-wrapper up to v0.16.0 fails to compile
+	# against it - dozens of "reference to 'iid' is ambiguous", none of which
+	# name a version as the cause. This commit is the one the wrapper is known
+	# to build against; move it when the wrapper moves, not before.
+	cd $(VST3_SDK_DIR) && git fetch -q --depth 1 origin $(VST3_SDK_COMMIT) && \
+	    git checkout -q FETCH_HEAD && \
+	    git submodule update --init --depth 1 base pluginterfaces public.sdk cmake
+	@echo "clap-wrapper $(CW_VERSION) and the VST3 SDK are in vendor/"
+
+# clap-wrapper *and* Apple's AudioUnit SDK. Neither fetch implies the other,
+# which is why cmake/CMakeLists.txt guards each wrapper on its own SDK.
+au-fetch:
+	mkdir -p vendor
+	rm -rf $(AU_SDK_DIR)
+	test -d $(CW_DIR) || git clone -q --depth 1 --branch $(CW_VERSION) \
+	    https://github.com/free-audio/clap-wrapper.git $(CW_DIR)
+	git clone -q --depth 1 https://github.com/apple/AudioUnitSDK.git $(AU_SDK_DIR)
+	@echo "clap-wrapper $(CW_VERSION) and the AudioUnit SDK are in vendor/"
+
+vst3:
+ifeq ($(CLAP_FOUND),yes)
+	@test -d $(CW_DIR) || { echo "  run 'make vst3-fetch' first."; false; }
+	cmake -S cmake -B $(VST3_BUILD) -DCMAKE_BUILD_TYPE=Release \
+	    -DCLAP_WRAPPER_DIR="$(CURDIR)/$(CW_DIR)" \
+	    -DCLAP_SDK_ROOT="$(CURDIR)/vendor/clap" \
+	    -DBM_VERSION="$(BM_VERSION)" \
+	    -DVST3_SDK_ROOT="$(CURDIR)/$(VST3_SDK_DIR)"
+	cmake --build $(VST3_BUILD) --target bencmouth_as_vst3 --config Release -j
+	rm -rf $(VST3_BUNDLE)
+	cp -r "$$(find $(VST3_BUILD) -name 'BENCmouth.vst3' -maxdepth 4 | head -1)" $(VST3_BUNDLE)
+	@echo "built $(VST3_BUNDLE)  (loads BENCmouth.clap at run time)"
+else
+	@echo "  no CLAP headers - run 'make clap-fetch' first."
+	@false
+endif
+
+au:
+ifeq ($(UNAME),Darwin)
+	@test -d $(AU_SDK_DIR) || { echo "  run 'make au-fetch' first."; false; }
+	cmake -S cmake -B $(AU_BUILD) -DCMAKE_BUILD_TYPE=Release \
+	    -DCLAP_WRAPPER_DIR="$(CURDIR)/$(CW_DIR)" \
+	    -DCLAP_SDK_ROOT="$(CURDIR)/vendor/clap" \
+	    -DBM_VERSION="$(BM_VERSION)" \
+	    -DAUDIOUNIT_SDK_ROOT="$(CURDIR)/$(AU_SDK_DIR)"
+	cmake --build $(AU_BUILD) --target bencmouth_as_auv2 --config Release -j
+	rm -rf $(AU_BUNDLE)
+	cp -r "$$(find $(AU_BUILD) -name 'BENCmouth.component' -maxdepth 4 | head -1)" $(AU_BUNDLE)
+	@echo "built $(AU_BUNDLE)"
+else
+	@echo "  AU is a macOS format."
+	@false
+endif
+
+# Asks the built shim what it contains, the way a host would. A wrapper that
+# builds and finds nothing has an empty factory, which in a DAW is
+# indistinguishable from a plugin that failed to install.
+#
+# Needs the CLAP installed where the wrapper looks, which is what clap-install
+# does - so it depends on it rather than assuming somebody remembered.
+VST3_TEST := bm_vst3_test$(EXE)
+
+vst3-test: vst3 clap-install
+	$(CC) $(filter-out -MMD -MP,$(CFLAGS)) -o $(VST3_TEST) tools/vst3_probe.c $(CLAP_DL)
+	./$(VST3_TEST) "$$(find $(VST3_BUNDLE) -name '*.so' -o -name '*.dll' | head -1)"
+	@rm -f $(VST3_TEST)
+
+# The shims go beside nothing; the CLAP is what they load, so installing one
+# without the other is the mistake worth making impossible.
+vst3-install: vst3 clap-install
+	mkdir -p "$(VST3_INSTALL_DIR)"
+	rm -rf "$(VST3_INSTALL_DIR)/$(notdir $(VST3_BUNDLE))"
+	cp -R $(VST3_BUNDLE) "$(VST3_INSTALL_DIR)/"
+	@echo "installed to $(VST3_INSTALL_DIR)"
+
+au-install: au clap-install
+	mkdir -p "$(AU_INSTALL_DIR)"
+	rm -rf "$(AU_INSTALL_DIR)/$(notdir $(AU_BUNDLE))"
+	cp -R $(AU_BUNDLE) "$(AU_INSTALL_DIR)/"
+	@echo "installed to $(AU_INSTALL_DIR)"
+
+clap-install: clap
+	mkdir -p "$(CLAP_INSTALL_DIR)"
+	rm -rf "$(CLAP_INSTALL_DIR)/$(notdir $(CLAP_BUNDLE))"
+	cp -R $(CLAP_BUNDLE) "$(CLAP_INSTALL_DIR)/"
+	@echo "installed to $(CLAP_INSTALL_DIR)"
 
 # Header dependencies emitted by -MMD. Silent if absent (first build).
 -include $(CORE_OBJ:.o=.d) $(HOST_OBJ:.o=.d)

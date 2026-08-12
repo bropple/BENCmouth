@@ -4,6 +4,42 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## Unreleased
+
+**A piano roll, and a plugin.**
+
+The GUI has a third tab: notes on a grid, a syllable typed into each, lengths dragged.
+It is honest about time in a way the score tab could not be — `[dur N]` makes a note last
+N milliseconds *including its consonants*, and where a syllable will not fit, the note
+overruns and says so in amber rather than quietly pushing everything after it late.
+`TIE` slurs: the note carries on the vowel already sounding and glides onto its pitch,
+with the word's closing consonants moved to the end of the slur, which is what a singer
+does with "straight" held over two notes.
+
+**`BENCmouth.clap`** — the same song inside a DAW. It is a score player: the plugin owns
+the song, the host owns the transport, and pressing play, scrubbing or looping is followed
+exactly, because the score is rendered ahead of time and the host's playhead indexes into
+it. A project file stores the song as readable `.bmsong` text.
+
+**CLAP, VST3 and — on macOS — AU.** The VST3 and the AU are shims that load the CLAP, so
+they always install together with it; a shim on its own appears in a host's list and then
+fails to load, which looks like a broken plugin rather than a missing one.
+
+- **Windows**: the installer offers *CLAP plugin* and *VST3 plugin* as components. Ticking
+  the VST3 ticks the CLAP.
+- **macOS**: a second disk image, `bencmouth-plugins-*-macos-universal.dmg`, with every
+  format in it and an **Install Plug-Ins** script that puts each where its host looks. It
+  carries the application too — the plugin opens its window by starting it. Universal and
+  ad-hoc signed; not notarized, so Gatekeeper wants telling once.
+- **Linux**: `BENCmouth.clap` into `~/.clap`, `BENCmouth.vst3` into `~/.vst3`, or
+  `make clap-install vst3-install`.
+
+**The plugin's window is the BENCmouth application**, started by the plugin and talking to
+it through a block they share. It opens on the project's song and publishes every edit
+back. That it is a separate process is forced rather than chosen: raylib keeps its window
+in one file-scope global, so a process gets exactly one however many instances a host
+loads — and a crashing editor does not take the DAW with it.
+
 ## New in 0.2.4
 
 **The Windows installer can put `bm` on your PATH.** A tickbox, off by default, and the

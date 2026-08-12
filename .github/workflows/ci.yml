@@ -370,13 +370,17 @@ jobs:
   installer:
     name: Windows installer
     runs-on: ubuntu-latest
-    needs: [windows, gui-windows]
+    needs: [windows, gui-windows, clap-windows]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: bencmouth-windows, path: dl/cli }
       - uses: actions/download-artifact@v4
         with: { name: bencmouth-gui-windows, path: dl/gui }
+      # The plugins are components of the installer, so it cannot be built
+      # without them.
+      - uses: actions/download-artifact@v4
+        with: { name: bencmouth-clap-windows, path: dl/clap }
       - name: NSIS
         run: |
           sudo apt-get update
@@ -387,6 +391,10 @@ jobs:
           cp dl/gui/bencmouth-gui.exe dl/cli/bm.exe stage/
           cp README.md LICENSE NOTICE stage/
           cp -r voices songs stage/
+          # The plugins, out of the tarball the CLAP job packaged.
+          tar xzf dl/clap/*.tar.gz -C dl/clap
+          cp dl/clap/*/BENCmouth.clap stage/
+          cp -r dl/clap/*/BENCmouth.vst3 stage/
           ls -l stage
 
       # Named for the commit, like the disk image, because this one gets
@@ -399,7 +407,10 @@ jobs:
         run: |
           V="$(git rev-parse --short HEAD)"
           echo "SETUP=bencmouth-$V-windows-setup.exe" >> "$GITHUB_ENV"
-          makensis -WX -V2 \
+          # -DHAVE_VST3 only when there is one to install; the script guards
+          # its section on it.
+          test -d stage/BENCmouth.vst3 && VST3FLAG=-DHAVE_VST3 || VST3FLAG=
+          makensis -WX -V2 $VST3FLAG \
                    -DVERSION="$V" \
                    -DVIVERSION="0.0.0.0" \
                    -DSRCDIR="$PWD/stage" \
@@ -655,6 +666,225 @@ jobs:
           path: ${{ env.DMG }}
           if-no-files-found: error
 
+  # The plugin, on all three platforms.
+  #
+  # Every job here runs `make clap-test`, which loads the built bundle the way
+  # a DAW does and plays it. That is the point of these jobs: a plugin that
+  # compiles tells you nothing, because every interesting failure - an entry
+  # point stripped by -fvisibility=hidden, a transport read wrongly, state that
+  # does not survive a round trip - compiles perfectly and then does nothing in
+  # a host, where every failure looks identical from the outside.
+  clap:
+    name: CLAP (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CLAP headers
+        run: make clap-fetch
+      - name: Build
+        run: make clap
+
+      - name: It loads, follows the transport, and restores its state
+        run: make clap-test
+
+      # The VST3, which contains no BENCmouth at all: it finds the CLAP at run
+      # time and loads it. So the thing to check is not that it built but that
+      # its factory has something in it - an empty one is what a wrapper that
+      # found nothing produces, and in a DAW that is indistinguishable from a
+      # plugin that failed to install.
+      - name: VST3, and its factory has the plugin in it
+        run: |
+          make vst3-fetch
+          make vst3
+          make vst3-test
+
+      # -fvisibility=hidden is what keeps the core's symbols out of a host's
+      # global namespace, and it will happily hide the one symbol that has to
+      # be visible. A plugin with no clap_entry is not a plugin, and a host
+      # says so by not listing it.
+      - name: clap_entry survives -fvisibility=hidden
+        run: |
+          nm -D --defined-only build/BENCmouth.clap | grep -q clap_entry
+          echo "exported"
+
+      # The plugin must not drag the GUI's dependencies into a host process.
+      # It shares the host layer with the standalone, and one wrong file in
+      # CLAP_HOST_SRC would pull raylib in - which fails at load time, in a
+      # host, on someone else's machine.
+      - name: It needs no window system
+        run: |
+          if nm -D --undefined-only build/BENCmouth.clap | grep -iE 'glfw|raylib|XOpen'; then
+            echo "the plugin links a window system"
+            exit 1
+          fi
+          ldd build/BENCmouth.clap
+          echo "no display needed"
+
+      # The plugin and the editor against each other, which is the one thing
+      # neither of them can be tested for alone: a real second process, started
+      # by the plugin, found by a search that has to work on a machine nobody
+      # configured. Linux only, because it needs a display and the editor is a
+      # real window - the pieces underneath are covered everywhere.
+      - name: X11 and GL headers, and raylib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libasound2-dev libx11-dev libxrandr-dev \
+            libxi-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git /tmp/raylib
+          cmake -S /tmp/raylib -B /tmp/raylib/build -DCMAKE_INSTALL_PREFIX=/tmp/rl \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/raylib/build -j2
+          cmake --install /tmp/raylib/build
+
+      - name: The plugin opens its editor, and an edit reaches the audio
+        run: |
+          RAYLIB=/tmp/rl make gui
+          xvfb-run -a --server-args="-screen 0 1400x1000x24" make editor-test
+
+      - name: Package
+        run: |
+          D="bencmouth-clap-linux-$(git rev-parse --short HEAD)"
+          mkdir -p "$D"
+          cp build/BENCmouth.clap "$D"/
+          cp -r build/BENCmouth.vst3 "$D"/
+          cp README.md LICENSE NOTICE "$D"/
+          tar czf "$D.tar.gz" "$D"
+          echo "PKG=$D.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-clap-linux
+          path: ${{ env.PKG }}
+          if-no-files-found: error
+
+  clap-windows:
+    name: CLAP (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            make tar curl git
+      - name: CLAP headers
+        run: make clap-fetch
+      - name: Build
+        run: make clap
+
+      # The VST3 is a shim that loads the CLAP, so it is built beside it and
+      # shipped beside it. The SDKs are a fetch and a cmake build rather than
+      # part of `make`, which is why this is its own step and why a failure
+      # here does not mean the CLAP is broken.
+      - name: VST3
+        run: |
+          make vst3-fetch
+          make vst3
+          ls -l build/BENCmouth.vst3/Contents/*/
+
+      - name: It is a DLL, and it exports clap_entry
+        run: |
+          ls -l build/BENCmouth.clap
+          file build/BENCmouth.clap | grep -qi "PE32+"
+          objdump -p build/BENCmouth.clap | grep -q clap_entry
+          echo "exported"
+
+      - name: It loads, follows the transport, and restores its state
+        run: make clap-test
+
+      # The same check the GUI has, and it matters more here: a host loads this
+      # with LoadLibrary, and a missing runtime DLL fails in a way that looks
+      # exactly like the plugin not being installed.
+      - name: No MSYS2 DLL dependencies
+        run: |
+          if objdump -p build/BENCmouth.clap | \
+             grep -iE 'DLL Name:.*(libgcc|libwinpthread|msys)'; then
+            echo "links a DLL that will not be present on a user's machine"
+            exit 1
+          fi
+          echo "self-contained"
+
+      - name: Package
+        run: |
+          D="bencmouth-clap-windows-$(git rev-parse --short HEAD)"
+          mkdir -p "$D"
+          cp build/BENCmouth.clap "$D"/
+          cp README.md LICENSE NOTICE "$D"/
+          tar czf "$D.tar.gz" "$D"
+          echo "PKG=$D.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-clap-windows
+          path: ${{ env.PKG }}
+          if-no-files-found: error
+
+  clap-macos:
+    name: CLAP (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CLAP headers
+        run: make clap-fetch
+      - name: Build
+        run: make clap
+
+      - name: It is a bundle, with a plist and an exported entry point
+        run: |
+          ls -lR build/BENCmouth.clap
+          test -f build/BENCmouth.clap/Contents/Info.plist
+          test -f build/BENCmouth.clap/Contents/MacOS/BENCmouth
+          plutil -lint build/BENCmouth.clap/Contents/Info.plist
+          nm -gU build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q clap_entry
+
+      # The three things that make macOS report a plugin as damaged or simply
+      # absent, each checked rather than assumed. BENCsynth shipped a release
+      # failing all three, which is why they are written down here before this
+      # one has ever shipped at all.
+      - name: It is signed, universal, and carries no debug symbols
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/BENCmouth.clap
+          lipo -info build/BENCmouth.clap/Contents/MacOS/BENCmouth
+          lipo -info build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q x86_64
+          lipo -info build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q arm64
+          test -z "$(find build/BENCmouth.clap -name '*.dSYM')"
+          echo "signed, universal, clean"
+
+      - name: It loads, follows the transport, and restores its state
+        run: make clap-test
+
+      - name: No non-system dynamic libraries
+        run: |
+          otool -L build/BENCmouth.clap/Contents/MacOS/BENCmouth
+          if otool -L build/BENCmouth.clap/Contents/MacOS/BENCmouth | tail -n +2 | \
+             grep -vE '^[[:space:]]+(/usr/lib/|/System/)'; then
+            echo "links a library that will not be present on a stock macOS"
+            exit 1
+          fi
+          echo "self-contained"
+
+      # A disk image rather than a bare bundle, for the reason the GUI job
+      # gives at length: a .clap on macOS is a directory, and a zip loses the
+      # wrapper, the executable bit and the code signature - which is exactly
+      # the state macOS calls "damaged". A tar carries all three.
+      - name: Package
+        run: |
+          D="bencmouth-clap-macos-$(git rev-parse --short HEAD)"
+          mkdir -p "$D"
+          cp -R build/BENCmouth.clap "$D"/
+          cp README.md LICENSE NOTICE "$D"/
+          tar czf "$D.tar.gz" "$D"
+          echo "PKG=$D.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bencmouth-clap-macos
+          path: ${{ env.PKG }}
+          if-no-files-found: error
+
   strict:
     name: ubuntu strict warnings
     runs-on: ubuntu-latest
@@ -703,3 +933,16 @@ jobs:
           make clean
           make OPT="-O0 -g -fsanitize=address,undefined" LDFLAGS="-fsanitize=address,undefined"
           make test OPT="-O0 -g -fsanitize=address,undefined" LDFLAGS="-fsanitize=address,undefined"
+
+      # The plugin under the sanitizers too, driven by the mini-host. This is
+      # the only place the transport arithmetic and the two-buffer render swap
+      # are exercised with anything watching: an index off the end of a
+      # rendered buffer is silent corruption in a release build and a stack
+      # trace here.
+      - name: The plugin, sanitized and played
+        run: |
+          make clean
+          make clap-fetch
+          make clap OPT="-O1 -g -fsanitize=address,undefined"
+          make clap-test OPT="-O1 -g -fsanitize=address,undefined"
+          make clean

@@ -42,9 +42,27 @@ jobs:
           make audio OPT="-O2 -DBM_WITH_DICT=1"
           RAYLIB=/tmp/rl make gui-dict
           ./bm -l && ./bm "release build" -o /dev/null || true
+
+      # The plugin, and it is played before it is packaged: `make clap-test`
+      # loads the built bundle the way a DAW does. A plugin that only compiles
+      # is not evidence of anything - see the CLAP jobs in ci.yml.
+      - name: Plugin
+        run: |
+          make clap-fetch
+          make clap
+          make clap-test
+          make vst3-fetch
+          make vst3
+
       - name: Package
         run: |
           V="${GITHUB_REF_NAME:-dev}"
+          P="bencmouth-clap-$V-linux-x86_64"
+          mkdir -p "$P"
+          cp build/BENCmouth.clap README.md LICENSE NOTICE "$P"/
+          cp -r build/BENCmouth.vst3 "$P"/
+          cp -r songs "$P"/
+          tar czf "$P.tar.gz" "$P"
           D="bencmouth-$V-linux-x86_64"
           mkdir -p "$D"
           cp bm README.md LICENSE NOTICE "$D"/
@@ -80,6 +98,38 @@ jobs:
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
           RAYLIB=/tmp/rl make gui-dict
+      # Universal and ad-hoc signed by the makefile, and played by clap-test
+      # before it is packaged. Unsigned arm64 code does not load at all, and a
+      # host refusing it says nothing about why - which is the failure this
+      # step exists to make impossible to ship.
+      - name: Plugin
+        run: |
+          make clap-fetch
+          make clap
+          lipo -info build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q x86_64
+          lipo -info build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q arm64
+          codesign --verify --deep --strict build/BENCmouth.clap
+          make clap-test
+
+      # The shims. Both find BENCmouth.clap at run time, so neither is any use
+      # without it and all three ship in one image.
+      - name: VST3 and AU
+        run: |
+          make vst3-fetch
+          make vst3
+          make au-fetch
+          make au
+          ls -d build/BENCmouth.vst3 build/BENCmouth.component
+
+      # Ad-hoc, for the reason the CLAP is: unsigned arm64 code does not load,
+      # and a host that refuses it says nothing about why.
+      - name: Sign them
+        run: |
+          codesign --force --sign - --timestamp=none --deep build/BENCmouth.vst3
+          codesign --force --sign - --timestamp=none --deep build/BENCmouth.component
+          codesign --verify --deep --strict build/BENCmouth.vst3
+          codesign --verify --deep --strict build/BENCmouth.component
+
       # Writes the disk image's .DS_Store directly. Driving Finder over
       # AppleScript, which is the usual way, needs an interactive session and
       # cannot work on a runner. Anchored to this job by a step only this job
@@ -130,6 +180,30 @@ jobs:
           test -L /tmp/dmg/Applications
           test -d /tmp/dmg/BENCmouth.app
           hdiutil detach /tmp/dmg
+
+          # And the plug-ins, in an image of their own. Separate from the
+          # application's because these install somewhere else: dragging to
+          # /Applications is a gesture everybody knows, and
+          # ~/Library/Audio/Plug-Ins/<format> is a hidden directory three
+          # levels down that nobody should have to be told about - so that part
+          # is a script to double-click.
+          #
+          # It carries the .app as well. The plugin opens its window by
+          # starting the application, so a plug-in installed without one plays
+          # a song it cannot show you.
+          DMGBUILD=/tmp/dmgvenv/bin/dmgbuild ./tools/macos-plugin-dmg.sh \
+            "bencmouth-plugins-$V-macos-universal.dmg" "BENCmouth Plug-Ins"
+          mkdir -p /tmp/pdmg
+          hdiutil attach "bencmouth-plugins-$V-macos-universal.dmg" \
+            -nobrowse -mountpoint /tmp/pdmg
+          ls -la /tmp/pdmg
+          test -x "/tmp/pdmg/Install Plug-Ins.command"
+          test -d /tmp/pdmg/BENCmouth.clap
+          test -d /tmp/pdmg/BENCmouth.vst3
+          test -d /tmp/pdmg/BENCmouth.component
+          test -d /tmp/pdmg/BENCmouth.app
+          hdiutil detach /tmp/pdmg
+
           ls -l ./*.dmg
           ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
@@ -174,6 +248,14 @@ jobs:
           make dict
           make clean-objs
           make audio OPT="-O2 -DBM_WITH_DICT=1"
+      - name: Build the plugin
+        run: |
+          make clap-fetch
+          make clap
+          make clap-test
+          make vst3-fetch
+          make vst3
+
       - name: Build the GUI
         run: RAYLIB=/tmp/rl make gui-dict
 
@@ -196,6 +278,14 @@ jobs:
           cp bencmouth-gui.exe bm.exe README.md LICENSE NOTICE "$G"/
           cp -r voices songs "$G"/
           zip -qr "$G.zip" "$G"
+          # The plugin, on its own: it installs somewhere else entirely and
+          # has nothing to do with the two programs above.
+          P="bencmouth-clap-$V-windows-x86_64"
+          mkdir -p "$P"
+          cp build/BENCmouth.clap README.md LICENSE NOTICE "$P"/
+          cp -r build/BENCmouth.vst3 "$P"/
+          cp -r songs "$P"/
+          zip -qr "$P.zip" "$P"
           ls -l ./*.zip
       - uses: actions/upload-artifact@v4
         with: { name: pkg-windows, path: '*.zip', if-no-files-found: error }
@@ -239,6 +329,39 @@ jobs:
         with: { path: dist, merge-multiple: true }
       - run: ls -lR dist
 
+      # Asserted before anything is published, because the failure this
+      # prevents is silent: every packaging step above ends in a glob, and a
+      # glob that matches nothing produces a release that is simply missing a
+      # platform. Nobody notices until somebody goes looking for the one they
+      # needed.
+      - name: Everything that should have been built, was
+        run: |
+          V="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          fail=0
+          for want in \
+            "bencmouth-$V-linux-x86_64.tar.gz" \
+            "bencmouth-gui-$V-linux-x86_64.tar.gz" \
+            "bencmouth-clap-$V-linux-x86_64.tar.gz" \
+            "bencmouth-$V-windows-x86_64.zip" \
+            "bencmouth-gui-$V-windows-x86_64.zip" \
+            "bencmouth-clap-$V-windows-x86_64.zip" \
+            "bencmouth-plugins-$V-macos-universal.dmg"; do
+            if [ -s "dist/$want" ]; then
+              echo "  ok    $want"
+            else
+              echo "  MISSING  $want"; fail=1
+            fi
+          done
+          # The macOS CLI tarball and disk image carry the architecture in
+          # their names, so they are matched by shape rather than by name.
+          for glob in "dist/bencmouth-$V-macos-"*.tar.gz \
+                      "dist/bencmouth-gui-$V-macos-"*.dmg \
+                      "dist/bencmouth-$V-wasm.tar.gz"; do
+            if [ -s "$glob" ]; then echo "  ok    $(basename "$glob")"
+            else echo "  MISSING  $glob"; fail=1; fi
+          done
+          exit $fail
+
       # One thing to download and double-click, which upgrades whatever is
       # already there rather than sitting beside it. Built here rather than in
       # the windows job because the payload is exactly what that job already
@@ -257,6 +380,10 @@ jobs:
           # whichever one the packaging job saw.
           unzip -qo dist/bencmouth-gui-*-windows-x86_64.zip -d /tmp/win
           cp -r /tmp/win/*/. stage/
+          # The plugins are components of the installer.
+          unzip -qo dist/bencmouth-clap-*-windows-x86_64.zip -d /tmp/wplug
+          cp /tmp/wplug/*/BENCmouth.clap stage/
+          cp -r /tmp/wplug/*/BENCmouth.vst3 stage/ 2>/dev/null || true
           ls stage
           # VIProductVersion takes four numbers and nothing else - not "v",
           # not a suffix. v0.2.2 becomes 0.2.2.0, v1 becomes 1.0.0.0.
@@ -275,7 +402,10 @@ jobs:
           # warning 5040 and exit status 0, and what comes out is an installer
           # with the header art silently missing - which is precisely the
           # failure this job exists to prevent.
-          makensis -WX -V2 \
+          # -DHAVE_VST3 only when one was built; the script guards its
+          # section on it, so an installer without one is still an installer.
+          test -d stage/BENCmouth.vst3 && VST3FLAG=-DHAVE_VST3 || VST3FLAG=
+          makensis -WX -V2 $VST3FLAG \
                    -DVERSION="$V" \
                    -DVIVERSION="$N.0" \
                    -DSRCDIR="$PWD/stage" \

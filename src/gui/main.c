@@ -16,6 +16,10 @@
 #include "bm_gui.h"
 #include "bm_embed.h"
 #include "bm_filedlg.h"
+#include "bm_player.h"
+#include "bm_render.h"
+#include "bm_shm.h"
+#include "bm_roll_ui.h"
 #include "bm_song_ui.h"
 #include "bm_songfile.h"
 #include "bm_voicefile.h"
@@ -82,6 +86,23 @@
 static bm_engine_storage g_storage;
 static bm_engine        *g_engine;
 static volatile int      g_speaking;
+
+/* Whether there is an audio device at all. Zero in editor mode, where the
+ * plugin owns the sound - and checked rather than assumed, because raylib's
+ * stream calls on an uninitialized device are undefined rather than ignored. */
+static int               g_audio;
+
+/* The roll plays a rendered score rather than a live engine, because a timeline
+ * needs to start in the middle and the engine cannot. See bm_render.h.
+ *
+ * Two renders, used alternately. The audio thread may be inside a memcpy from
+ * the buffer when a new render begins, and bm_render_score reallocates - so the
+ * one being played is never the one being written, and the buffer a callback
+ * could still be reading stays alive until the render after next. It costs one
+ * spare copy of the audio and removes the only way this could crash. */
+static bm_player         g_player;
+static bm_render         g_render[2];
+static int               g_render_slot;
 /* Latched by the audio thread when an utterance runs out, cleared by the UI
  * once it has been noticed. A flag rather than an edge: see audio_cb. */
 static volatile int      g_finished;
@@ -126,7 +147,12 @@ static void audio_cb(void *buffer, unsigned int frames)
 
         if (want > 1024) want = 1024;
 
-        if (g_speaking) {
+        if (g_player.playing) {
+            /* A rendered score. It stops itself at the end, and the same latch
+             * the engine path uses tells the UI about it. */
+            got = bm_player_read(&g_player, chunk, want);
+            if (!g_player.playing) { g_speaking = 0; g_finished = 1; }
+        } else if (g_speaking) {
             got = bm_read(g_engine, chunk, want);
             /* Latched, not left for the UI to spot as a change between frames.
              * A short utterance can begin and end inside a single 16 ms video
@@ -284,6 +310,16 @@ static int name_index(const char **names, int count, const char *name,
  * source in and a useless one to hunt a name in once there are more than a
  * dozen. The list is sorted for display only; nothing else depends on preset
  * order, because everything else looks them up by name. */
+/* Which score sings, for the two tabs that have one. The song tab's is the text
+ * in its editor; the roll tab's is compiled from its notes. Both go in as
+ * phonemes - bm_speak_phonemes honours markup for free, which is the whole
+ * reason commands survive into the phoneme string. */
+static const char *sing_source(int tab, const bm_song_ui *song,
+                               const bm_roll_ui *roll)
+{
+    return (tab == 2) ? roll->score : song->score;
+}
+
 static int by_name(const void *a, const void *b)
 {
     const char *x = (*(const bm_voice *const *)a)->name;
@@ -336,6 +372,22 @@ static const char *parse_shot(int argc, char **argv)
     return 0;
 }
 
+/* `--editor NAME` runs this program as a plugin's window rather than as a
+ * program of its own: it attaches to the shared block NAME names, edits the
+ * song the plugin is holding, and publishes it back.
+ *
+ * The plugin is the one making the sound, so this mode opens no audio device.
+ * A second one would be the same song playing a few milliseconds out of step
+ * with itself. */
+static const char *parse_editor(int argc, char **argv)
+{
+    int i;
+    for (i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--editor") == 0) return argv[i + 1];
+    }
+    return 0;
+}
+
 /* Optional "WxH" on the command line. Useful for a cramped desktop, and it is
  * what produced the screenshot in the README at a sensible resolution. */
 static void parse_size(int argc, char **argv, int *w, int *h)
@@ -377,16 +429,32 @@ int main(int argc, char **argv)
     int   have_dict = 0, use_dict = 1;
     int   info_open = 0;
 
-    /* Two tabs, and each keeps its own voice. Song mode wants prosody off and
+    /* Three tabs, and each keeps its own voice. Song mode wants prosody off and
      * a little vibrato; speech wants the opposite, and one shared voice would
      * mean every trip through the song tab quietly retuned the text tab. The
-     * sliders always edit whichever is in front. */
-    static const char *TABS[] = { "TEXT", "SONG" };
-    int        tab = 0;
-    bm_voice   stashed_voice;
-    bm_effects stashed_effects;
+     * sliders always edit whichever is in front.
+     *
+     * Held as an array rather than as one stashed copy, which is what it was
+     * while there were two of them: a swap works for a pair and quietly loses
+     * the third. */
+    static const char *TABS[] = { "TEXT", "SONG", "ROLL" };
+#define TAB_COUNT ((int)(sizeof TABS / sizeof TABS[0]))
+    int        tab = 0, prev_tab = 0;
+    bm_voice   tab_voice[TAB_COUNT];
+    bm_effects tab_fx[TAB_COUNT];
     bm_song_ui song;
+    bm_roll_ui roll;
     static char song_path[1024] = "";
+
+    int        roll_loop = 0;
+
+    /* Editor mode: this window belongs to a plugin in another process. See
+     * parse_editor and src/plugin/bm_shm.h. */
+    const char *editor_name = 0;
+    bm_shm      editor_shm;
+    uint32_t    editor_seq = 0;       /* of the last song taken from the plugin */
+    int         editor_dirty = 0;     /* something changed; publish it back */
+    double      editor_published = 0.0;
 
     const char *shot = 0;
     int         shot_frames = 0;
@@ -424,12 +492,21 @@ int main(int argc, char **argv)
         fx_names[fx_count++] = bm_effects_preset_at(i)->name;
     }
 
+    editor_name = parse_editor(argc, argv);
+    if (editor_name != 0 && bm_shm_attach(&editor_shm, editor_name) != 0) {
+        /* The block is gone, which means the plugin that made it is gone. There
+         * is nothing to edit and nothing to publish to, so this is not a window
+         * worth opening. */
+        fprintf(stderr, "bencmouth-gui: no plugin at %s\n", editor_name);
+        return 1;
+    }
+
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     {
         int w = WIN_W, h = WIN_H;
         parse_size(argc, argv, &w, &h);
-        InitWindow(w, h, "BENCmouth");
+        InitWindow(w, h, editor_name ? "BENCmouth - plugin editor" : "BENCmouth");
     }
     shot = parse_shot(argc, argv);
     if (shot != 0) shot_frames = 8;   /* let the font and logo textures land */
@@ -439,12 +516,27 @@ int main(int argc, char **argv)
     SetExitKey(KEY_NULL);
     SetWindowMinSize(WIN_MIN_W, WIN_MIN_H);
     SetTargetFPS(60);
-    InitAudioDevice();
+    /* No device in editor mode: the plugin is already making the sound, and a
+     * second one would be the same song playing a few milliseconds out of step
+     * with itself. Everything downstream checks g_audio before touching the
+     * stream. */
+    if (editor_name == 0) {
+        InitAudioDevice();
+        g_audio = 1;
+    }
 
     bm_ui_init(&ui);
     bm_song_ui_init(&song);
-    stashed_voice = voice;
-    stashed_effects = effects;
+    bm_roll_ui_init(&roll);
+    for (i = 0; i < TAB_COUNT; i++) {
+        tab_voice[i] = voice;
+        tab_fx[i] = effects;
+    }
+    tab_voice[1] = song.song.voice;
+    tab_fx[1]    = song.song.effects;
+    tab_voice[2] = roll.song.voice;
+    tab_fx[2]    = roll.song.effects;
+    bm_roll_ui_refresh(&roll, &tab_voice[2]);
     memset(&text_st, 0, sizeof text_st);
     memset(&phon_st, 0, sizeof phon_st);
     memset(&info_st, 0, sizeof info_st);
@@ -487,9 +579,11 @@ int main(int argc, char **argv)
     }
 
     SetAudioStreamBufferSizeDefault(1024);
-    stream = LoadAudioStream(SAMPLE_RATE, 16, 1);
-    SetAudioStreamCallback(stream, audio_cb);
-    PlayAudioStream(stream);
+    if (g_audio) {
+        stream = LoadAudioStream(SAMPLE_RATE, 16, 1);
+        SetAudioStreamCallback(stream, audio_cb);
+        PlayAudioStream(stream);
+    }
 
     /* Window icon: H. Hex, from the roster.
      *
@@ -530,20 +624,74 @@ int main(int argc, char **argv)
         float W = (float)GetScreenWidth();
         float y;
 
+        /* ---- the plugin, if this window belongs to one ----
+         *
+         * Once a frame, and all of it is polling: no callbacks, no thread, and
+         * nothing that can block the process on the other end. An editor that
+         * stalls or dies stops publishing, and the plugin goes on playing the
+         * last song it was given. */
+        if (editor_name != 0) {
+            static char handed[BM_SHM_TEXT];
+            size_t      n = 0;
+
+            if (editor_shm.block == 0 || editor_shm.block->quit) break;
+            editor_shm.block->heartbeat++;
+
+            /* A song from the plugin: at startup, and any time the host loads
+             * a different project state underneath the window. */
+            if (bm_shm_take(&editor_shm.block->to_editor, &editor_seq,
+                            handed, sizeof handed, &n) && n > 0) {
+                static bm_song loaded;
+                static char    loaded_score[BM_SONG_SCORE_MAX];
+                char err[192];
+
+                if (bm_song_parse(handed, n, &loaded, loaded_score,
+                                  sizeof loaded_score, err, sizeof err) == 0) {
+                    roll.song = loaded;
+                    roll.song.voice.name = roll.song.voice_name;
+                    memcpy(roll.score, loaded_score, sizeof roll.score);
+                    snprintf(roll.title, sizeof roll.title, "%s",
+                             roll.song.title);
+                    roll.tempo_applied = roll.song.tempo;
+                    roll.selected = -1;
+                    roll.dirty = 1;
+                    voice = roll.song.voice;
+                    effects = roll.song.effects;
+                    tab_voice[2] = voice;
+                    tab_fx[2] = effects;
+                    tab = 2;
+                    prev_tab = 2;
+                    bm_engine_set_voice(g_engine, &voice);
+                    bm_roll_ui_refresh(&roll, &voice);
+                    snprintf(status, sizeof status,
+                             "editing the plugin's song  -  %d notes",
+                             roll.song.roll.count);
+                    status_color = BM_ACCENT;
+                } else {
+                    snprintf(status, sizeof status, "%.150s", err);
+                    status_color = BM_ALERT;
+                }
+            }
+
+            /* The transport, for the roll's playhead. */
+            roll.head_ms = (float)editor_shm.block->pos_ms;
+        }
+
         /* The utterance ends on the audio thread, which has no way to say so
          * beyond this flag. Without it the status line went on reading
          * "speaking" over a silent engine - and a readout that is wrong about
          * the one thing it reports is worse than no readout at all. */
         /* Modal. Published before any widget runs, so nothing underneath the
          * scrim reacts to a click meant for the dialog. */
-        if (info_open || song.ref_open) {
+        if (info_open || song.ref_open || roll.help_open) {
             ui.blocking = 1;
             ui.block = (Rectangle){ 0, 0, W, (float)GetScreenHeight() };
             voice_open = 0;
             ui.menu_open = 0;
         }
         /* Only one modal at a time, and the one just asked for wins. */
-        if (info_open) song.ref_open = 0;
+        if (info_open) { song.ref_open = 0; roll.help_open = 0; }
+        if (song.ref_open) roll.help_open = 0;
 
         if (g_finished) {
             g_finished = 0;
@@ -589,20 +737,20 @@ int main(int argc, char **argv)
         /* ---- tabs ---- */
         y = 66;
         if (bm_tabs(&ui, (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, 26 },
-                    TABS, 2, &tab)) {
-            /* Swap the voices over. The one in front is always `voice`, which
-             * is the only thing the sliders and the engine ever see. */
-            if (tab == 1) {
-                stashed_voice = voice;
-                stashed_effects = effects;
-                voice = song.song.voice;
-                effects = song.song.effects;
-            } else {
-                song.song.voice = voice;
-                song.song.effects = effects;
-                voice = stashed_voice;
-                effects = stashed_effects;
-            }
+                    TABS, TAB_COUNT, &tab)) {
+            /* Put the voice back where it came from and take the new tab's.
+             * The one in front is always `voice`, which is the only thing the
+             * sliders and the engine ever see. */
+            tab_voice[prev_tab] = voice;
+            tab_fx[prev_tab]    = effects;
+            if (prev_tab == 1) song.song.voice = voice;
+            if (prev_tab == 2) roll.song.voice = voice;
+            if (prev_tab == 1) song.song.effects = effects;
+            if (prev_tab == 2) roll.song.effects = effects;
+
+            voice   = tab_voice[tab];
+            effects = tab_fx[tab];
+            prev_tab = tab;
             bm_engine_set_voice(g_engine, &voice);
             bm_engine_set_effects(g_engine, &effects);
             /* Both dropdowns have to be told, or they go on displaying the
@@ -637,7 +785,7 @@ int main(int argc, char **argv)
                         (Rectangle){ BM_PAD, y + PANEL_H - 58,
                                      W - 2 * BM_PAD, 58 },
                         phonemes, &phon_st, BM_DIM);
-        } else {
+        } else if (tab == 1) {
             int act = bm_song_panel(&ui, &song,
                                     (Rectangle){ BM_PAD, y, W - 2 * BM_PAD,
                                                  (float)PANEL_H },
@@ -745,6 +893,132 @@ int main(int argc, char **argv)
                     }
                 }
             }
+        } else {
+            /* The playhead. Only while this tab's own song is what is
+             * sounding, so that speaking from the text tab does not run a
+             * cursor across a roll it has nothing to do with. */
+            /* Straight off the transport rather than off the frame clock: it
+             * is reading the position of the samples actually going out, so
+             * the head sits where the sound is even if a frame is dropped. */
+            int head = g_player.playing ? (int)bm_player_pos_ms(&g_player) : -1;
+            int act = bm_roll_panel(&ui, &roll,
+                                    (Rectangle){ BM_PAD, y, W - 2 * BM_PAD,
+                                                 (float)PANEL_H },
+                                    use_dict, &voice, head);
+
+            /* Dragging the playhead while it is running moves the sound with
+             * it, which is what scrubbing means and what the whole rendered
+             * buffer was for. */
+            if (roll.head_moved) {
+                roll.head_moved = 0;
+                if (g_player.playing) bm_player_seek_ms(&g_player, roll.head_ms);
+            }
+
+            if (act == BM_ROLL_ACT_LOAD) {
+                char path[1024];
+                char start[1024];
+                int  dlg;
+
+                snprintf(start, sizeof start, "%ssongs", GetApplicationDirectory());
+                if (!DirectoryExists(start)) {
+                    snprintf(start, sizeof start, "%s../Resources/songs",
+                             GetApplicationDirectory());
+                }
+                if (!DirectoryExists(start)) snprintf(start, sizeof start, "songs");
+                if (!DirectoryExists(start)) snprintf(start, sizeof start, ".");
+
+                dlg = bm_open_dialog(GetWindowHandle(), "Load song", start,
+                                     "BENCmouth song", "bmsong",
+                                     path, sizeof path);
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(status, sizeof status,
+                             "no file dialog available - install zenity or kdialog");
+                    status_color = BM_ALERT;
+                } else if (dlg == BM_DLG_OK) {
+                    char err[192];
+                    static bm_song loaded;
+                    static char    loaded_score[BM_SONG_SCORE_MAX];
+
+                    if (bm_song_load(path, &loaded, loaded_score,
+                                     sizeof loaded_score, err, sizeof err) != 0) {
+                        snprintf(status, sizeof status, "%.150s", err);
+                        status_color = BM_ALERT;
+                    } else if (loaded.roll.count == 0) {
+                        /* A song that was typed rather than drawn. Opening it
+                         * here as an empty roll would look like the file having
+                         * lost its music; it has not, and the SONG tab has it. */
+                        snprintf(status, sizeof status,
+                                 "%.90s has no notes in it - open it in the SONG tab",
+                                 GetFileName(path));
+                        status_color = BM_AMBER;
+                    } else {
+                        roll.song = loaded;
+                        roll.song.voice.name = roll.song.voice_name;
+                        snprintf(roll.title, sizeof roll.title, "%s",
+                                 roll.song.title);
+                        roll.tempo_applied = roll.song.tempo;
+                        roll.selected = -1;
+                        roll.scroll_ms = 0.0f;
+                        roll.dirty = 1;
+                        snprintf(song_path, sizeof song_path, "%s", path);
+
+                        voice = roll.song.voice;
+                        effects = roll.song.effects;
+                        tab_voice[2] = voice;
+                        tab_fx[2] = effects;
+                        bm_engine_set_voice(g_engine, &voice);
+                        bm_engine_set_effects(g_engine, &effects);
+                        bm_roll_ui_refresh(&roll, &voice);
+                        snprintf(status, sizeof status,
+                                 "loaded %.90s  -  %d notes", GetFileName(path),
+                                 roll.song.roll.count);
+                        status_color = BM_ACCENT;
+                    }
+                }
+            } else if (act == BM_ROLL_ACT_SAVE) {
+                char path[1024];
+                char suggest[128];
+                int  dlg;
+
+                if (song_path[0] != '\0') {
+                    snprintf(suggest, sizeof suggest, "%.110s",
+                             GetFileName(song_path));
+                } else {
+                    snprintf(suggest, sizeof suggest, "%.100s.bmsong",
+                             roll.title[0] ? roll.title : "untitled");
+                }
+                dlg = bm_save_dialog(GetWindowHandle(), "Save song", suggest,
+                                     "BENCmouth song", "bmsong",
+                                     path, sizeof path);
+                if (dlg == BM_DLG_UNAVAILABLE) {
+                    snprintf(path, sizeof path, "%s", suggest);
+                    dlg = BM_DLG_OK;
+                }
+
+                if (dlg != BM_DLG_OK) {
+                    snprintf(status, sizeof status, "save cancelled");
+                    status_color = BM_DIM;
+                } else {
+                    roll.song.voice = voice;
+                    roll.song.effects = effects;
+                    snprintf(roll.song.title, sizeof roll.song.title, "%s",
+                             roll.title);
+                    /* The score written to the file is the one compiled from
+                     * the notes, so the two halves of the file cannot disagree
+                     * about what the song is. */
+                    bm_roll_ui_refresh(&roll, &voice);
+                    if (bm_song_save(path, &roll.song, roll.score) == 0) {
+                        snprintf(song_path, sizeof song_path, "%s", path);
+                        snprintf(status, sizeof status, "wrote %.150s",
+                                 GetFileName(path));
+                        status_color = BM_ACCENT;
+                    } else {
+                        snprintf(status, sizeof status, "could not write %.150s",
+                                 path);
+                        status_color = BM_ALERT;
+                    }
+                }
+            }
         }
 
         /* Two popups at once would fight over which of them owns the mouse. */
@@ -755,8 +1029,63 @@ int main(int argc, char **argv)
         /* ---- transport ---- */
         {
             Rectangle b = { BM_PAD, y, 96, 30 };
-            if (bm_button(&ui, b, tab == 0 ? "SPEAK" : "SING", 1)) {
+            /* Nothing to play through in editor mode: the plugin owns the
+             * sound, and the host's transport is what starts it. A button that
+             * looked live and did nothing would be worse than one that is
+             * plainly not offered. */
+            if (bm_button(&ui, b, tab == 0 ? "SPEAK" : "SING", g_audio)) {
+              if (tab == 2) {
+                /* The roll is a timeline, so it is rendered and then played
+                 * rather than spoken: that is what lets SING start from the
+                 * playhead instead of from the beginning, and what will let a
+                 * host put the transport wherever it likes. Rendering happens
+                 * here and not on every edit - measuring a score is cheap and
+                 * has to be live, but running the DSP over it is neither. */
+                bm_render *next = &g_render[g_render_slot ^ 1];
+                bm_config  c2 = config;
+                char       err[192];
+
+                c2.voice = voice;
+                c2.effects = effects;
+                c2.use_dict = use_dict;
+
+                bm_player_stop(&g_player);
+                if (roll.dirty) bm_roll_ui_refresh(&roll, &voice);
+
+                if (roll.score[0] == '\0') {
+                    snprintf(status, sizeof status,
+                             "nothing to sing - the notes have no words yet");
+                    status_color = BM_AMBER;
+                } else if (bm_render_score(next, roll.score, &c2,
+                                           err, sizeof err) != 0) {
+                    snprintf(status, sizeof status, "cannot sing that: %.130s",
+                             err);
+                    status_color = BM_ALERT;
+                } else {
+                    g_peak = 0.0f; g_limited = 0;
+                    g_rms  = 0.0f; g_rms_sum = 0.0; g_rms_n = 0.0;
+                    g_finished = 0;
+
+                    bm_player_set_source(&g_player, next->pcm, next->len,
+                                         next->rate);
+                    g_player.loop = roll_loop;
+                    bm_player_seek_ms(&g_player, (double)roll.head_ms);
+                    bm_player_play(&g_player);
+                    g_render_slot ^= 1;
+
+                    g_speaking = 1;
+                    snprintf(status, sizeof status, "singing  -  %.2f s rendered",
+                             bm_render_ms(next) / 1000.0);
+                    status_color = BM_ACCENT;
+                }
+              } else {
                 bm_result rc;
+
+                /* Whatever the roll was playing gives way. The callback prefers
+                 * the transport when it is running, so leaving it going would
+                 * queue an utterance that was never heard - a SPEAK button that
+                 * does nothing, for reasons on another tab. */
+                bm_player_stop(&g_player);
 
                 bm_engine_set_voice(g_engine, &voice);
                 bm_engine_set_effects(g_engine, &effects);
@@ -765,7 +1094,8 @@ int main(int argc, char **argv)
                  * into the phoneme string instead of being resolved away in
                  * the front end. */
                 rc = (tab == 0) ? bm_speak_text(g_engine, text, 0)
-                                : bm_speak_phonemes(g_engine, song.score, 0);
+                                : bm_speak_phonemes(g_engine, sing_source(tab,
+                                                    &song, &roll), 0);
                 if (rc == BM_OK) {
                     g_peak = 0.0f; g_limited = 0;
                     g_rms  = 0.0f; g_rms_sum = 0.0; g_rms_n = 0.0;
@@ -781,10 +1111,12 @@ int main(int argc, char **argv)
                              bm_strerror(rc));
                     status_color = BM_ALERT;
                 }
+              }
             }
             b.x += 104;
-            if (bm_button(&ui, b, "STOP", g_speaking)) {
+            if (bm_button(&ui, b, "STOP", g_audio && g_speaking)) {
                 g_speaking = 0;
+                bm_player_stop(&g_player);
                 bm_engine_reset(g_engine);
                 snprintf(status, sizeof status, "stopped");
                 status_color = BM_DIM;
@@ -796,7 +1128,8 @@ int main(int argc, char **argv)
                 int  dlg;
 
                 snprintf(suggest, sizeof suggest, "%.100s.wav",
-                         (tab == 1 && song.title[0]) ? song.title : "bencmouth");
+                         (tab == 1 && song.title[0]) ? song.title :
+                         (tab == 2 && roll.title[0]) ? roll.title : "bencmouth");
                 dlg = bm_save_dialog(GetWindowHandle(), "Save WAV",
                                      suggest, "WAV audio", "wav",
                                      path, sizeof path);
@@ -813,39 +1146,48 @@ int main(int argc, char **argv)
                     snprintf(status, sizeof status, "save cancelled");
                     status_color = BM_DIM;
                 } else {
-                    bm_engine_storage s2;
-                    bm_engine *e2 = 0;
+                    /* Rendered rather than played: a second engine, so
+                     * exporting does not interrupt what is sounding, and it
+                     * renders whichever tab is in front. That is bm_render's
+                     * whole job, and it used to be twenty lines of realloc
+                     * loop here - the roll needed the same thing and two of
+                     * them would have been two chances to get it wrong. */
+                    static bm_render out;
                     bm_config c2 = config;
-                    float *pcm = 0;
-                    size_t cap = 0, len = 0;
+                    char err[192];
+                    int ok;
 
                     c2.voice = voice;
                     c2.effects = effects;
                     c2.use_dict = use_dict;
-                    /* A second engine rather than the live one, so exporting
-                     * does not interrupt playback - and it renders whichever
-                     * tab is in front. */
-                    if (bm_engine_init(&s2, &c2, &e2) == BM_OK &&
-                        (tab == 0 ? bm_speak_text(e2, text, 0)
-                                  : bm_speak_phonemes(e2, song.score, 0))
-                            == BM_OK) {
-                        while (bm_is_speaking(e2)) {
-                            size_t got;
-                            if (len + 4096 > cap) {
-                                cap = cap ? cap * 2 : 65536;
-                                pcm = (float *)realloc(pcm, cap * sizeof *pcm);
-                                if (pcm == 0) break;
-                            }
-                            got = bm_read(e2, pcm + len, 4096);
-                            if (got == 0) break;
-                            len += got;
-                        }
+
+                    if (tab == 0) {
+                        /* The text tab is words, not a score, so it goes
+                         * through the front end first. */
+                        static char spoken[TEXT_CAP * 3];
+                        size_t n = 0;
+                        unsigned tf = BM_TEXT_MARKUP |
+                                      (use_dict ? 0u : BM_TEXT_NO_DICT);
+
+                        ok = (bm_text_to_phonemes_ex(text, 0, spoken,
+                                                     sizeof spoken, &n, tf)
+                                  == BM_OK) &&
+                             bm_render_score(&out, spoken, &c2,
+                                             err, sizeof err) == 0;
+                    } else {
+                        ok = bm_render_score(&out, sing_source(tab, &song, &roll),
+                                             &c2, err, sizeof err) == 0;
                     }
-                    if (pcm != 0 && len > 0 &&
-                        bm_wav_write(path, pcm, len, SAMPLE_RATE, 0) == 0) {
+
+                    if (ok && out.len > 0 &&
+                        bm_wav_write(path, out.pcm, out.len, SAMPLE_RATE, 0) == 0) {
                         snprintf(status, sizeof status, "wrote %.120s  (%.2f s)",
-                                 GetFileName(path), (double)len / SAMPLE_RATE);
+                                 GetFileName(path), (double)out.len / SAMPLE_RATE);
                         status_color = BM_ACCENT;
+                    } else if (!ok) {
+                        snprintf(status, sizeof status, "cannot render: %.130s",
+                                 err);
+                        status_color = BM_ALERT;
                     } else {
                         /* An explicit precision: a path can be longer than the status
                          * line, and saying so beats letting snprintf decide. */
@@ -853,7 +1195,17 @@ int main(int argc, char **argv)
                                  "could not write %.150s", path);
                         status_color = BM_ALERT;
                     }
-                    free(pcm);
+                }
+            }
+
+            /* LOOP is a transport control, so it lives on the transport row -
+             * and only on the tab that has a transport to control. The other
+             * two speak an utterance and stop, which is not something that can
+             * be looped without inventing a gap nobody asked for. */
+            if (tab == 2) {
+                b.x += 124; b.width = 92;
+                if (bm_toggle(&ui, b, "LOOP", &roll_loop, 1)) {
+                    g_player.loop = roll_loop;
                 }
             }
         }
@@ -1189,6 +1541,43 @@ int main(int argc, char **argv)
         }
         y += 74;
 
+        /* ---- back to the plugin ----
+         *
+         * The song is formatted every frame and compared with what was last
+         * sent, rather than any edit being made to remember to announce itself.
+         * One comparison catches a note moved, a slider turned, a tempo, a
+         * title and a tie; a flag per edit site catches whichever ones somebody
+         * remembered, which is a different list every month.
+         *
+         * Held back while the mouse is down and for a moment after. Publishing
+         * costs the plugin a re-render - tens of milliseconds - and a drag that
+         * published every frame would ask for sixty of them a second and stutter
+         * the audio it was trying to edit. */
+        if (editor_name != 0 && editor_shm.block != 0) {
+            static char now_text[BM_SHM_TEXT];
+            static char sent_text[BM_SHM_TEXT];
+            long n;
+
+            roll.song.voice = voice;
+            roll.song.effects = effects;
+            snprintf(roll.song.title, sizeof roll.song.title, "%s", roll.title);
+            if (roll.dirty) bm_roll_ui_refresh(&roll, &voice);
+
+            n = bm_song_format(&roll.song, roll.score, now_text, sizeof now_text);
+            if (n > 0 && memcmp(now_text, sent_text, (size_t)n + 1) != 0) {
+                if (!editor_dirty) editor_published = GetTime();
+                editor_dirty = 1;
+            }
+            if (editor_dirty && !IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+                GetTime() - editor_published > 0.15) {
+                if (bm_shm_publish(&editor_shm.block->to_plugin, now_text,
+                                   (size_t)n) == 0) {
+                    memcpy(sent_text, now_text, (size_t)n + 1);
+                    editor_dirty = 0;
+                }
+            }
+        }
+
         bm_text(&ui, BM_FONT_SMALL, status, BM_PAD, y, status_color);
 
         /* ---- information ---- */
@@ -1267,6 +1656,9 @@ int main(int argc, char **argv)
         if (song.ref_open) {
             bm_song_reference(&ui, &song, W, (float)GetScreenHeight());
         }
+        if (roll.help_open) {
+            bm_roll_help(&ui, &roll, W, (float)GetScreenHeight());
+        }
 
         /* Last, so a dropdown list or a context menu is above the layout it
          * covers rather than under it. */
@@ -1278,9 +1670,11 @@ int main(int argc, char **argv)
             char file[512];
             snprintf(file, sizeof file, "%.400s-%s.png", shot, TABS[tab]);
             TakeScreenshot(file);
-            if (tab == 0) {
-                tab = 1;
-                voice = song.song.voice;
+            if (tab + 1 < TAB_COUNT) {
+                tab++;
+                prev_tab = tab;
+                voice = tab_voice[tab];
+                effects = tab_fx[tab];
                 shot_frames = 4;
             } else {
                 break;
@@ -1289,8 +1683,11 @@ int main(int argc, char **argv)
     }
 
     g_speaking = 0;
-    UnloadAudioStream(stream);
-    CloseAudioDevice();
+    if (g_audio) {
+        UnloadAudioStream(stream);
+        CloseAudioDevice();
+    }
+    if (editor_name != 0) bm_shm_close(&editor_shm);
     if (logo.id != 0) UnloadTexture(logo);
     bm_ui_free(&ui);
     CloseWindow();

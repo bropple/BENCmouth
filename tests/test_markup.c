@@ -161,6 +161,86 @@ static void test_singing(void)
     }
 }
 
+/* Pitch at a given frame, which is what a glide has to be measured in: the
+ * question is not where it ends up but how it got there. */
+static float f0_at(const char *phonemes, int frame, float prosody)
+{
+    bm_frame_gen g;
+    bm_voice     v;
+    bm_frame     f;
+    int          i = 0;
+
+    bm_voice_default(&v);
+    v.prosody = prosody;
+    v.vibrato = 0.0f;
+    bm_frame_gen_init(&g, 100.0f, &v);
+    if (bm_frame_gen_set_phonemes(&g, phonemes, 0) != BM_OK) return -1.0f;
+
+    while (bm_frame_gen_next(&g, &f)) {
+        if (i++ == frame) return f.f0;
+    }
+    return -1.0f;
+}
+
+/* [glide] is the pitch half of legato. The tone half needs no command - two
+ * notes on one vowel do not re-articulate - but a note was always reached in a
+ * single frame, so a slur stepped. */
+static void test_glide(void)
+{
+    /* C4 for 400 ms and then G4: 262 Hz to 392 Hz, the change at frame 40. */
+    const char *step  = "[dur 400][note C4] AA1 [dur 400][note G4] AA1";
+    const char *slur  = "[dur 400][note C4] AA1 [glide 60][dur 400][note G4] AA1";
+    bm_result rc;
+
+    printf("legato\n");
+
+    check(f0_at(step, 40, 0.0f) > 380.0f,
+          "without it a note is reached in one frame");
+    check(f0_at(slur, 40, 0.0f) < 300.0f && f0_at(slur, 40, 0.0f) > 262.0f,
+          "with it the pitch has only set off");
+    check(f0_at(slur, 46, 0.0f) > 385.0f, "and has arrived six frames later");
+    printf("    stepped %.0f Hz at the boundary, glided %.0f, then %.0f\n",
+           (double)f0_at(step, 40, 0.0f), (double)f0_at(slur, 40, 0.0f),
+           (double)f0_at(slur, 46, 0.0f));
+
+    /* Geometric, not linear in hertz: the halfway point of a fifth from 262 is
+     * 321 and not 327, which is where the ear puts it. The glide sets off on
+     * the frame the note changes, so frame 42 is the third of its six. */
+    {
+        float mid = f0_at(slur, 42, 0.0f);
+        printf("    halfway through: %.0f Hz (geometric 321, linear 327)\n",
+               (double)mid);
+        check(mid > 310.0f && mid < 325.0f, "and it is geometric on the way");
+    }
+
+    /* A longer glide is longer, and is still going where the short one has
+     * already arrived. */
+    {
+        const char *slow = "[dur 400][note C4] AA1 [glide 200][dur 400][note G4] AA1";
+        check(f0_at(slow, 46, 0.0f) < f0_at(slur, 46, 0.0f),
+              "[glide 200] is still on its way when [glide 60] has landed");
+    }
+
+    /* Nothing to glide from: a phrase that scooped up to its own first note
+     * out of silence would be an effect nobody asked for. */
+    check(f0_at("[glide 200][dur 800][note G4] AA1", 2, 0.0f) > 385.0f,
+          "the first note of a phrase is not glided into");
+
+    /* It governs an absolute note whether or not the prosody planner is
+     * running, since it is a property of the note and not of the voice. */
+    check(f0_at(slur, 40, 0.85f) < 300.0f, "and it works with prosody on too");
+
+    /* Off by default, and off again when asked. */
+    check(f0_at("[dur 400][note C4] AA1 [glide 60][dur 400][note G4] AA1 "
+                "[glide 0][dur 400][note C4] AA1", 80, 0.0f) < 270.0f,
+          "[glide 0] steps again");
+
+    (void)measure("AA1 [glide 3000] AA1", 0, &rc);
+    check(rc == BM_ERR_ARG, "a glide longer than any slur is rejected");
+    (void)measure("AA1 [glide] AA1", 0, &rc);
+    check(rc == BM_ERR_ARG, "and one with no argument at all");
+}
+
 static void test_errors(void)
 {
     bm_result rc;
@@ -240,6 +320,7 @@ int main(void)
     test_on_passes_through();
     test_effects();
     test_singing();
+    test_glide();
     test_errors();
     test_survives_the_engine();
     printf("\n%s (%d failure%s)\n\n",
