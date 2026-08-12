@@ -475,10 +475,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bm.exe --help exited $LASTEXITCODE" }
           Write-Host "  ok  bm.exe installed and runs"
 
+          # The plugins go outside $INSTDIR, into the folders a host scans, so
+          # they are the part of this installer that can go wrong somewhere
+          # nobody would think to look. Both are default-selected, so a silent
+          # install installs them.
+          $clap = Join-Path $env:CommonProgramFiles 'CLAP\BENCmouth.clap'
+          $vst3 = Join-Path $env:CommonProgramFiles 'VST3\BENCmouth.vst3'
+          if (-not (Test-Path $clap)) { throw "the CLAP was not installed at $clap" }
+          Write-Host "  ok  CLAP at $clap"
+          if (Test-Path $vst3) {
+            # A bundle, not a file - a host that scans for the shape will not
+            # see a loose DLL, and the module inside has to be named after it.
+            $mod = Join-Path $vst3 'Contents\x86_64-win\BENCmouth.vst3'
+            if (-not (Test-Path $mod)) {
+              Get-ChildItem -Recurse $vst3 | ForEach-Object { Write-Host "    $_" }
+              throw "the VST3 bundle has no module named BENCmouth.vst3 in it"
+            }
+            Write-Host "  ok  VST3 bundle at $vst3, with its module inside"
+          } else {
+            Write-Host "  --  no VST3 in this installer"
+          }
+
           # _?= keeps the uninstaller from copying itself to temp and returning
           # before it has finished, which is what makes -Wait meaningless.
           Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
                         -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+
+          # And taken back out again. A plugin left behind in a shared folder
+          # after an uninstall is worse than one that never installed: the host
+          # goes on offering it, and it loads a CLAP that is no longer there.
+          if (Test-Path $clap) { throw "the CLAP survived the uninstall: $clap" }
+          if (Test-Path $vst3) { throw "the VST3 survived the uninstall: $vst3" }
+          Write-Host "  ok  both plug-ins removed"
+
           Remove-Item -Recurse -Force 'C:\Program Files\BENCmouth' `
                       -ErrorAction SilentlyContinue
 
