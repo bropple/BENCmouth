@@ -25,7 +25,12 @@
 #define RULER_H   14.0f
 #define KEYS_W    34.0f     /* the keyboard down the left */
 #define FOOT_H    64.0f     /* the two rows of controls underneath */
-#define BAR_H     10.0f     /* the horizontal scrollbar, under the lanes */
+/* The horizontal scrollbar. Sixteen rather than ten: at ten the thumb was six
+ * pixels of flat colour, which is a thing you can see and not a thing that
+ * looks like it can be picked up. The grip marks below are the other half of
+ * that - a plain rectangle reads as a readout, and three notches read as a
+ * handle. */
+#define BAR_H     16.0f
 /* How near an edge counts as taking hold of it. Five pixels was what the
  * gesture had, and five pixels is a target nobody finds by accident - the note
  * simply moved instead, which reads as the edge drag not existing. Eight, and
@@ -1000,12 +1005,34 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
         w = bar.width * span / total;
         if (w < 24.0f) w = 24.0f;
         t = (total > span) ? s->scroll_ms / (total - span) : 0.0f;
-        /* Dim when the whole song is already on screen. A full-width bar in the
-         * colour of a control says "drag me" about something that has nowhere
-         * to go. */
-        DrawRectangleRec((Rectangle){ bar.x + (bar.width - w) * t, bar.y + 1.0f,
-                                      w, bar.height - 2.0f },
-                         (total > span + 1.0f) ? BM_ACCENT : BM_EDGE);
+
+        {
+            /* Dim when the whole song is already on screen. A full-width bar in
+             * the colour of a control says "drag me" about something that has
+             * nowhere to go. */
+            int   live = (total > span + 1.0f);
+            Rectangle thumb = { bar.x + (bar.width - w) * t, bar.y + 2.0f,
+                                w, bar.height - 4.0f };
+            Vector2 m = GetMousePosition();
+            int over = live && !ui->blocking &&
+                       CheckCollisionPointRec(m, bar);
+
+            DrawRectangleRec(thumb, live ? (over ? BM_TEXT : BM_ACCENT)
+                                         : BM_EDGE);
+
+            /* Three notches down the middle. The one mark every toolkit uses
+             * for "this is a handle", and the only thing here that says so
+             * before you have already tried it. */
+            if (live && w > 26.0f) {
+                float cx = thumb.x + w * 0.5f;
+                int   k;
+                for (k = -1; k <= 1; k++) {
+                    DrawRectangle((int)(cx + (float)k * 4.0f),
+                                  (int)thumb.y + 2, 1,
+                                  (int)thumb.height - 4, BM_BG);
+                }
+            }
+        }
 
         s->bar = bar;
         s->bar_span = span;
@@ -1325,7 +1352,8 @@ static char HELP[] =
 "  walk back into the song before it.\n"
 "\n"
 "  The bar under the grid scrolls sideways and says how much of the\n"
-"  song you are looking at. ZOOM - and + change how much that is, and\n"
+"  song you are looking at: drag it anywhere along its length, or\n"
+"  press beside the thumb to jump. ZOOM - and + change how much, and\n"
 "  so does control-wheel, which zooms about the pointer. The wheel on\n"
 "  its own scrolls pitch and shift-wheel scrolls time.\n"
 "\n"
@@ -1362,8 +1390,9 @@ static char HELP[] =
 "  values in the SONG tab - the engine has no idea what a tempo is.\n"
 "\n"
 "  Drag in the numbered strip above the grid to move the playhead.\n"
-"  SING starts from wherever it is, LOOP repeats, and dragging it\n"
-"  while the song is playing scrubs. The other two tabs cannot do any\n"
+"  SING starts from wherever it is and the head comes back there when\n"
+"  the song runs out, so pressing SING again plays the same passage.\n"
+"  LOOP repeats, and dragging the head while it plays scrubs. The other two tabs cannot do any\n"
 "  of that: they speak an utterance from its beginning, because that\n"
 "  is what the engine offers. A roll is rendered first and then played\n"
 "  from, which is what makes a position in it something you can pick.\n"

@@ -441,6 +441,19 @@ Still open, in order:
       Not covered: the text tab and the score editor, which are text boxes with no history
       of their own. A word typed into a *note* is an edit to the roll and is covered.
 
+- [x] **The scrollbar is a handle, and the playhead comes back.** Two more from using it.
+      The bar was ten pixels with a six-pixel thumb of flat colour, which is a thing you
+      can see and not a thing that looks like it can be picked up - sixteen now, with the
+      three notches every toolkit uses to mean "handle" and a brighter fill under the
+      pointer.
+
+      And the head returns to where the pass started when the song runs out. It used to be
+      left at the end, which was wrong twice: nothing is there to look at, and SING would
+      then play from the top while the marker still said the end - the one thing on screen
+      claiming to say where the next note comes from, disagreeing with where it does.
+      Stopping by hand still leaves it where it was stopped, because that is a position
+      somebody just chose.
+
 Still open:
 
 - [x] **The editor, in another process** (`src/plugin/bm_shm.c`, `src/plugin/bm_spawn.c`,

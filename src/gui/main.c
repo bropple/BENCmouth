@@ -460,6 +460,12 @@ int main(int argc, char **argv)
 
     int        roll_loop = 0;
 
+    /* Where the roll's transport was started from, so the playhead can go back
+     * there when the song runs out. Negative when the roll is not what is
+     * sounding - the text and song tabs speak an utterance and have no head to
+     * put back. */
+    float      play_from = -1.0f;
+
     /* Editor mode: this window belongs to a plugin in another process. See
      * parse_editor and src/plugin/bm_shm.h. */
     const char *editor_name = 0;
@@ -713,6 +719,20 @@ int main(int argc, char **argv)
             g_finished = 0;
             snprintf(status, sizeof status, "ready");
             status_color = BM_DIM;
+
+            /* Back to where playing began.
+             *
+             * The head used to be left at the end of the song, which was wrong
+             * twice over: nothing is there to look at, and SING would then play
+             * from the top while the marker still said the end - the one thing
+             * on screen that claims to say where the next note will come from,
+             * disagreeing with where it does. Returning to the start of the
+             * pass means pressing SING again plays the same passage, which is
+             * what listening to a bar over and over is made of. */
+            if (play_from >= 0.0f) {
+                roll.head_ms = play_from;
+                play_from = -1.0f;
+            }
         }
 
         /* Phonemes are recomputed only when the text changes: it is cheap, but
@@ -1157,6 +1177,7 @@ int main(int argc, char **argv)
                     g_player.loop = roll_loop;
                     bm_player_seek_ms(&g_player, (double)roll.head_ms);
                     bm_player_play(&g_player);
+                    play_from = roll.head_ms;
                     g_render_slot ^= 1;
 
                     g_speaking = 1;
@@ -1172,6 +1193,10 @@ int main(int argc, char **argv)
                  * queue an utterance that was never heard - a SPEAK button that
                  * does nothing, for reasons on another tab. */
                 bm_player_stop(&g_player);
+                /* Whatever the roll was doing is over, and its head stays
+                 * where it was: what finishes next is an utterance from
+                 * another tab and has nothing to say about it. */
+                play_from = -1.0f;
 
                 bm_engine_set_voice(g_engine, &voice);
                 bm_engine_set_effects(g_engine, &effects);
@@ -1203,6 +1228,10 @@ int main(int argc, char **argv)
             if (bm_button(&ui, b, "STOP", g_audio && g_speaking)) {
                 g_speaking = 0;
                 bm_player_stop(&g_player);
+                /* Stopped by hand leaves the head where it was stopped, which
+                 * is the position somebody just chose to stop at. Only running
+                 * out of song rewinds. */
+                play_from = -1.0f;
                 bm_engine_reset(g_engine);
                 snprintf(status, sizeof status, "stopped");
                 status_color = BM_DIM;
