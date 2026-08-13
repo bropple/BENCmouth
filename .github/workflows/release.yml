@@ -229,6 +229,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             git
             mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-cmake
             make zip python
       # raylib's own Makefile, not cmake. cmake's "MinGW Makefiles" generator
       # wants mingw32-make, which is a separate package from the MSYS make that

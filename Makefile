@@ -663,7 +663,14 @@ ifeq ($(CLAP_FOUND),yes)
 	# The module inside the bundle has to be named after the bundle, or a host
 	# opens it, finds nothing it recognises, and lists no plugin - with no error
 	# anywhere. MinGW shipped a libBENCmouth.vst3 exactly once.
-	@test -n "$$(find $(VST3_BUNDLE)/Contents -type f -name 'BENCmouth.*')" || { \
+	#
+	# Both spellings, because the extension is not part of the rule. Linux and
+	# Windows put an extension on the module - BENCmouth.so, BENCmouth.vst3 -
+	# and macOS does not: Contents/MacOS/BENCmouth, bare. Only asking for
+	# 'BENCmouth.*' failed a correct macOS bundle, which is worse than not
+	# checking, because it stops a release over a file that is right.
+	@test -n "$$(find $(VST3_BUNDLE)/Contents -type f \
+	                  \( -name 'BENCmouth' -o -name 'BENCmouth.*' \))" || { \
 	    echo "  the module in $(VST3_BUNDLE) is not named BENCmouth - no host will load it:"; \
 	    find $(VST3_BUNDLE) -type f; false; }
 	@echo "built $(VST3_BUNDLE)  (loads BENCmouth.clap at run time)"

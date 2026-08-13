@@ -958,6 +958,25 @@ jobs:
           plutil -lint build/BENCmouth.clap/Contents/Info.plist
           nm -gU build/BENCmouth.clap/Contents/MacOS/BENCmouth | grep -q clap_entry
 
+      # The shims, built here rather than first at release time.
+      #
+      # The Linux and Windows jobs have built their VST3 all along and this one
+      # did not, so the one platform whose bundle differs was the one nothing
+      # checked. It differs in a way that mattered: Linux and Windows put an
+      # extension on the module and macOS does not, and the Makefile's check
+      # that the module is named after the bundle only accepted the extension
+      # spelling. A correct bundle failed it, and it failed during a release,
+      # which is the worst place to find out.
+      - name: VST3 and AU
+        run: |
+          make vst3-fetch
+          make vst3
+          make au-fetch
+          make au
+          ls -lR build/BENCmouth.vst3/Contents | head -20
+          test -f build/BENCmouth.vst3/Contents/MacOS/BENCmouth
+          test -d build/BENCmouth.component
+
       # The three things that make macOS report a plugin as damaged or simply
       # absent, each checked rather than assumed. BENCsynth shipped a release
       # failing all three, which is why they are written down here before this
