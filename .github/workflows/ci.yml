@@ -574,11 +574,21 @@ jobs:
           $exe  = (Get-ChildItem dl\*.exe)[0].FullName
           $name = Split-Path $exe -Leaf
 
-          $gflags = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers' `
-                      -Recurse -Filter gflags.exe -ErrorAction SilentlyContinue |
+          # By architecture, not whichever turns up first. The Debuggers folder
+          # holds an x86, an x64 and an arm64 build side by side, and taking the
+          # first match got the arm64 one on an x64 runner - which fails with
+          # "not a valid application for this OS platform", a message about the
+          # tool that reads like a message about the installer.
+          $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+            'ARM64' { 'arm64' } 'x86' { 'x86' } default { 'x64' }
+          }
+          $all = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers' `
+                   -Recurse -Filter gflags.exe -ErrorAction SilentlyContinue
+          $gflags = $all | Where-Object { $_.FullName -match "\\$arch\\" } |
                     Select-Object -First 1
           if (-not $gflags) {
-            Write-Host "  gflags not on this runner - skipping the page-heap run"
+            Write-Host "  no $arch gflags on this runner - skipping the page-heap run"
+            Write-Host "  (found: $($all.FullName -join ', '))"
             exit 0
           }
           Write-Host "  using $($gflags.FullName)"
@@ -590,7 +600,17 @@ jobs:
           $before = ('C:\pad\' + ('x' * 40)) * 60
           [Environment]::SetEnvironmentVariable('Path', $before, 'User')
 
-          & $gflags.FullName /p /enable $name /full | Out-Null
+          # Setting up the instrumentation is allowed to fail; the thing being
+          # tested is the installer, and a page heap that cannot be turned on is
+          # a missing check rather than a defect. It says so rather than passing
+          # quietly.
+          try {
+            & $gflags.FullName /p /enable $name /full | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "gflags exited $LASTEXITCODE" }
+          } catch {
+            Write-Host "  could not enable page heap ($_) - skipping"
+            exit 0
+          }
           try {
             $p = Start-Process -FilePath $exe -ArgumentList '/S', '/PATH' `
                                -Wait -PassThru
