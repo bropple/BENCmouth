@@ -161,6 +161,72 @@ static void test_singing(void)
     }
 }
 
+/* What the editor now tells people, checked against the engine that has to make
+ * it true.
+ *
+ * The roll writes [note] on every note, so a voice's own pitch and intonation
+ * range stop deciding anything the moment a score names a key - and the GUI
+ * dims both sliders and says so. That is a claim about this behaviour, made in
+ * a place that cannot see it, so it is pinned here: if [note] ever becomes a
+ * transposition, or f0_range starts shaping a sung line, the greyed rows become
+ * a lie and this is what should catch it.
+ *
+ * [pitch] is deliberately on the other side of the line. It moves the voice
+ * rather than replacing it, so f0_base still counts underneath and the sliders
+ * are left live for it. */
+/* The whole F0 track, not its last frame.
+ *
+ * The last frame is where this was first measured and it very nearly shipped a
+ * wrong answer: under [pitch 200] the line starts and ends on the same number
+ * whatever f0_base says, and differs across 74 of the 111 frames in between.
+ * A contour is the shape, so the shape is what gets compared. */
+static int f0_differs(const char *phonemes, float base_a, float range_a,
+                      float base_b, float range_b)
+{
+    bm_frame_gen ga, gb;
+    bm_voice     va, vb;
+    bm_frame     fa, fb;
+    int          differs = 0, frames = 0;
+
+    bm_voice_default(&va); va.f0_base = base_a; va.f0_range = range_a;
+    bm_voice_default(&vb); vb.f0_base = base_b; vb.f0_range = range_b;
+    bm_frame_gen_init(&ga, 100.0f, &va);
+    bm_frame_gen_init(&gb, 100.0f, &vb);
+
+    if (bm_frame_gen_set_phonemes(&ga, phonemes, 0) != BM_OK) return -1;
+    if (bm_frame_gen_set_phonemes(&gb, phonemes, 0) != BM_OK) return -1;
+
+    while (bm_frame_gen_next(&ga, &fa) && bm_frame_gen_next(&gb, &fb)) {
+        frames++;
+        if (fa.f0 != fb.f0) differs++;
+    }
+    printf("    %-30s %d of %d frames move\n", phonemes, differs, frames);
+    return frames > 0 ? differs : -1;
+}
+
+static void test_note_overrides_the_voice(void)
+{
+    printf("a named note answers to nothing\n");
+
+    check(f0_differs("[note C4] M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) == 0,
+          "f0_base does not move a named note");
+    check(f0_differs("[note C4] M IY1 S OW1", 118.0f, 0.0f, 118.0f, 10.0f) == 0,
+          "f0_range does not shape a named note");
+
+    /* The same voices on the same syllables without the command, so that the
+     * two above are about [note] and not about the measurement. */
+    check(f0_differs("M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) > 0,
+          "without it, f0_base decides");
+    check(f0_differs("M IY1 S OW1", 118.0f, 0.0f, 118.0f, 10.0f) > 0,
+          "without it, f0_range decides");
+
+    /* [pitch] is a shift, not a key: it moves the line without replacing the
+     * voice underneath. The editor leaves both sliders live under it, and this
+     * is the measurement that says it should. */
+    check(f0_differs("[pitch 200] M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) > 0,
+          "[pitch] still answers to f0_base");
+}
+
 /* Pitch at a given frame, which is what a glide has to be measured in: the
  * question is not where it ends up but how it got there. */
 static float f0_at(const char *phonemes, int frame, float prosody)
@@ -320,6 +386,7 @@ int main(void)
     test_on_passes_through();
     test_effects();
     test_singing();
+    test_note_overrides_the_voice();
     test_glide();
     test_errors();
     test_survives_the_engine();

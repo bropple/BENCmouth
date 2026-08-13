@@ -253,7 +253,7 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
         float bpm = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
         float v = bpm;
 
-        if (bm_slider(ui, ID_TEMPO, row, "tempo", &v, 40.0f, 240.0f, "%.0f BPM") &&
+        if (bm_slider(ui, ID_TEMPO, row, "tempo", &v, 40.0f, 240.0f, "%.0f BPM", 1) &&
             v > 0.0f) {
             s->song.tempo = v;
         }
@@ -265,7 +265,7 @@ int bm_song_panel(bm_ui *ui, bm_song_ui *s, Rectangle area, int use_dict)
         row.y = y;
         v = 60000.0f / bpm;
         if (bm_slider(ui, ID_QUARTER, row, "quarter", &v, 250.0f, 1500.0f,
-                      "%.0f ms") && v > 1.0f) {
+                      "%.0f ms", 1) && v > 1.0f) {
             s->song.tempo = 60000.0f / v;
         }
         y += 24.0f;

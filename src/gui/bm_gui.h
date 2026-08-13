@@ -221,10 +221,16 @@ int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
  * bm_textbox and drawn from the same numbering: focus is one thing, so a
  * slider and a text box must not share an id.
  *
+ * `enabled` of zero draws the row dimmed and takes no input by any of the three
+ * routes. For a parameter the sound is currently ignoring - a voice's pitch
+ * under a score that sets its own - which is worth showing rather than hiding:
+ * the value is still what the voice says, and a row that vanished when a song
+ * was loaded would look like the setting had been lost.
+ *
  * Returns nonzero on any frame the value changed, whichever of the three ways
- * changed it. */
+ * changed it. Always zero when disabled. */
 int   bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
-                float *value, float lo, float hi, const char *fmt);
+                float *value, float lo, float hi, const char *fmt, int enabled);
 /* Scrolls when the list is taller than the space beneath it: the mouse wheel
  * moves it and a bar on the right says where you are. Opening it scrolls the
  * current selection into view, because a list that opens at the top when the

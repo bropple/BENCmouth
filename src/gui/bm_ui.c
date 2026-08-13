@@ -413,7 +413,7 @@ static void seed_number(bm_ui *ui, float value, int decimals)
 }
 
 int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
-              float *value, float lo, float hi, const char *fmt)
+              float *value, float lo, float hi, const char *fmt, int enabled)
 {
     Vector2 m = GetMousePosition();
     /* Label and readout take a share of the row rather than a fixed 110 and
@@ -450,6 +450,25 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
 
     editing    = (ui->num_id == id && ui->focus == id);
     over_field = free_ && CheckCollisionPointRec(m, field);
+
+    /* Shown but not touchable. Clearing free_ is what does it: every hit test
+     * below goes through it, so the track, the readout and both steppers all
+     * go cold at once and none of them can be reached by a route this misses.
+     *
+     * Anything the slider was already holding is given up rather than frozen -
+     * a caret left in a readout nobody can type into would eat the keyboard,
+     * and a drag would go on moving a value that has stopped applying. A
+     * half-typed number is dropped with it, which is right: the value it was
+     * going to become is one the sound no longer takes. */
+    if (!enabled) {
+        if (ui->num_id == id) {
+            ui->num_id = 0;
+            if (ui->focus == id) ui->focus = 0;
+        }
+        if (ui->drag_id == id) ui->drag_id = 0;
+        if (ui->step_id == id) ui->step_id = 0;
+        free_ = over_field = editing = 0;
+    }
 
     /* Somebody else took the caret before this slider was reached this frame -
      * a text box, which is laid out above and so runs first. Commit rather than
@@ -560,8 +579,8 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
 
         if (changed && editing) seed_number(ui, *value, decimals);
 
-        step_arrow(up,   1, over_up   ? BM_ACCENT : BM_DIM);
-        step_arrow(down, 0, over_down ? BM_ACCENT : BM_DIM);
+        step_arrow(up,   1, !enabled ? BM_BORDER : (over_up   ? BM_ACCENT : BM_DIM));
+        step_arrow(down, 0, !enabled ? BM_BORDER : (over_down ? BM_ACCENT : BM_DIM));
     }
 
     /* ---- the track ---- *
@@ -574,12 +593,16 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
 
-    bm_label(ui, label, r.x, r.y + (r.height - BM_FONT_SMALL) * 0.5f);
+    /* Dimmed to the same colour a disabled button uses for its text, so that
+     * "you cannot move this" looks the same wherever it is said. */
+    bm_text_spaced(ui, BM_FONT_SMALL, label, r.x,
+                   r.y + (r.height - BM_FONT_SMALL) * 0.5f,
+                   enabled ? BM_DIM : BM_BORDER);
 
     DrawRectangleRec(track, BM_PANEL);
     DrawRectangleLinesEx(track, 1, BM_BORDER);
     DrawRectangle((int)track.x, (int)track.y, (int)(track.width * t), (int)track.height,
-                  BM_ACCENT);
+                  enabled ? BM_ACCENT : BM_BORDER);
 
     /* Grab anywhere left of the readout, not just the 6px track - a 6px hit
      * target is the kind of thing that makes an interface feel hostile. The
@@ -631,7 +654,7 @@ int bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
         snprintf(buf, sizeof buf, fmt, (double)*value);
         bm_text(ui, BM_FONT_SMALL, buf, field.x + 4,
                 r.y + (r.height - BM_FONT_SMALL) * 0.5f,
-                over_field ? BM_ACCENT : BM_TEXT);
+                !enabled ? BM_BORDER : (over_field ? BM_ACCENT : BM_TEXT));
     }
 
     return changed;

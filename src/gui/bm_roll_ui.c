@@ -1420,7 +1420,7 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
         Rectangle r = { area.x, y, 244.0f, 22.0f };
         float v = (s->song.tempo > 0.0f) ? s->song.tempo : 120.0f;
 
-        if (bm_slider(ui, ID_TEMPO, r, "tempo", &v, 40.0f, 240.0f, "%.0f BPM") &&
+        if (bm_slider(ui, ID_TEMPO, r, "tempo", &v, 40.0f, 240.0f, "%.0f BPM", 1) &&
             v > 0.0f) {
             s->song.tempo = v;
         }

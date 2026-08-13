@@ -327,6 +327,36 @@ static const char *sing_source(int tab, const bm_song_ui *song,
     return (tab == 2) ? roll->score : song->score;
 }
 
+/* Does this score say its own pitch?
+ *
+ * [note] is absolute - it is a name on the keyboard, not a shift of the voice -
+ * so from the first one onward the voice's f0_base and f0_range have nothing
+ * left to decide, and they stay that way for the rest of the utterance because
+ * the pitch latches. Measured rather than assumed: changing either against a
+ * score with one [note] in it produces a bit-identical render.
+ *
+ * [pitch] is not the same thing and is not looked for. It moves the voice
+ * rather than replacing it, so f0_base still matters underneath and the sliders
+ * stay live.
+ *
+ * A plain search for the word is enough. It cannot collide with a phoneme -
+ * ARPABET has no brackets in it - and the nearest command by spelling is
+ * [pause], which differs by the second letter. */
+static int score_sets_pitch(const char *score)
+{
+    const char *p = score;
+
+    if (p == 0) return 0;
+    while ((p = strstr(p, "[note")) != 0) {
+        char c = p[5];
+        /* [note C4] takes an argument, so the word ends in space. Anything else
+         * is not this command and the engine would reject it too. */
+        if (c == ' ' || c == '\t') return 1;
+        p += 5;
+    }
+    return 0;
+}
+
 static int by_name(const void *a, const void *b)
 {
     const char *x = (*(const bm_voice *const *)a)->name;
@@ -641,6 +671,7 @@ int main(int argc, char **argv)
     while (!WindowShouldClose()) {
         float W = (float)GetScreenWidth();
         float y;
+        int   pitch_set;      /* the score says its own notes; see below */
 
         /* ---- the plugin, if this window belongs to one ----
          *
@@ -1132,6 +1163,16 @@ int main(int argc, char **argv)
         if (fx_open) voice_open = 0;
         y += PANEL_H + 8;
 
+        /* Whether the score in front names its own notes, which decides two
+         * things drawn a long way apart: the line on the transport row and the
+         * two sliders it explains. Worked out once, here, where both can see
+         * it and where the panels above have already recompiled their scores.
+         *
+         * Tab 0 is exempt without looking. It speaks text rather than phonemes,
+         * and [note] is not something the front end takes. */
+        pitch_set = tab != 0 &&
+                    score_sets_pitch(sing_source(tab, &song, &roll));
+
         /* ---- transport ---- */
         {
             Rectangle b = { BM_PAD, y, 96, 30 };
@@ -1321,6 +1362,23 @@ int main(int argc, char **argv)
                 b.x += 124; b.width = 92;
                 if (bm_toggle(&ui, b, "LOOP", &roll_loop, 1)) {
                     g_player.loop = roll_loop;
+                }
+            }
+
+            /* Said once, on the last row before the voice column, because the
+             * two dimmed sliders down there can say they are off but cannot say
+             * why. Right-aligned into the space the transport leaves, and
+             * dropped entirely if the window is too narrow to hold it - the
+             * dimming is the part that has to survive a small window, and text
+             * printed over a button would be worse than no text. */
+            if (pitch_set) {
+                const char *why = "the notes set the pitch";
+                float tw = bm_text_measure(&ui, BM_FONT_SMALL, why, 1.0f);
+                float tx = W - BM_PAD - tw;
+
+                if (tx > b.x + b.width + 16.0f) {
+                    bm_text_spaced(&ui, BM_FONT_SMALL, why, tx,
+                                   b.y + (30.0f - BM_FONT_SMALL) * 0.5f, BM_DIM);
                 }
             }
         }
@@ -1543,16 +1601,25 @@ int main(int argc, char **argv)
              * identify. */
             int   fx_visible = half - 1;
 
+            /* The two pitch rows go dead under a score that names its own
+             * notes, which on the roll tab is always and on the song tab is
+             * whenever somebody has written [note] into it. They were live
+             * controls that did nothing, which from the chair is the same as
+             * broken - and the effects beside them do still work, so the
+             * natural reading was that the voice column had come unwired. */
             for (i = 0; i < NPARAMS; i++) {
                 int col = i / half;
                 int rowi = i % half;
                 Rectangle row = { BM_PAD + (float)col * (colw + BM_PAD),
                                   y + (float)rowi * 24, colw, 22 };
                 float v = param_get(&voice, PARAMS[i].key);
+                int   live = !(pitch_set &&
+                               (strcmp(PARAMS[i].key, "f0_base") == 0 ||
+                                strcmp(PARAMS[i].key, "f0_range") == 0));
                 /* Ids from ID_VOICE_SLIDER up; see the block comment there for
                  * why sliders are numbered alongside the text boxes. */
                 if (bm_slider(&ui, ID_VOICE_SLIDER + i, row, PARAMS[i].label, &v,
-                              PARAMS[i].lo, PARAMS[i].hi, PARAMS[i].fmt)) {
+                              PARAMS[i].lo, PARAMS[i].hi, PARAMS[i].fmt, live)) {
                     bm_voice_set_param(&voice, PARAMS[i].key, 0, v);
                     /* Lands at the next frame boundary, so it will not click -
                      * and a mid-utterance change is audible right away, which
@@ -1604,7 +1671,7 @@ int main(int argc, char **argv)
                         if (bm_slider(&ui, ID_FX_SLIDER + slot, row,
                                       FX_PARAMS[slot].label, &v,
                                       FX_PARAMS[slot].lo, FX_PARAMS[slot].hi,
-                                      FX_PARAMS[slot].fmt)) {
+                                      FX_PARAMS[slot].fmt, 1)) {
                             bm_effects_set_param(&effects, FX_PARAMS[slot].key,
                                                  0, v);
                             bm_engine_set_effects(g_engine, &effects);
