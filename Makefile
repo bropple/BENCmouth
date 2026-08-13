@@ -486,6 +486,13 @@ CW_DIR       := vendor/clap-wrapper
 VST3_SDK_DIR := vendor/vst3sdk
 VST3_SDK_COMMIT := 58f8da7936800732561402d7936584ca4505de07
 AU_SDK_DIR   := vendor/AudioUnitSDK
+# Pinned for the same reason the VST3 SDK is, and found the same way - by a
+# release failing. AudioUnitSDK 1.3.0 wants C++20: std::span and a `requires`
+# clause in AUUtility.h. clap-wrapper builds at C++17 and says so while it
+# configures, so the SDK at tip produces twenty errors per translation unit,
+# none of which say "wrong language standard". 1.2.0 is the last one that
+# compiles at 17; move this when the wrapper moves to 20, not before.
+AU_SDK_TAG   := AudioUnitSDK-1.2.0
 VST3_BUILD   := build/vst3
 AU_BUILD     := build/au
 
@@ -646,8 +653,9 @@ au-fetch:
 	rm -rf $(AU_SDK_DIR)
 	test -d $(CW_DIR) || git clone -q --depth 1 --branch $(CW_VERSION) \
 	    https://github.com/free-audio/clap-wrapper.git $(CW_DIR)
-	git clone -q --depth 1 https://github.com/apple/AudioUnitSDK.git $(AU_SDK_DIR)
-	@echo "clap-wrapper $(CW_VERSION) and the AudioUnit SDK are in vendor/"
+	git clone -q --depth 1 --branch $(AU_SDK_TAG) \
+	    https://github.com/apple/AudioUnitSDK.git $(AU_SDK_DIR)
+	@echo "clap-wrapper $(CW_VERSION) and $(AU_SDK_TAG) are in vendor/"
 
 vst3:
 ifeq ($(CLAP_FOUND),yes)
