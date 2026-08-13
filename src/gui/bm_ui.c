@@ -1335,6 +1335,98 @@ int bm_textview(bm_ui *ui, int id, Rectangle r, char *s, bm_edit *st, Color c)
 
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * A right-click menu of caller-supplied items
+ * ------------------------------------------------------------------ */
+
+#define BM_MENU_ROW 24.0f
+
+void bm_menu(bm_ui *ui, int id, float x, float y,
+             const char **items, int count)
+{
+    float w = 0.0f;
+    int   i;
+
+    if (ui == 0 || items == 0 || count <= 0 || id == 0) return;
+
+    for (i = 0; i < count; i++) {
+        float tw = bm_text_measure(ui, BM_FONT_SMALL, items[i], 0.0f);
+        if (tw > w) w = tw;
+    }
+
+    ui->list_owner  = id;
+    ui->list_open   = 1;
+    ui->list_items  = items;
+    ui->list_count  = count;
+    ui->list_choice = 0;
+    ui->list_rect   = (Rectangle){ x, y, w + 28.0f,
+                                   (float)count * BM_MENU_ROW + 8.0f };
+
+    /* The other menu and any dropdown go away: two popups would fight over
+     * which of them owns the mouse. */
+    ui->menu_open = 0;
+}
+
+int bm_menu_chosen(bm_ui *ui, int id)
+{
+    int c;
+
+    if (ui == 0 || ui->list_owner != id) return 0;
+    c = ui->list_choice;
+    ui->list_choice = 0;
+    return c;
+}
+
+int bm_menu_is_open(const bm_ui *ui, int id)
+{
+    return ui != 0 && ui->list_open && ui->list_owner == id;
+}
+
+static void draw_list_menu(bm_ui *ui, Vector2 m)
+{
+    Rectangle menu = ui->list_rect;
+    int i;
+
+    DrawRectangle((int)menu.x + 3, (int)menu.y + 3, (int)menu.width,
+                  (int)menu.height, (Color){ 0, 0, 0, 110 });
+    DrawRectangleRec(menu, BM_PANEL);
+    DrawRectangleLinesEx(menu, 1, BM_BORDER);
+
+    for (i = 0; i < ui->list_count; i++) {
+        Rectangle item = { menu.x + 1, menu.y + 4 + (float)i * BM_MENU_ROW,
+                           menu.width - 2, BM_MENU_ROW };
+        int over = CheckCollisionPointRec(m, item);
+
+        /* A separator rather than an item: a dash on its own is how a menu
+         * says "these belong together" without a second widget. */
+        if (ui->list_items[i][0] == '-' && ui->list_items[i][1] == '\0') {
+            bm_divider(item.x + 8, item.y + BM_MENU_ROW * 0.5f,
+                       item.width - 16);
+            continue;
+        }
+
+        if (over) DrawRectangleRec(item, BM_EDGE);
+        bm_text(ui, BM_FONT_SMALL, ui->list_items[i], item.x + 10,
+                item.y + (item.height - BM_FONT_SMALL) * 0.5f, BM_TEXT);
+
+        /* The choice outlives the menu by a frame: the overlay runs last, so
+         * the owner does not get to look until the next one. Closing here and
+         * clearing the choice there is what keeps those two apart. */
+        if (over && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            ui->list_choice = i + 1;
+            ui->list_open = 0;
+        }
+    }
+
+    /* Anywhere else dismisses it, on the press rather than the release - a
+     * release would also arrive at whatever is underneath. */
+    if (!CheckCollisionPointRec(m, menu) &&
+        (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) ||
+         IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+        ui->list_open = 0;
+    }
+}
+
 void bm_ui_overlay(bm_ui *ui)
 {
     static const char *MENU[]  = { "CUT", "COPY", "PASTE", "SELECT ALL" };
@@ -1415,6 +1507,8 @@ void bm_ui_overlay(bm_ui *ui)
             ui->menu_open = 0;
         }
     }
+
+    if (ui->list_open) draw_list_menu(ui, m);
 
     ui->pop_kind = 0;
     ui->blocking = 0;

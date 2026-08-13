@@ -56,6 +56,13 @@
  * controls below it are a fixed height each, so a proportional panel would
  * push the status line off the bottom of a short window. */
 #define PANEL_H     244
+
+/* Everything below the tab panel: the transport, the divider, the voice and
+ * effects columns, the scope and meters, and the status line. Measured from the
+ * window this layout was designed at - WIN_H less the panel and everything
+ * above it - and used only to work out how much spare height there is for the
+ * roll, which is the one panel that can use it. */
+#define BELOW_PANEL 474
 #define TEXT_CAP    2048
 #define SCOPE_LEN   2048
 #define SAMPLE_RATE 22050
@@ -901,10 +908,69 @@ int main(int argc, char **argv)
              * is reading the position of the samples actually going out, so
              * the head sits where the sound is even if a frame is dropped. */
             int head = g_player.playing ? (int)bm_player_pos_ms(&g_player) : -1;
-            int act = bm_roll_panel(&ui, &roll,
-                                    (Rectangle){ BM_PAD, y, W - 2 * BM_PAD,
-                                                 (float)PANEL_H },
-                                    use_dict, &voice, head);
+            /* The roll takes whatever height the window has spare.
+             *
+             * The other two tabs are a fixed amount of content and a taller
+             * band would be empty; a piano roll is the one thing here that is
+             * always short of room, and a bigger window should mean more of the
+             * song rather than more background. BELOW_PANEL is what the layout
+             * underneath comes to, measured rather than guessed - if a control
+             * is added down there this number moves with it, and the status
+             * line is what disappears if it does not. */
+            float tall = (float)GetScreenHeight() - (float)y - BELOW_PANEL;
+            int act;
+
+            if (tall < (float)PANEL_H) tall = (float)PANEL_H;
+            act = bm_roll_panel(&ui, &roll,
+                                (Rectangle){ BM_PAD, y, W - 2 * BM_PAD, tall },
+                                use_dict, &voice, head);
+            y += tall - (float)PANEL_H;   /* what follows starts lower down */
+
+            /* A note the roll wants said, because it has just been dragged to
+             * a new pitch. Through the live engine rather than the rendered
+             * score: it is one syllable, it has to start now, and the engine is
+             * what plays something immediately.
+             *
+             * Not while the transport is running - you are already listening to
+             * the song, and a note shouted over it would be answering a
+             * question nobody asked. */
+            if (roll.audition > 0) {
+                int at = roll.audition - 1;
+                roll.audition = 0;
+
+                if (!g_player.playing && at < roll.song.roll.count) {
+                    const bm_note *n = &roll.song.roll.note[at];
+                    const char *sing = n->tie
+                        ? bm_roll_tied_vowel(&roll.song.roll, at) : n->phon;
+                    char one[BM_NOTE_PHON_MAX + 48];
+                    char name[8];
+
+                    if (sing != 0 && sing[0] != '\0') {
+                        bm_roll_note_name(n->midi, name, sizeof name);
+                        /* Short, and its own length rather than the note's: this
+                         * is a pitch being checked, not the song being played,
+                         * and a two-second note would still be sounding three
+                         * drags later. */
+                        snprintf(one, sizeof one, "[dur 260][note %s] %s",
+                                 name, sing);
+                        /* Stopped before the engine is rewritten. The audio
+                         * thread is inside bm_read whenever it is speaking, and
+                         * this happens on every lane the note crosses - far
+                         * more often than SPEAK, which is the only other thing
+                         * that re-queues a live engine. Clearing the flag first
+                         * is what keeps the callback out of a sequence being
+                         * rebuilt underneath it. */
+                        g_speaking = 0;
+                        bm_engine_set_voice(g_engine, &voice);
+                        bm_engine_set_effects(g_engine, &effects);
+                        bm_engine_reset(g_engine);
+                        if (bm_speak_phonemes(g_engine, one, 0) == BM_OK) {
+                            g_finished = 0;
+                            g_speaking = 1;
+                        }
+                    }
+                }
+            }
 
             /* Dragging the playhead while it is running moves the sound with
              * it, which is what scrubbing means and what the whole rendered

@@ -15,6 +15,7 @@
 #define ID_PHON  13
 #define ID_TEMPO 14
 #define ID_HELP  15
+#define ID_MENU  16
 
 /* One semitone. Eleven pixels rather than a rounder twelve because the band the
  * panel gets is 148 px tall, and 12 would show twelve lanes - one short of the
@@ -24,7 +25,12 @@
 #define RULER_H   14.0f
 #define KEYS_W    34.0f     /* the keyboard down the left */
 #define FOOT_H    64.0f     /* the two rows of controls underneath */
-#define GRAB_PX    5.0f     /* how near the right edge is a length drag */
+#define BAR_H     10.0f     /* the horizontal scrollbar, under the lanes */
+/* How near an edge counts as taking hold of it. Five pixels was what the
+ * gesture had, and five pixels is a target nobody finds by accident - the note
+ * simply moved instead, which reads as the edge drag not existing. Eight, and
+ * never more than a third of the note, so a short note still has a middle. */
+#define GRAB_PX    8.0f
 
 #define LINE_H (BM_FONT_BODY + 4.0f + 10.0f)
 
@@ -207,6 +213,44 @@ static int is_black_key(int midi)
     return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10;
 }
 
+/* How near an edge the pointer is, for the note at `index`: 0 for the left
+ * edge, 1 for the right, -1 for neither. Never more than a third of the note
+ * from either end, so a note two grabs wide is not all edge. */
+static int edge_at(const bm_roll_ui *s, Rectangle lanes, int index, float x)
+{
+    const bm_note *n;
+    float nx, nw, grab;
+
+    if (index < 0 || index >= s->song.roll.count) return -1;
+    n = &s->song.roll.note[index];
+    nx = time_x(s, lanes, (float)n->start);
+    nw = (float)n->length * s->px_per_sec / 1000.0f;
+
+    grab = GRAB_PX;
+    if (grab > nw / 3.0f) grab = nw / 3.0f;
+    if (grab < 2.0f) return -1;
+
+    if (x >= nx + nw - grab) return 1;
+    if (x <= nx + grab)      return 0;
+    return -1;
+}
+
+/* Zooms about the middle of what is on screen, so the bar you are looking at
+ * stays where it is. Shared by the buttons and control-wheel, which zooms about
+ * the pointer instead - the difference is deliberate: a button has no pointer
+ * to be about. */
+static void zoom_by(bm_roll_ui *s, Rectangle lanes, float by)
+{
+    float middle = s->scroll_ms + lanes.width * 500.0f / s->px_per_sec;
+
+    s->px_per_sec *= by;
+    if (s->px_per_sec < 8.0f)   s->px_per_sec = 8.0f;
+    if (s->px_per_sec > 600.0f) s->px_per_sec = 600.0f;
+
+    s->scroll_ms = middle - lanes.width * 500.0f / s->px_per_sec;
+    if (s->scroll_ms < 0.0f) s->scroll_ms = 0.0f;
+}
+
 /* Which note is under the point, or -1. Searched backwards so that when two
  * notes touch, the later one wins its own left edge. */
 static int note_at(const bm_roll_ui *s, Rectangle lanes, float x, float y)
@@ -306,7 +350,8 @@ static void draw_keys(bm_ui *ui, const bm_roll_ui *s, Rectangle keys)
     }
 }
 
-static void draw_notes(bm_ui *ui, const bm_roll_ui *s, Rectangle lanes)
+static void draw_notes(bm_ui *ui, const bm_roll_ui *s, Rectangle lanes,
+                       int hover)
 {
     int i;
 
@@ -347,6 +392,15 @@ static void draw_notes(bm_ui *ui, const bm_roll_ui *s, Rectangle lanes)
         } else {
             DrawRectangleRec(r, selected ? BM_TEXT : BM_ACCENT);
             if (selected) DrawRectangleLinesEx(r, 1.0f, BM_TEXT);
+        }
+
+        /* The edges, on the note being pointed at and on the selected one.
+         * Two pixels of a brighter colour at each end, which is the only thing
+         * on screen that says the ends of a note are controls - the cursor
+         * says so too, but only once you are already there. */
+        if ((selected || i == hover) && !silent && w > 8.0f) {
+            DrawRectangle((int)x, (int)r.y, 2, (int)r.height, BM_BG);
+            DrawRectangle((int)(x + w) - 2, (int)r.y, 2, (int)r.height, BM_BG);
         }
 
         /* A tie and two separate notes are the difference between singing and
@@ -402,6 +456,25 @@ static void draw_notes(bm_ui *ui, const bm_roll_ui *s, Rectangle lanes)
     }
 }
 
+/* What the right-click menu offers. Static because bm_menu keeps the pointer -
+ * a menu is drawn a frame after it is opened, so a local would be gone. */
+static const char *MENU_ITEMS[] = {
+    "Octave up",
+    "Octave down",
+    "Semitone up",
+    "Semitone down",
+    "-",
+    "Tie / untie",
+    "-",
+    "Delete"
+};
+#define MENU_COUNT ((int)(sizeof MENU_ITEMS / sizeof MENU_ITEMS[0]))
+
+enum {
+    MENU_OCT_UP = 1, MENU_OCT_DOWN, MENU_SEMI_UP, MENU_SEMI_DOWN,
+    MENU_SEP1, MENU_TIE, MENU_SEP2, MENU_DELETE
+};
+
 /* ------------------------------------------------------------------ */
 
 /* A tie needs something to be tied to. Not whether it would *sound* - that is
@@ -453,6 +526,45 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
 
     if (ui->blocking && CheckCollisionPointRec(m, ui->block)) return;
 
+    /* The bar under the grid. Taken hold of anywhere along it: pressing beside
+     * the thumb jumps there, which is what a scrollbar does everywhere. */
+    if (CheckCollisionPointRec(m, s->bar) &&
+        IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        float w = s->bar.width * s->bar_span / s->bar_total;
+        float t = (s->bar_total > s->bar_span)
+                      ? s->scroll_ms / (s->bar_total - s->bar_span) : 0.0f;
+        float tx;
+
+        if (w < 24.0f) w = 24.0f;
+        tx = s->bar.x + (s->bar.width - w) * t;
+
+        /* Grabbed on the thumb, the thumb stays under the pointer; grabbed
+         * beside it, it jumps there and then does. Anything else makes the
+         * thumb leap out from under the finger that took hold of it. */
+        if (m.x >= tx && m.x <= tx + w) s->scroll_grab = m.x - tx;
+        else                            s->scroll_grab = w * 0.5f;
+
+        s->drag = BM_ROLL_DRAG_SCROLL;
+    }
+    if (s->drag == BM_ROLL_DRAG_SCROLL) {
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            s->drag = BM_ROLL_DRAG_NONE;
+        } else if (s->bar.width > 1.0f && s->bar_total > s->bar_span) {
+            float w = s->bar.width * s->bar_span / s->bar_total;
+            float room;
+
+            if (w < 24.0f) w = 24.0f;
+            room = s->bar.width - w;
+            if (room > 1.0f) {
+                float t = (m.x - s->scroll_grab - s->bar.x) / room;
+                if (t < 0.0f) t = 0.0f;
+                if (t > 1.0f) t = 1.0f;
+                s->scroll_ms = t * (s->bar_total - s->bar_span);
+            }
+        }
+        return;
+    }
+
     /* The ruler is the playhead's. Pressing in it moves the head there and
      * dragging scrubs it, which is the gesture everything with a timeline in it
      * uses and the one thing the score tab could never offer: the engine plays
@@ -484,7 +596,7 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
             int   at = x_time(s, lanes, m.x);
             float was = s->px_per_sec;
             s->px_per_sec *= (wheel > 0.0f) ? 1.15f : 1.0f / 1.15f;
-            if (s->px_per_sec < 20.0f)  s->px_per_sec = 20.0f;
+            if (s->px_per_sec < 8.0f)   s->px_per_sec = 8.0f;
             if (s->px_per_sec > 600.0f) s->px_per_sec = 600.0f;
             if (s->px_per_sec != was) {
                 s->scroll_ms = (float)at - (m.x - lanes.x) * 1000.0f / s->px_per_sec;
@@ -504,12 +616,16 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
 
         if (hit >= 0) {
             const bm_note *n = &s->song.roll.note[hit];
-            float end = time_x(s, lanes, (float)(n->start + n->length));
+            int edge = edge_at(s, lanes, hit, m.x);
 
             s->selected = hit;
             s->drag_index = hit;
-            s->drag = (m.x >= end - GRAB_PX) ? BM_ROLL_DRAG_LENGTH
-                                             : BM_ROLL_DRAG_MOVE;
+            /* Either edge. The right one is how long the note is and the left
+             * one is where it starts, which is the same gesture from the other
+             * end and was simply missing. */
+            s->drag = (edge == 1) ? BM_ROLL_DRAG_LENGTH
+                    : (edge == 0) ? BM_ROLL_DRAG_START
+                                  : BM_ROLL_DRAG_MOVE;
             s->drag_grab = x_time(s, lanes, m.x) - n->start;
             s->drag_from = m;
             s->drag_moved = 0;
@@ -590,12 +706,36 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
                 if (len < least) len = least;
                 if (len > 10000) len = 10000;
                 n->length = len;
+            } else if (s->drag == BM_ROLL_DRAG_START) {
+                /* The left edge moves the beginning and leaves the end where
+                 * it is, which is what dragging that edge means everywhere
+                 * else. The note is never shortened past the minimum, and
+                 * never dragged through its own end. */
+                int end = n->start + n->length;
+                int start = snap_to(s, x_time(s, lanes, m.x));
+                int least = snap_ms(s);
+
+                if (least <= 0) least = 30;
+                if (start < 0) start = 0;
+                if (start > end - least) start = end - least;
+                if (start < 0) start = 0;
+                n->start = start;
+                n->length = end - start;
+                s->drag_index = bm_roll_sort(&s->song.roll, s->drag_index);
+                s->selected = s->drag_index;
             } else {
                 int start = snap_to(s, x_time(s, lanes, m.x) - s->drag_grab);
                 int midi = y_midi(s, lanes, m.y);
 
                 if (start < 0) start = 0;
-                if (midi >= 12 && midi <= 108) n->midi = midi;
+                if (midi >= 12 && midi <= 108 && midi != n->midi) {
+                    n->midi = midi;
+                    /* Say it, at the pitch it has just arrived at. Choosing a
+                     * note by ear is the point of dragging it up and down, and
+                     * doing that in silence means drag, let go, listen, and go
+                     * back for another try. */
+                    s->audition = s->drag_index + 1;
+                }
                 n->start = start;
                 s->drag_index = bm_roll_sort(&s->song.roll, s->drag_index);
                 s->selected = s->drag_index;
@@ -626,6 +766,37 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
         s->dirty = 1;
     }
 
+    /* ---- the right-click menu ----
+     *
+     * Opened on the note under the pointer, which it also selects: a menu that
+     * acted on something other than what was clicked would be a menu nobody
+     * could trust.
+     */
+    if (inside && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        int hit = note_at(s, lanes, m.x, m.y);
+        if (hit >= 0) {
+            s->selected = hit;
+            memset(&s->lyric_st, 0, sizeof s->lyric_st);
+            memset(&s->phon_st, 0, sizeof s->phon_st);
+            ui->focus = 0;
+            bm_menu(ui, ID_MENU, m.x, m.y, MENU_ITEMS, MENU_COUNT);
+        }
+    }
+
+    /* The pointer says what the edge under it will do. Without this the edge
+     * drag is invisible: there is nothing to see and nothing to feel, so a
+     * note that could be resized reads exactly like one that could not. */
+    if (!ui->blocking && s->drag == BM_ROLL_DRAG_NONE && inside) {
+        int over = note_at(s, lanes, m.x, m.y);
+        SetMouseCursor(edge_at(s, lanes, over, m.x) >= 0
+                           ? MOUSE_CURSOR_RESIZE_EW
+                           : MOUSE_CURSOR_DEFAULT);
+    } else if (s->drag == BM_ROLL_DRAG_LENGTH || s->drag == BM_ROLL_DRAG_START) {
+        SetMouseCursor(MOUSE_CURSOR_RESIZE_EW);
+    } else if (!inside && s->drag == BM_ROLL_DRAG_NONE) {
+        SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+    }
+
     /* T, for the same reason and under the same rule: it is a letter, so it
      * belongs to whichever field has the caret whenever one does. */
     if (ui->focus == 0 && s->selected > 0 && IsKeyPressed(KEY_T)) {
@@ -643,13 +814,20 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
     int       action = BM_ROLL_ACT_NONE;
     Rectangle keys, ruler, lanes;
     float     y;
+    int       hover;
 
     if (ui == 0 || s == 0) return BM_ROLL_ACT_NONE;
 
     if (s->selected >= s->song.roll.count) s->selected = s->song.roll.count - 1;
 
+    /* Something is selected as soon as there is anything to select, so the two
+     * fields below have a note to be about the moment the tab is opened. The
+     * first one, because that is where a song starts and where the playhead
+     * is. */
+    if (s->selected < 0 && s->song.roll.count > 0) s->selected = 0;
+
     keys  = (Rectangle){ area.x, area.y + 18.0f + RULER_H, KEYS_W,
-                         area.height - 18.0f - RULER_H - FOOT_H };
+                         area.height - 18.0f - RULER_H - FOOT_H - BAR_H };
     ruler = (Rectangle){ area.x + KEYS_W, area.y + 18.0f,
                          area.width - KEYS_W, RULER_H };
     lanes = (Rectangle){ ruler.x, ruler.y + RULER_H, ruler.width, keys.height };
@@ -677,6 +855,15 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                        s->unsingable ? BM_ALERT : BM_DIM);
     }
 
+    /* Which note the pointer is over, worked out before anything is drawn so
+     * that the note can show its edges as the mouse reaches it rather than a
+     * frame later. */
+    {
+        Vector2 m = GetMousePosition();
+        hover = (!ui->blocking && CheckCollisionPointRec(m, lanes))
+                    ? note_at(s, lanes, m.x, m.y) : -1;
+    }
+
     /* ---- the grid ---- */
     DrawRectangleRec(ruler, BM_BG);
     bm_panel(lanes);
@@ -687,7 +874,7 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
     BeginScissorMode((int)ruler.x, (int)ruler.y, (int)ruler.width,
                      (int)(RULER_H + lanes.height));
     draw_grid(ui, s, ruler, lanes);
-    draw_notes(ui, s, lanes);
+    draw_notes(ui, s, lanes, hover);
 
     /* The playhead: where the transport has got to while it is running, and
      * where it would start from when it is not. One mark either way, because
@@ -706,6 +893,42 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
     DrawRectangleLinesEx(lanes, 1.0f, BM_BORDER);
     draw_keys(ui, s, keys);
 
+    /* ---- how far along, and how much there is ----
+     *
+     * Scrolling sideways was shift-wheel and nothing else: a gesture with no
+     * sign that it exists, on the one axis a song is long in. A bar says both
+     * things a scrollbar says - where you are, and how much of the whole you
+     * are looking at - and can be dragged.
+     */
+    {
+        Rectangle bar = { lanes.x, lanes.y + lanes.height + 2.0f,
+                          lanes.width, BAR_H - 2.0f };
+        float span = lanes.width * 1000.0f / s->px_per_sec;   /* ms on screen */
+        float total = (float)bm_roll_length(&s->song.roll) + span * 0.25f;
+        float t, w;
+
+        if (total < span) total = span;
+        if (s->scroll_ms > total - span) s->scroll_ms = total - span;
+        if (s->scroll_ms < 0.0f) s->scroll_ms = 0.0f;
+
+        DrawRectangleRec(bar, BM_BG);
+        DrawRectangleLinesEx(bar, 1.0f, BM_EDGE);
+
+        w = bar.width * span / total;
+        if (w < 24.0f) w = 24.0f;
+        t = (total > span) ? s->scroll_ms / (total - span) : 0.0f;
+        /* Dim when the whole song is already on screen. A full-width bar in the
+         * colour of a control says "drag me" about something that has nowhere
+         * to go. */
+        DrawRectangleRec((Rectangle){ bar.x + (bar.width - w) * t, bar.y + 1.0f,
+                                      w, bar.height - 2.0f },
+                         (total > span + 1.0f) ? BM_ACCENT : BM_EDGE);
+
+        s->bar = bar;
+        s->bar_span = span;
+        s->bar_total = total;
+    }
+
     /* The head, drawn into the ruler too, so the strip you drag says it is a
      * control rather than a row of numbers. */
     {
@@ -714,6 +937,57 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
             DrawRectangle((int)x - 3, (int)ruler.y + (int)RULER_H - 3, 7, 3,
                           BM_TEXT);
         }
+    }
+
+    /* What the menu came back with, acted on before anything else looks at the
+     * roll. A pitch move goes through the same clamp a drag does, so a note
+     * cannot be sent somewhere the engine will not sing. */
+    {
+        int pick = bm_menu_chosen(ui, ID_MENU);
+
+        if (pick != 0 && s->selected >= 0 && s->selected < s->song.roll.count) {
+            bm_note *n = &s->song.roll.note[s->selected];
+            int shift = 0;
+
+            switch (pick) {
+            case MENU_OCT_UP:    shift =  12; break;
+            case MENU_OCT_DOWN:  shift = -12; break;
+            case MENU_SEMI_UP:   shift =   1; break;
+            case MENU_SEMI_DOWN: shift =  -1; break;
+            case MENU_TIE:
+                set_tie(s, s->selected, !n->tie);
+                break;
+            case MENU_DELETE:
+                bm_roll_remove(&s->song.roll, s->selected);
+                if (s->selected >= s->song.roll.count) {
+                    s->selected = s->song.roll.count - 1;
+                }
+                bm_roll_check_ties(&s->song.roll);
+                s->dirty = 1;
+                break;
+            default: break;
+            }
+
+            if (shift != 0 && n->midi + shift >= 12 && n->midi + shift <= 108) {
+                n->midi += shift;
+                s->audition = s->selected + 1;
+                s->dirty = 1;
+                /* Follow it, so a note moved out of view does not simply
+                 * vanish. */
+                if (n->midi > s->top_midi) s->top_midi = n->midi;
+                if (n->midi <= s->top_midi - (int)(lanes.height / LANE_H)) {
+                    s->top_midi = n->midi + (int)(lanes.height / LANE_H) - 1;
+                }
+            }
+        }
+    }
+
+    /* The menu is over everything, so nothing underneath may act on a click
+     * meant for it - the same rule main.c applies to its modals. */
+    if (bm_menu_is_open(ui, ID_MENU)) {
+        ui->blocking = 1;
+        ui->block = (Rectangle){ 0, 0, (float)GetScreenWidth(),
+                                 (float)GetScreenHeight() };
     }
 
     handle_mouse(ui, s, ruler, lanes, use_dict);
@@ -792,10 +1066,24 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                 }
             }
         } else {
+            /* Both boxes, drawn and labelled, with nothing in them. They used
+             * to be one blank panel and the words "no note selected", which
+             * answers a question nobody asked and hides the two fields the tab
+             * is mostly about - so the first thing the tab showed was the one
+             * arrangement in which you cannot see what typing would do.
+             *
+             * Empty and not editable rather than absent: there is genuinely no
+             * note to type into, and a live box that discarded what it was
+             * given would be worse than one that is plainly waiting. */
             Rectangle box = { r.x, r.y, 130.0f, LINE_H };
             bm_panel(box);
-            bm_text(ui, BM_FONT_SMALL, "no note selected", r.x + 190.0f,
-                    y + 6.0f, BM_DIM);
+            box.x += box.width + 8.0f + 78.0f;
+            box.width = 190.0f;
+            bm_text_spaced(ui, BM_FONT_SMALL, "PHONEMES",
+                           r.x + 130.0f + 8.0f, y + 6.0f, BM_DIM);
+            bm_panel(box);
+            bm_text(ui, BM_FONT_SMALL, "click a lane to draw a note",
+                    box.x + box.width + 12.0f, y + 6.0f, BM_DIM);
         }
     }
     y += LINE_H + 6.0f;
@@ -836,6 +1124,16 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
             }
         }
 
+        /* Zoom, as buttons as well as control-wheel. A gesture nobody is told
+         * about is a feature only its author has. */
+        r.x += 24.0f;
+        r.width = 30.0f;
+        bm_text_spaced(ui, BM_FONT_SMALL, "ZOOM", r.x, y + 4.0f, BM_DIM);
+        r.x += 44.0f;
+        if (bm_button(ui, r, "-", 1)) zoom_by(s, lanes, 1.0f / 1.4f);
+        r.x += 34.0f;
+        if (bm_button(ui, r, "+", 1)) zoom_by(s, lanes, 1.4f);
+
         r.x = area.x + area.width - 3.0f * 88.0f - 16.0f;
         r.width = 80.0f;
         if (bm_button(ui, r, "HELP", 1)) s->help_open = 1;
@@ -869,9 +1167,23 @@ static char HELP[] =
 "              is not a word - the score format reference in the SONG\n"
 "              tab lists every phoneme there is.\n"
 "\n"
-"  Drag a note to move it, drag its right edge to lengthen it, and\n"
-"  press Delete to remove the selected one. The wheel scrolls pitch,\n"
-"  shift-wheel scrolls time, and control-wheel zooms.\n"
+"  Drag a note to move it. Its two ends are handles: the right one\n"
+"  changes how long it is and the left one where it starts, and the\n"
+"  pointer turns into a double arrow when you are on one.\n"
+"\n"
+"  Dragging a note up and down plays it at each pitch it passes, so a\n"
+"  melody can be found by ear rather than by counting lanes.\n"
+"\n"
+"  Right-click a note for a menu: an octave or a semitone either way,\n"
+"  tie, and delete. Delete also works from the keyboard, and T ties.\n"
+"\n"
+"  The bar under the grid scrolls sideways and says how much of the\n"
+"  song you are looking at. ZOOM - and + change how much that is, and\n"
+"  so does control-wheel, which zooms about the pointer. The wheel on\n"
+"  its own scrolls pitch and shift-wheel scrolls time.\n"
+"\n"
+"  The grid takes whatever height the window has spare, so a taller\n"
+"  window is more song rather than more background.\n"
 "\n"
 "================================================================\n"
 "  TIE  -  ONE SYLLABLE OVER TWO NOTES\n"

@@ -91,14 +91,33 @@ typedef struct bm_roll_ui {
     float   head_ms;
     int     head_moved;             /* the user just moved it; go there */
 
+    /* A note to play, once, because the pitch under the mouse just changed.
+     * Dragging a note up and down is choosing a pitch by ear, and doing that
+     * in silence means dragging, letting go, listening, and going back - so
+     * the note says itself as it passes. main.c performs it: the panel has no
+     * engine, in the same way it opens no file dialogs.
+     *
+     * 1-based, so that zero can mean "nothing to play". */
+    int     audition;
+
+    /* The scrollbar under the grid, as it was last drawn, and what it was
+     * drawn against. Kept because the mouse is handled after the drawing and
+     * has to hit the same rectangle the eye did. */
+    Rectangle bar;
+    float     bar_span;      /* milliseconds on screen */
+    float     bar_total;     /* milliseconds the bar covers */
+    float     scroll_grab;   /* where in the thumb it was taken hold of */
+
     int     help_open;
 } bm_roll_ui;
 
 enum {
     BM_ROLL_DRAG_NONE = 0,
     BM_ROLL_DRAG_MOVE,
-    BM_ROLL_DRAG_LENGTH,
-    BM_ROLL_DRAG_HEAD
+    BM_ROLL_DRAG_LENGTH,    /* the right edge: how long the note is */
+    BM_ROLL_DRAG_START,     /* the left edge: where it begins */
+    BM_ROLL_DRAG_HEAD,
+    BM_ROLL_DRAG_SCROLL     /* the bar under the grid */
 };
 
 void bm_roll_ui_init(bm_roll_ui *s);

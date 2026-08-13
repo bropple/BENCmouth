@@ -386,6 +386,30 @@ Still open, in order:
       A `.bmsong` can be loaded through CLAP's preset-load extension, which is the only way
       to get a song in until the editor exists.
 
+- [x] **Six things the roll needed once somebody used it.**
+      - Both fields are there from the moment the tab opens: the first note is
+        selected, and WORD and PHONEMES are drawn empty rather than replaced by
+        the words "no note selected" - which answered a question nobody asked
+        and hid the two boxes the tab is mostly about.
+      - **A scrollbar under the grid.** Sideways used to be shift-wheel and
+        nothing else: a gesture with no sign it exists, on the one axis a song
+        is long in. It dims when the whole song is already on screen.
+      - **Both ends of a note are handles**, the left one moving where it starts
+        and the right one how long it is, with the pointer turning into a double
+        arrow and two pixels of contrast drawn into the ends. The grab was five
+        pixels and invisible, so the note simply moved instead and the gesture
+        read as missing.
+      - **A right-click menu**: octave and semitone either way, tie, delete.
+        That needed a general menu in the widget set - the one there was is four
+        fixed clipboard actions belonging to the text boxes.
+      - **A note says itself as it is dragged through pitches.** Choosing a note
+        by ear is the point of dragging it up and down, and doing that in
+        silence means drag, let go, listen, and go back for another try.
+      - **Zoom buttons**, and the grid takes whatever height the window has
+        spare. The other two tabs are a fixed amount of content and a taller
+        band would be empty; a piano roll is the one thing here always short of
+        room.
+
 Still open:
 
 - [x] **The editor, in another process** (`src/plugin/bm_shm.c`, `src/plugin/bm_spawn.c`,
