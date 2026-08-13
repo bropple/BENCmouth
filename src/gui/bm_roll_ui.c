@@ -175,21 +175,44 @@ void bm_roll_ui_refresh(bm_roll_ui *s, const bm_voice *voice)
 
 /* The word in a note, spelled. Empty in, empty out - clearing the lyric clears
  * the phonemes, because a note showing phonemes for a word that is no longer
- * there is worse than an empty one. */
-static void respell(bm_note *note, int use_dict)
+ * there is worse than an empty one.
+ *
+ * Returns nonzero if the word was longer than a note holds and was cut short.
+ * A note is one syllable and its phoneme buffer is sized for one, but the word
+ * box takes 24 characters, so "extraordinary" is a thing you can type and it
+ * spells to 33. Something has to give, and the caller says which. */
+static int respell(bm_note *note, int use_dict)
 {
     char   out[BM_NOTE_PHON_MAX * 4];
-    size_t n = 0;
+    size_t n = 0, len, cut;
     unsigned flags = use_dict ? 0u : BM_TEXT_NO_DICT;
 
-    if (note->lyric[0] == '\0') { note->phon[0] = '\0'; return; }
+    if (note->lyric[0] == '\0') { note->phon[0] = '\0'; return 0; }
 
     if (bm_text_to_phonemes_ex(note->lyric, 0, out, sizeof out, &n, flags)
             != BM_OK || n == 0) {
         note->phon[0] = '\0';
-        return;
+        return 0;
     }
-    snprintf(note->phon, sizeof note->phon, "%s", out);
+
+    len = strlen(out);
+    if (len < sizeof note->phon) {
+        memcpy(note->phon, out, len + 1);
+        return 0;
+    }
+
+    /* Keep whole phonemes. Cutting at the buffer's end lands mid-token often
+     * enough, and the pieces ARPABET leaves behind are mostly still phonemes -
+     * NG cut short is N, TH is T, SH is S - so the string goes on parsing and
+     * goes on singing, with a sound in it nobody asked for. Stopping at a space
+     * is the difference between a word that is missing its end and a word that
+     * is quietly wrong. */
+    cut = sizeof note->phon - 1;
+    while (cut > 0 && out[cut] != ' ') cut--;
+    while (cut > 0 && out[cut - 1] == ' ') cut--;
+    memcpy(note->phon, out, cut);
+    note->phon[cut] = '\0';
+    return 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -327,7 +350,10 @@ static void draw_grid(bm_ui *ui, const bm_roll_ui *s, Rectangle ruler,
                 DrawRectangle((int)x, (int)lanes.y, 1, (int)lanes.height,
                               bar ? BM_BORDER : BM_EDGE);
                 if (bar) {
-                    char lab[16];
+                    /* Wide enough for any long, which is what the compiler
+                     * has to assume even though the bar under the mouse is
+                     * never going to reach twenty digits. */
+                    char lab[24];
                     snprintf(lab, sizeof lab, "%ld", b / 4 + 1);
                     bm_text(ui, BM_FONT_SMALL, lab, x + 3.0f,
                             ruler.y + 1.0f, BM_DIM);
@@ -1279,7 +1305,10 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                         mark(s, TOK_WORD(s->selected));
                         memcpy(n->lyric, now, sizeof now);
 
-                        respell(n, use_dict);
+                        if (respell(n, use_dict))
+                            snprintf(s->said, sizeof s->said,
+                                     "\"%s\" is longer than one note holds",
+                                     n->lyric);
                         s->dirty = 1;
                     }
                 }

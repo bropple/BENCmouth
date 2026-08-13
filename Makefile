@@ -5,6 +5,15 @@ AR      ?= ar
 CSTD    ?= -std=c99
 WARN    := -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes \
            -Wmissing-prototypes -Wpointer-arith -Wcast-qual
+# The GUI gets the two that find bugs and not the ones that find style. It was
+# built with no warnings at all until an apostrophe written as a \u escape -
+# which is not legal C, and which the compiler here happened to accept - broke
+# the build on every runner at once. -Wpedantic would have caught it, and is left
+# out anyway: the help and licence text are single string literals longer than
+# the 4095 characters C99 obliges a compiler to take, so it fires constantly on
+# something that is not wrong. Splitting those is a change to make deliberately,
+# not as the price of turning on -Wall.
+GUI_WARN := -Wall -Wextra
 OPT     ?= -O2
 # -MMD -MP emits a .d file per object listing the headers it included, and the
 # -include below feeds those back to make. Without this, editing a header
@@ -350,7 +359,7 @@ gui-dict: $(DICT_DATA)
 	$(MAKE) gui OPT="$(OPT) -DBM_WITH_DICT=1"
 
 $(GUI): $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB)
-	$(CC) $(CSTD) $(OPT) -Iinclude -Isrc/host -Isrc/gui -Isrc/plugin $(RL_CFLAGS) \
+	$(CC) $(CSTD) $(GUI_WARN) $(OPT) -Iinclude -Isrc/host -Isrc/gui -Isrc/plugin $(RL_CFLAGS) \
 	  -o $@ $(GUI_SRC) $(GUI_RES) $(HOST_NOMAIN) $(LIB) \
 	  $(RL_LIBS) $(RL_SYS) $(GUI_LINK) -lm
 
