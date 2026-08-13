@@ -487,12 +487,17 @@ VST3_SDK_DIR := vendor/vst3sdk
 VST3_SDK_COMMIT := 58f8da7936800732561402d7936584ca4505de07
 AU_SDK_DIR   := vendor/AudioUnitSDK
 # Pinned for the same reason the VST3 SDK is, and found the same way - by a
-# release failing. AudioUnitSDK 1.3.0 wants C++20: std::span and a `requires`
-# clause in AUUtility.h. clap-wrapper builds at C++17 and says so while it
-# configures, so the SDK at tip produces twenty errors per translation unit,
-# none of which say "wrong language standard". 1.2.0 is the last one that
-# compiles at 17; move this when the wrapper moves to 20, not before.
-AU_SDK_TAG   := AudioUnitSDK-1.2.0
+# release failing. This build is C++17 (cmake/CMakeLists.txt says so, and
+# clap-wrapper prints it while configuring), and the SDK stopped being C++17 in
+# stages: 1.3.0 wants std::span and a `requires` clause in AUUtility.h, and
+# 1.2.0 already wants std::erase_if, std::ssize and std::bit_cast in AUBase.cpp
+# and AUScopeElement.cpp. Neither says "wrong language standard" - both say
+# "no member named ... in namespace 'std'", twenty times per file.
+#
+# 1.1.0 is clean, and is what BENCsynth pins for its own AU. Move this when the
+# wrapper moves to C++20, not before, and check the .cpp files as well as the
+# headers - pinning 1.2.0 on a header-only reading is how this took two goes.
+AU_SDK_TAG   := AudioUnitSDK-1.1.0
 VST3_BUILD   := build/vst3
 AU_BUILD     := build/au
 
