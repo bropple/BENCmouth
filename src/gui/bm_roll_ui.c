@@ -1514,7 +1514,7 @@ static char HELP[] =
 "\n"
 "  TIE is what two selected notes are for: pick the syllable, add the\n"
 "  note to hold it over, and press TIE. The later note gives up its\n"
-"  own word and carries on the first one\u0027s vowel, gliding onto its\n"
+"  own word and carries on the first one's vowel, gliding onto its\n"
 "  pitch instead of stepping. With one note selected it means the same\n"
 "  thing with the note before it implied.\n"
 "\n"
