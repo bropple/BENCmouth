@@ -108,6 +108,15 @@ typedef struct bm_roll_ui {
     float     bar_total;     /* milliseconds the bar covers */
     float     scroll_grab;   /* where in the thumb it was taken hold of */
 
+    /* Every state this roll has been in, and the one it is about to leave.
+     * See bm_roll.h - the panel decides when a gesture begins and ends, and
+     * that is all the coalescing there is. */
+    bm_roll_history hist;
+
+    /* What was last said about undo, so the status line can say it. main.c
+     * shows it and clears it, the way it does with every other message. */
+    char    said[64];
+
     int     help_open;
 } bm_roll_ui;
 

@@ -112,6 +112,60 @@ int  bm_roll_check_ties(bm_roll *r);
  * chain of them is one held vowel however many notes long it is. */
 const char *bm_roll_tied_vowel(const bm_roll *r, int index);
 
+/* ------------------------------------------------------------------ *
+ * Undo
+ *
+ * Whole snapshots of the roll rather than a list of things that were done to
+ * it. A note grid is a small document - a few hundred notes, twenty kilobytes -
+ * and the alternative is a command for every gesture, each with an inverse that
+ * has to stay correct as the gestures change. Snapshots cannot desynchronize
+ * from the thing they describe, because they *are* the thing.
+ *
+ * It costs about a megabyte of memory for thirty-two levels each way, which on
+ * the desktop this GUI runs on is not a number worth optimizing against the
+ * certainty of getting an undo stack right.
+ *
+ * Coalescing is the caller's to decide, through `token`: marks carrying the
+ * same non-zero token are one run and only the first is recorded. That is what
+ * makes a drag one undo rather than sixty, and a typed word one undo rather
+ * than one per letter. A token of zero never coalesces.
+ * ------------------------------------------------------------------ */
+
+#define BM_ROLL_UNDO 32
+
+typedef struct bm_roll_state {
+    bm_roll roll;
+    float   tempo;
+    int     selected;
+} bm_roll_state;
+
+typedef struct bm_roll_history {
+    bm_roll_state back[BM_ROLL_UNDO];     /* undo */
+    bm_roll_state fwd[BM_ROLL_UNDO];      /* redo */
+    int      n_back, n_fwd;
+    unsigned token;
+} bm_roll_history;
+
+void bm_roll_history_init(bm_roll_history *h);
+
+/* Records the state as it is *now*, before whatever is about to change it.
+ * Returns nonzero if a snapshot was taken. Anything recorded to redo is thrown
+ * away: a new edit is a new future. */
+int  bm_roll_mark(bm_roll_history *h, unsigned token, const bm_roll_state *now);
+
+/* Ends the current run, so the next mark records even with the same token.
+ * Called when a gesture finishes - a button released, a field left. */
+void bm_roll_mark_end(bm_roll_history *h);
+
+/* Steps back or forward. `now` is the state being replaced, which becomes the
+ * step in the other direction; the restored state is written over it. Returns 0
+ * when there is nothing to go back or forward to. */
+int  bm_roll_undo(bm_roll_history *h, bm_roll_state *now);
+int  bm_roll_redo(bm_roll_history *h, bm_roll_state *now);
+
+int  bm_roll_can_undo(const bm_roll_history *h);
+int  bm_roll_can_redo(const bm_roll_history *h);
+
 /* Compiles to a score string: one line per note, rests between them.
  *
  * Returns the number of notes that were skipped for having no phonemes to sing

@@ -475,6 +475,63 @@ enum {
     MENU_SEP1, MENU_TIE, MENU_SEP2, MENU_DELETE
 };
 
+/* ------------------------------------------------------------------ *
+ * Undo
+ * ------------------------------------------------------------------ */
+
+/* Tokens. A gesture is one undo step, so everything that reports a change
+ * repeatedly while it is happening carries a token that says which gesture it
+ * is: marks with the same one are the same run. Zero never coalesces, which is
+ * what a discrete action wants. */
+#define TOK_DRAG(i)  (0x10000u + (unsigned)(i))
+#define TOK_WORD(i)  (0x20000u + (unsigned)(i))
+#define TOK_PHON(i)  (0x30000u + (unsigned)(i))
+#define TOK_TEMPO    (0x40000u)
+
+/* Records the roll as it is, before whatever is about to change it. */
+static void mark(bm_roll_ui *s, unsigned token)
+{
+    bm_roll_state now;
+
+    now.roll = s->song.roll;
+    now.tempo = s->song.tempo;
+    now.selected = s->selected;
+    bm_roll_mark(&s->hist, token, &now);
+}
+
+static void step(bm_roll_ui *s, int forward)
+{
+    bm_roll_state now;
+    int moved;
+
+    now.roll = s->song.roll;
+    now.tempo = s->song.tempo;
+    now.selected = s->selected;
+
+    moved = forward ? bm_roll_redo(&s->hist, &now) : bm_roll_undo(&s->hist, &now);
+    if (!moved) {
+        snprintf(s->said, sizeof s->said, "nothing to %s",
+                 forward ? "redo" : "undo");
+        return;
+    }
+
+    s->song.roll = now.roll;
+    s->song.tempo = now.tempo;
+    s->selected = now.selected;
+    if (s->selected >= s->song.roll.count) s->selected = s->song.roll.count - 1;
+
+    /* The tempo came back with it, so what the roll's times are written
+     * against has to come back too - otherwise the next tempo change would
+     * retime from a number that is no longer true. */
+    s->tempo_applied = s->song.tempo;
+
+    memset(&s->lyric_st, 0, sizeof s->lyric_st);
+    memset(&s->phon_st, 0, sizeof s->phon_st);
+    s->dirty = 1;
+    snprintf(s->said, sizeof s->said, "%s  -  %d notes",
+             forward ? "redone" : "undone", s->song.roll.count);
+}
+
 /* ------------------------------------------------------------------ */
 
 /* A tie needs something to be tied to. Not whether it would *sound* - that is
@@ -496,6 +553,7 @@ static void set_tie(bm_roll_ui *s, int index, int on)
     bm_note *n;
 
     if (index <= 0 || index >= s->song.roll.count) return;
+    mark(s, 0u);
     n = &s->song.roll.note[index];
 
     if (on) {
@@ -629,6 +687,9 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
             s->drag_grab = x_time(s, lanes, m.x) - n->start;
             s->drag_from = m;
             s->drag_moved = 0;
+            /* Before the drag rather than during it: what is worth going back
+             * to is where the note was when it was taken hold of. */
+            mark(s, TOK_DRAG(hit));
             memset(&s->lyric_st, 0, sizeof s->lyric_st);
             memset(&s->phon_st, 0, sizeof s->phon_st);
             ui->focus = 0;
@@ -652,6 +713,7 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
             if (len <= 0) len = 250;
             if (midi < 12 || midi > 108) return;
 
+            mark(s, 0u);
             at = bm_roll_add(&s->song.roll, start, len, midi, "", "");
             if (at < 0) return;                    /* the roll is full */
 
@@ -694,6 +756,9 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
         if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             s->drag = BM_ROLL_DRAG_NONE;
             s->dirty = 1;
+            /* The gesture is over, so the next one is a step of its own even
+             * if it takes hold of the same note. */
+            bm_roll_mark_end(&s->hist);
         } else if (!s->drag_moved) {
             /* Still a click, not yet a drag. Nothing has been asked for. */
         } else if (s->drag_index >= 0 && s->drag_index < s->song.roll.count) {
@@ -760,10 +825,28 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
      * a note every time somebody mistyped a syllable. */
     if (ui->focus == 0 && s->selected >= 0 &&
         (IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE))) {
+        mark(s, 0u);
         bm_roll_remove(&s->song.roll, s->selected);
         if (s->selected >= s->song.roll.count) s->selected = s->song.roll.count - 1;
         bm_roll_check_ties(&s->song.roll);
         s->dirty = 1;
+    }
+
+    /* ---- undo ----
+     *
+     * Taken here rather than in the text boxes, which have no undo of their own:
+     * a word typed into a note is an edit to the roll, and going back through
+     * them one field at a time would be a second history that disagreed with
+     * this one. Super as well as control, because that is the modifier the rest
+     * of the widget set already accepts on macOS.
+     */
+    {
+        int ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+                   IsKeyDown(KEY_LEFT_SUPER)   || IsKeyDown(KEY_RIGHT_SUPER);
+        int shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+        if (ctrl && IsKeyPressed(KEY_Z))      step(s, shift);
+        else if (ctrl && IsKeyPressed(KEY_Y)) step(s, 1);
     }
 
     /* ---- the right-click menu ----
@@ -958,6 +1041,7 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                 set_tie(s, s->selected, !n->tie);
                 break;
             case MENU_DELETE:
+                mark(s, 0u);
                 bm_roll_remove(&s->song.roll, s->selected);
                 if (s->selected >= s->song.roll.count) {
                     s->selected = s->song.roll.count - 1;
@@ -969,6 +1053,7 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
             }
 
             if (shift != 0 && n->midi + shift >= 12 && n->midi + shift <= 108) {
+                mark(s, 0u);
                 n->midi += shift;
                 s->audition = s->selected + 1;
                 s->dirty = 1;
@@ -1018,10 +1103,25 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                 bm_text(ui, BM_FONT_SMALL, what, r.x + 8.0f, y + 6.0f, BM_DIM);
                 r.x += 284.0f;
             } else {
-                if (bm_textbox(ui, ID_LYRIC, r, n->lyric, (int)sizeof n->lyric,
-                               &s->lyric_st)) {
-                    respell(n, use_dict);
-                    s->dirty = 1;
+                {
+                    /* A text box changes the buffer and then says so, so by
+                     * the time this can mark anything the first letter is
+                     * already typed. The old text goes back for the instant
+                     * the snapshot is taken - which only matters for the first
+                     * change of a run, and costs nothing on the rest. */
+                    char was[BM_NOTE_LYRIC_MAX];
+                    memcpy(was, n->lyric, sizeof was);
+                    if (bm_textbox(ui, ID_LYRIC, r, n->lyric,
+                                   (int)sizeof n->lyric, &s->lyric_st)) {
+                        char now[BM_NOTE_LYRIC_MAX];
+                        memcpy(now, n->lyric, sizeof now);
+                        memcpy(n->lyric, was, sizeof was);
+                        mark(s, TOK_WORD(s->selected));
+                        memcpy(n->lyric, now, sizeof now);
+
+                        respell(n, use_dict);
+                        s->dirty = 1;
+                    }
                 }
                 r.x += r.width + 8.0f;
                 bm_text_spaced(ui, BM_FONT_SMALL, "PHONEMES", r.x, y + 6.0f,
@@ -1030,9 +1130,18 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
                 r.width = 190.0f;
                 /* Typed over the spelling when the dictionary is wrong about a
                  * word, or when what is wanted is not a word at all. */
-                if (bm_textbox(ui, ID_PHON, r, n->phon, (int)sizeof n->phon,
-                               &s->phon_st)) {
-                    s->dirty = 1;
+                {
+                    char was[BM_NOTE_PHON_MAX];
+                    memcpy(was, n->phon, sizeof was);
+                    if (bm_textbox(ui, ID_PHON, r, n->phon,
+                                   (int)sizeof n->phon, &s->phon_st)) {
+                        char now[BM_NOTE_PHON_MAX];
+                        memcpy(now, n->phon, sizeof now);
+                        memcpy(n->phon, was, sizeof was);
+                        mark(s, TOK_PHON(s->selected));
+                        memcpy(n->phon, now, sizeof now);
+                        s->dirty = 1;
+                    }
                 }
                 r.x += r.width + 8.0f;
             }
@@ -1052,7 +1161,10 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
             }
 
             /* TIE. Only offered where it could mean something - on a note that
-             * has one before it to be tied to. Whether that note actually has a
+             * has one before it to be tied to.
+             *
+             * (UNDO and REDO are drawn after this block, so that they are there
+             * whether or not a note is selected.) Whether that note actually has a
              * vowel to carry is left to bm_roll_check_ties, which is the one
              * place that decides it. */
             {
@@ -1085,6 +1197,22 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
             bm_text(ui, BM_FONT_SMALL, "click a lane to draw a note",
                     box.x + box.width + 12.0f, y + 6.0f, BM_DIM);
         }
+        /* Undo and redo, whatever is selected. Greyed when there is nothing
+         * to go back to, which is the only thing on screen that says the
+         * history exists at all - a keystroke nobody is told about is a
+         * feature only its author has. */
+        {
+            Rectangle u = { area.x + area.width - 90.0f - 2.0f * 62.0f, y,
+                            58.0f, LINE_H };
+
+            if (bm_button(ui, u, "UNDO", bm_roll_can_undo(&s->hist))) {
+                step(s, 0);
+            }
+            u.x += 62.0f;
+            if (bm_button(ui, u, "REDO", bm_roll_can_redo(&s->hist))) {
+                step(s, 1);
+            }
+        }
     }
     y += LINE_H + 6.0f;
 
@@ -1102,6 +1230,15 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
         if (s->song.tempo > 0.0f && s->tempo_applied > 0.0f &&
             s->song.tempo != s->tempo_applied &&
             !IsMouseButtonDown(MOUSE_BUTTON_LEFT) && ui->focus != ID_TEMPO) {
+            /* The slider moved the tempo some frames ago; the notes are still
+             * written against the old one. Recording the pair as they actually
+             * are means undo puts both back together. */
+            {
+                float moved_to = s->song.tempo;
+                s->song.tempo = s->tempo_applied;
+                mark(s, TOK_TEMPO);
+                s->song.tempo = moved_to;
+            }
             bm_roll_retime(&s->song.roll, s->tempo_applied, s->song.tempo);
             s->tempo_applied = s->song.tempo;
             s->dirty = 1;
@@ -1176,6 +1313,16 @@ static char HELP[] =
 "\n"
 "  Right-click a note for a menu: an octave or a semitone either way,\n"
 "  tie, and delete. Delete also works from the keyboard, and T ties.\n"
+"\n"
+"  Control-Z takes back the last thing you did, and control-shift-Z\n"
+"  or control-Y puts it back. Thirty-two of each, and a gesture counts\n"
+"  as one: a drag is one undo however far it went, and a typed word is\n"
+"  one undo rather than one per letter. The UNDO and REDO buttons do\n"
+"  the same and grey out when there is nothing left either way.\n"
+"\n"
+"  It covers the notes - drawn, moved, resized, tied, deleted, spelled\n"
+"  - and the tempo. Loading a song starts a new history: undo does not\n"
+"  walk back into the song before it.\n"
 "\n"
 "  The bar under the grid scrolls sideways and says how much of the\n"
 "  song you are looking at. ZOOM - and + change how much that is, and\n"

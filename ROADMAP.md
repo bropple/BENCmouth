@@ -410,6 +410,37 @@ Still open, in order:
         band would be empty; a piano roll is the one thing here always short of
         room.
 
+- [x] **Undo, and redo** (`bm_roll_history` in `src/host/bm_roll.c`). Whole snapshots of
+      the roll rather than a command list with an inverse per gesture: a note grid is a
+      small document, and a snapshot cannot desynchronize from the thing it describes
+      because it *is* the thing. Thirty-two levels each way, which is 1.13 MB - a number
+      worth spending against the certainty of getting an undo stack right.
+
+      **A gesture is one step.** A drag reports a change every frame and a typed word one
+      every letter, so marks carry a token saying which gesture they belong to and only
+      the first of a run is recorded. That is the whole of the coalescing, and it lives in
+      the caller because only the caller knows where a gesture begins.
+
+      Two ordering bugs worth recording, both of the same shape - the state was captured
+      *after* the change it was supposed to precede. A text box changes its buffer and then
+      reports it, so the old text goes back for the instant the snapshot is taken; and the
+      tempo slider has already moved by the time the retime runs, so the mark records the
+      tempo the notes are still written against rather than the one they are about to be.
+
+      The history is in the roll's UI struct and the struct is now `static` in main. It is
+      1.13 MB, which is nothing in .bss and far too much for a stack frame - and the frame
+      was main's, on a thread whose stack is a megabyte on Windows. It would have run here
+      and crashed on the machine it was written for.
+
+      Driving it under Xvfb found nothing wrong with the feature and something worth
+      knowing about the testing: **raylib misses a key pressed and released between two
+      frames**, exactly as it misses such a click. `xdotool key ctrl+z` does nothing;
+      holding the modifier down across frames - keydown, sleep, keydown, sleep, keyup -
+      works. The first run of the test looked like a broken undo and was a broken test.
+
+      Not covered: the text tab and the score editor, which are text boxes with no history
+      of their own. A word typed into a *note* is an edit to the roll and is covered.
+
 Still open:
 
 - [x] **The editor, in another process** (`src/plugin/bm_shm.c`, `src/plugin/bm_spawn.c`,

@@ -354,6 +354,100 @@ static void test_bad_note_lines(void)
           "a syllable longer than any syllable is rejected, not truncated");
 }
 
+/* Undo. The property that matters is that a gesture is one step: a drag reports
+ * a change every frame and a typed word one every letter, and an undo stack
+ * that recorded each of them would need sixty presses to take back one drag. */
+static void test_undo(void)
+{
+    bm_roll_history h;
+    bm_roll_state   now;
+    int i;
+
+    printf("undo\n");
+
+    bm_roll_history_init(&h);
+    memset(&now, 0, sizeof now);
+    bm_roll_init(&now.roll);
+    now.tempo = 120.0f;
+    now.selected = -1;
+    bm_roll_add(&now.roll, 0, 500, 60, "M IY1", "me");
+
+    check(!bm_roll_can_undo(&h), "a fresh history has nothing to go back to");
+    check(bm_roll_undo(&h, &now) == 0, "and undoing does nothing");
+    check(now.roll.count == 1, "leaving what was there alone");
+
+    /* A drag: many marks, one step. */
+    for (i = 0; i < 60; i++) {
+        bm_roll_mark(&h, 0x1000u + 3u, &now);
+        now.roll.note[0].midi = 60 + i % 12;
+    }
+    check(h.n_back == 1, "sixty frames of one drag are one step");
+
+    bm_roll_mark_end(&h);
+    bm_roll_mark(&h, 0x1000u + 3u, &now);
+    check(h.n_back == 2, "and the next drag is another, same note or not");
+
+    /* A token of zero never coalesces: two deletes are two steps. */
+    bm_roll_mark(&h, 0u, &now);
+    bm_roll_mark(&h, 0u, &now);
+    check(h.n_back == 4, "two discrete edits are two steps");
+
+    /* Back and forth. */
+    bm_roll_history_init(&h);
+    bm_roll_init(&now.roll);
+    now.selected = -1;
+    bm_roll_add(&now.roll, 0, 500, 60, "M IY1", "one");
+    bm_roll_mark(&h, 0u, &now);
+    bm_roll_add(&now.roll, 500, 500, 62, "M IY1", "two");
+    bm_roll_mark(&h, 0u, &now);
+    bm_roll_add(&now.roll, 1000, 500, 64, "M IY1", "three");
+    check(now.roll.count == 3, "three notes");
+
+    check(bm_roll_undo(&h, &now) == 1 && now.roll.count == 2, "undo takes one back");
+    check(bm_roll_undo(&h, &now) == 1 && now.roll.count == 1, "and another");
+    check(bm_roll_undo(&h, &now) == 0, "and then there is nothing left to undo");
+    check(strcmp(now.roll.note[0].lyric, "one") == 0, "what is left is the first");
+
+    check(bm_roll_redo(&h, &now) == 1 && now.roll.count == 2, "redo puts one back");
+    check(bm_roll_redo(&h, &now) == 1 && now.roll.count == 3, "and the other");
+    check(bm_roll_redo(&h, &now) == 0, "and then there is no more future");
+    check(strcmp(now.roll.note[2].lyric, "three") == 0, "and it is the right one");
+
+    /* Editing after undoing throws the future away. */
+    bm_roll_undo(&h, &now);
+    check(bm_roll_can_redo(&h), "after an undo there is something ahead");
+    bm_roll_mark(&h, 0u, &now);
+    check(!bm_roll_can_redo(&h), "and editing there throws it away");
+
+    /* Deeper than the stack: the oldest goes, the newest stay. */
+    bm_roll_history_init(&h);
+    bm_roll_init(&now.roll);
+    for (i = 0; i < BM_ROLL_UNDO + 10; i++) {
+        bm_roll_mark(&h, 0u, &now);
+        bm_roll_add(&now.roll, i * 500, 500, 60, "M IY1", "me");
+    }
+    check(h.n_back == BM_ROLL_UNDO, "the stack stops at its depth");
+    for (i = 0; i < BM_ROLL_UNDO; i++) bm_roll_undo(&h, &now);
+    check(!bm_roll_can_undo(&h), "and unwinds exactly that far");
+    /* Ten edits older than the stack are gone, which is the deal. */
+    check(now.roll.count == 10, "what is older than the stack is simply gone");
+
+    /* The selection travels with the notes: undoing a delete and finding
+     * nothing selected is a step that only half happened. */
+    bm_roll_history_init(&h);
+    bm_roll_init(&now.roll);
+    bm_roll_add(&now.roll, 0, 500, 60, "M IY1", "me");
+    now.selected = 0;
+    now.tempo = 96.0f;
+    bm_roll_mark(&h, 0u, &now);
+    bm_roll_remove(&now.roll, 0);
+    now.selected = -1;
+    now.tempo = 144.0f;
+    bm_roll_undo(&h, &now);
+    check(now.selected == 0, "undo restores what was selected");
+    check(now.tempo > 95.0f && now.tempo < 97.0f, "and the tempo with it");
+}
+
 int main(void)
 {
     printf("\nBENCmouth note roll tests\n\n");
@@ -367,6 +461,7 @@ int main(void)
     test_file_round_trip();
     test_a_song_without_a_roll_still_loads();
     test_bad_note_lines();
+    test_undo();
     printf("\n%s (%d failure%s)\n\n",
            failures ? "FAILED" : "all passed",
            failures, failures == 1 ? "" : "s");

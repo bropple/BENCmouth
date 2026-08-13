@@ -164,11 +164,15 @@ int bm_roll_deoverlap(bm_roll *r, int keep)
      * ending where the held one begins - but never by less than BM_ROLL_MIN_MS,
      * and the held note is stopped rather than the other one crushed.
      *
-     * That asymmetry is the whole of the rule, and it is there because there is
-     * no undo. A drag that could shrink a neighbour to nothing would destroy
-     * work by passing over it, and the only way back would be to remember what
-     * it used to be - which is a feature, not a clamp. Being unable to drag any
-     * further left is a thing you can see happening and simply stop doing. */
+     * That asymmetry is the whole of the rule. A drag that could shrink a
+     * neighbour to nothing would destroy work merely by passing over it, and
+     * being unable to drag any further left is a thing you can see happening
+     * and simply stop doing.
+     *
+     * This used to say "and there is no undo", which was the strongest part of
+     * the argument and is no longer true - see bm_roll_history. The rest still
+     * stands: undo is for the edit you regret, not for the twenty a single
+     * careless drag would otherwise make on its way past. */
     for (j = (keep < r->count ? keep : r->count - 1); j > 0; j--) {
         int least = r->note[j - 1].start + BM_ROLL_MIN_MS;
 
@@ -544,3 +548,79 @@ int bm_roll_note_read(const char *value, bm_note *out, char *err, size_t err_cap
 
     return 0;
 }
+
+/* ------------------------------------------------------------------ *
+ * Undo
+ * See bm_roll.h for why this keeps whole states rather than commands.
+ * ------------------------------------------------------------------ */
+
+void bm_roll_history_init(bm_roll_history *h)
+{
+    if (h == 0) return;
+    h->n_back = 0;
+    h->n_fwd = 0;
+    h->token = 0;
+}
+
+/* Pushes onto a stack, dropping the oldest when it is full.
+ *
+ * A shift rather than a ring, and the cost is real: twenty kilobytes times
+ * thirty-two moved once per edit, which is a fraction of a millisecond at the
+ * rate a person edits. A ring would avoid it and would need its wraparound to
+ * be right in three places instead of none. */
+static void push_state(bm_roll_state *stack, int *n, const bm_roll_state *s)
+{
+    if (*n >= BM_ROLL_UNDO) {
+        memmove(&stack[0], &stack[1],
+                (size_t)(BM_ROLL_UNDO - 1) * sizeof *stack);
+        *n = BM_ROLL_UNDO - 1;
+    }
+    stack[*n] = *s;
+    (*n)++;
+}
+
+int bm_roll_mark(bm_roll_history *h, unsigned token, const bm_roll_state *now)
+{
+    if (h == 0 || now == 0) return 0;
+
+    /* Already recorded for this run. A drag reports a change every frame and a
+     * word reports one every letter; the state worth going back to is the one
+     * from before either began. */
+    if (token != 0u && token == h->token) return 0;
+
+    push_state(h->back, &h->n_back, now);
+    h->token = token;
+    /* Editing after undoing throws the future away, which is what every editor
+     * does and what anyone expects: the thing you just undid is no longer on
+     * the way to anywhere. */
+    h->n_fwd = 0;
+    return 1;
+}
+
+void bm_roll_mark_end(bm_roll_history *h)
+{
+    if (h != 0) h->token = 0;
+}
+
+int bm_roll_undo(bm_roll_history *h, bm_roll_state *now)
+{
+    if (h == 0 || now == 0 || h->n_back <= 0) return 0;
+
+    push_state(h->fwd, &h->n_fwd, now);
+    *now = h->back[--h->n_back];
+    h->token = 0;
+    return 1;
+}
+
+int bm_roll_redo(bm_roll_history *h, bm_roll_state *now)
+{
+    if (h == 0 || now == 0 || h->n_fwd <= 0) return 0;
+
+    push_state(h->back, &h->n_back, now);
+    *now = h->fwd[--h->n_fwd];
+    h->token = 0;
+    return 1;
+}
+
+int bm_roll_can_undo(const bm_roll_history *h) { return h != 0 && h->n_back > 0; }
+int bm_roll_can_redo(const bm_roll_history *h) { return h != 0 && h->n_fwd > 0; }

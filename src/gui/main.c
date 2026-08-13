@@ -450,7 +450,12 @@ int main(int argc, char **argv)
     bm_voice   tab_voice[TAB_COUNT];
     bm_effects tab_fx[TAB_COUNT];
     bm_song_ui song;
-    bm_roll_ui roll;
+    /* Static, and it has to be: the roll carries its undo history, which is
+     * thirty-two states each way at eighteen kilobytes apiece - about 1.2 MB.
+     * That is nothing in .bss and far too much for a stack frame, and the
+     * frame it would have gone in is main's on a thread whose stack is a
+     * megabyte on Windows. It would have run here and crashed there. */
+    static bm_roll_ui roll;
     static char song_path[1024] = "";
 
     int        roll_loop = 0;
@@ -662,6 +667,10 @@ int main(int argc, char **argv)
                     roll.tempo_applied = roll.song.tempo;
                     roll.selected = -1;
                     roll.dirty = 1;
+                    /* Handed a different song, so the history starts here -
+                     * undoing into the previous project's music would be a
+                     * surprise nobody could account for. */
+                    bm_roll_history_init(&roll.hist);
                     voice = roll.song.voice;
                     effects = roll.song.effects;
                     tab_voice[2] = voice;
@@ -926,6 +935,14 @@ int main(int argc, char **argv)
                                 use_dict, &voice, head);
             y += tall - (float)PANEL_H;   /* what follows starts lower down */
 
+            /* Whatever the roll wants said - what an undo did, mostly. Cleared
+             * as it is taken, like every other one-shot message here. */
+            if (roll.said[0] != '\0') {
+                snprintf(status, sizeof status, "%.100s", roll.said);
+                status_color = BM_DIM;
+                roll.said[0] = '\0';
+            }
+
             /* A note the roll wants said, because it has just been dragged to
              * a new pitch. Through the live engine rather than the rendered
              * score: it is one syllable, it has to start now, and the engine is
@@ -1026,6 +1043,9 @@ int main(int argc, char **argv)
                         roll.selected = -1;
                         roll.scroll_ms = 0.0f;
                         roll.dirty = 1;
+                        /* A different song is a different document, and undo
+                         * should not walk back into the last one. */
+                        bm_roll_history_init(&roll.hist);
                         snprintf(song_path, sizeof song_path, "%s", path);
 
                         voice = roll.song.voice;
