@@ -40,6 +40,24 @@ back. That it is a separate process is forced rather than chosen: raylib keeps i
 in one file-scope global, so a process gets exactly one however many instances a host
 loads — and a crashing editor does not take the DAW with it.
 
+**Fixed: the installer could crash while adding `bm` to PATH.** The buffer it appends the
+directory to was allocated with no room for it — "the size of your PATH, plus zero" — so
+every `/PATH` install wrote about fifty bytes past the end of a heap block, and whether
+that crashed depended on how the allocator had rounded the block and what happened to be
+next to it. On a profile with no PATH at all it allocated nothing and copied the whole
+directory into it.
+
+The cause was one register. The size of the slack was worked out into `$0`, handed to a
+macro, and read back after two `System::Call`s had used `$0` for their return codes — so
+by the time it was used it was the number zero. The macro now captures its argument on its
+first line, before anything can overwrite it, which is the property it should have had:
+the same macro was correct all along when the uninstaller passed it a literal.
+
+CI now runs the installer under full page heap, which puts an inaccessible page
+immediately after every allocation — so this class of bug stops being a matter of luck and
+becomes an access violation on the instruction that causes it. Every existing PATH check
+passed while this bug shipped; that is what the new one is for.
+
 ## New in 0.2.4
 
 **The Windows installer can put `bm` on your PATH.** A tickbox, off by default, and the

@@ -556,6 +556,73 @@ jobs:
           }
           Write-Host "  ok  PATH is byte-for-byte what it was"
 
+      # The PATH editor allocates a buffer and appends to it, which is the one
+      # thing in this installer that can be wrong in a way no assertion above
+      # would notice: an overrun corrupts the heap, and whether that crashes
+      # depends on how the allocator rounded the block and what was next to it.
+      # It shipped exactly that bug once - the buffer was sized "PATH plus
+      # zero" because a macro read its argument out of a register that had
+      # since been overwritten - and every check here passed while it did.
+      #
+      # Full page heap puts an inaccessible page immediately after every
+      # allocation, so an overrun stops being a matter of luck and becomes an
+      # access violation on the instruction that does it. This is the check
+      # that turns "sometimes crashes" into "always, or never".
+      - name: The PATH editor does not overrun its buffer
+        shell: pwsh
+        run: |
+          $exe  = (Get-ChildItem dl\*.exe)[0].FullName
+          $name = Split-Path $exe -Leaf
+
+          $gflags = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers' `
+                      -Recurse -Filter gflags.exe -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+          if (-not $gflags) {
+            Write-Host "  gflags not on this runner - skipping the page-heap run"
+            exit 0
+          }
+          Write-Host "  using $($gflags.FullName)"
+
+          # A long PATH as well, because the overrun is proportional to what is
+          # already there and a runner's own PATH is short. This also stands in
+          # for the value that made an NSIS string approach unusable: 3000
+          # characters is past the 1024 a stock NSIS can hold.
+          $before = ('C:\pad\' + ('x' * 40)) * 60
+          [Environment]::SetEnvironmentVariable('Path', $before, 'User')
+
+          & $gflags.FullName /p /enable $name /full | Out-Null
+          try {
+            $p = Start-Process -FilePath $exe -ArgumentList '/S', '/PATH' `
+                               -Wait -PassThru
+            Write-Host "  installer exited $($p.ExitCode)"
+            if ($p.ExitCode -ne 0) {
+              throw "the installer crashed or failed under page heap (exit $($p.ExitCode))"
+            }
+          } finally {
+            & $gflags.FullName /p /disable $name | Out-Null
+          }
+
+          $after = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($after.Length -lt $before.Length) {
+            throw "PATH got shorter: $($before.Length) -> $($after.Length)"
+          }
+          if (-not $after.StartsWith($before)) {
+            throw "what was already on PATH did not survive intact"
+          }
+          $added = @($after -split ';' | Where-Object { $_ -match 'BENCmouth' })
+          if ($added.Count -ne 1) {
+            throw "expected one BENCmouth entry, found $($added.Count)"
+          }
+          Write-Host "  ok  a 3000-character PATH survived, with one entry added"
+
+          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          $end = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($end -ne $before) {
+            throw "PATH was not restored exactly after a long-PATH install"
+          }
+          Write-Host "  ok  and was restored byte-for-byte"
+
   gui-macos:
     name: GUI (macOS)
     runs-on: macos-latest

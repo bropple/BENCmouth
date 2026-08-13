@@ -427,11 +427,30 @@ SectionEnd
 !macroend
 
 ; Opens HKCU\Environment and reads Path into a fresh buffer.
+;   in   EXTRA = spare bytes to leave after the value, as text: a literal, or
+;                the name of a register
 ;   out  $1 = key handle, 0 if this failed
 ;        $2 = the value's type, to be written back unchanged
 ;        $3 = bytes read, 0 when there is no Path at all
 ;        $4 = buffer, 0 if this failed; `extra` bytes larger than needed
+;
+; EXTRA is captured into $6 on the very first line, before anything here can
+; run, and every use below reads $6 rather than the argument.
+;
+; That is not tidiness. This is a macro, so ${EXTRA} is pasted in as text and
+; evaluated wherever it lands - and bm_PathAdd passes "$0", which the first
+; System::Call in this macro overwrites with a return code. The allocation
+; below therefore asked for "the size of PATH plus zero", so lstrcatW appended
+; the new directory past the end of the block: a heap overflow of about fifty
+; bytes, on every /PATH install, which crashed or did not depending on how the
+; allocator had rounded the block and what happened to be next to it. With no
+; PATH at all it allocated nothing and copied the whole directory into it.
+;
+; Capturing the argument once, immediately, makes this macro independent of
+; what the caller keeps in its registers - which is the property it should have
+; had, and the reason a literal 2 from bm_PathRemove worked all along.
 !macro BM_PATH_READ EXTRA
+  StrCpy $6 ${EXTRA}
   StrCpy $1 0
   StrCpy $2 ${ENV_REG_EXP}
   StrCpy $3 0
@@ -461,7 +480,7 @@ SectionEnd
     Goto bm_read_done
   ${EndIf}
 
-  IntOp $5 $3 + ${EXTRA}
+  IntOp $5 $3 + $6
   System::Alloc $5
   Pop $4
   ${If} $4 = 0
@@ -510,6 +529,7 @@ Function ${UN}bm_PathAdd
   Push $3
   Push $4
   Push $5
+  Push $6
 
   ; Room for a separator, the directory, and the terminator.
   StrLen $0 "$INSTDIR"
@@ -544,6 +564,7 @@ Function ${UN}bm_PathAdd
   System::Free $4
   System::Call 'advapi32::RegCloseKey(p r1)'
   add_done:
+  Pop $6
   Pop $5
   Pop $4
   Pop $3
@@ -561,6 +582,7 @@ Function ${UN}bm_PathRemove
   Push $3
   Push $4
   Push $5
+  Push $6
   Push $R0
   Push $R1
   Push $R2
@@ -614,6 +636,7 @@ Function ${UN}bm_PathRemove
   Pop $R2
   Pop $R1
   Pop $R0
+  Pop $6
   Pop $5
   Pop $4
   Pop $3
