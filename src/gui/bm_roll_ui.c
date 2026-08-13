@@ -22,7 +22,11 @@
  * octave from C4 to C5, so the roll opened unable to display the scale it opens
  * with. Thirteen lanes is the smallest interval that is musically a unit. */
 #define LANE_H    11.0f
-#define RULER_H   14.0f
+/* The strip of bar numbers above the grid, which is also where the playhead is
+ * dragged. Eighteen rather than fourteen because the head lives in it and a
+ * handle needs room to be a handle - at fourteen there was space for a seven by
+ * three pixel mark, which is a thing you find by trying everything. */
+#define RULER_H   18.0f
 #define KEYS_W    34.0f     /* the keyboard down the left */
 #define FOOT_H    64.0f     /* the two rows of controls underneath */
 /* The horizontal scrollbar. Sixteen rather than ten: at ten the thumb was six
@@ -1039,13 +1043,42 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
         s->bar_total = total;
     }
 
-    /* The head, drawn into the ruler too, so the strip you drag says it is a
-     * control rather than a row of numbers. */
+    /* The playhead's handle: a wedge pointing down at the line it controls.
+     *
+     * It was a seven by three pixel dash, which is why the strip above the grid
+     * read as a row of numbers rather than as something to take hold of. A
+     * shape that points at what it moves is the whole of the cue - and the
+     * whole ruler is the target, not just the wedge, so it is easier to hit
+     * than it looks. */
     {
         float x = time_x(s, lanes, s->head_ms);
+
         if (x >= ruler.x && x <= ruler.x + ruler.width) {
-            DrawRectangle((int)x - 3, (int)ruler.y + (int)RULER_H - 3, 7, 3,
-                          BM_TEXT);
+            Vector2 m = GetMousePosition();
+            int     warm = (!ui->blocking &&
+                            (s->drag == BM_ROLL_DRAG_HEAD ||
+                             CheckCollisionPointRec(m, ruler)));
+            Color   c = warm ? BM_TEXT : BM_ACCENT;
+            float   top = ruler.y + 3.0f;
+            float   bot = ruler.y + RULER_H - 1.0f;
+            float   half = 6.0f;
+
+            /* Kept inside the ruler. At the very start of the song the head
+             * sits on the left edge, and half a wedge would otherwise be drawn
+             * across the keyboard strip beside it. */
+            BeginScissorMode((int)ruler.x, (int)ruler.y, (int)ruler.width,
+                             (int)RULER_H);
+
+            /* Clockwise in raylib's screen space, which is what its triangle
+             * winding wants; the other order draws nothing at all. */
+            DrawTriangle((Vector2){ x, bot },
+                         (Vector2){ x + half, top },
+                         (Vector2){ x - half, top }, c);
+
+            /* A stem, so the wedge and the line through the grid read as one
+             * object rather than two things that happen to line up. */
+            DrawRectangle((int)x, (int)top, 1, (int)(bot - top), c);
+            EndScissorMode();
         }
     }
 

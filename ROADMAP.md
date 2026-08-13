@@ -441,6 +441,15 @@ Still open, in order:
       Not covered: the text tab and the score editor, which are text boxes with no history
       of their own. A word typed into a *note* is an edit to the roll and is covered.
 
+- [x] **The playhead is a handle.** It was a seven by three pixel dash at the bottom of
+      the ruler, which is a thing you find by trying everything - and the person using it
+      found it, decided it was the scrollbar, and reported that scrolling did not work.
+      Two controls, one of which looked like neither.
+
+      A wedge now, pointing down at the line it moves, in a ruler four pixels taller to
+      hold it, brighter while the pointer is anywhere in the strip. The whole ruler is the
+      target and always was; what was missing was anything saying so.
+
 - [x] **The scrollbar is a handle, and the playhead comes back.** Two more from using it.
       The bar was ten pixels with a six-pixel thumb of flat colour, which is a thing you
       can see and not a thing that looks like it can be picked up - sixteen now, with the
