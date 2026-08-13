@@ -369,7 +369,10 @@ static void draw_notes(bm_ui *ui, const bm_roll_ui *s, Rectangle lanes,
         float x = time_x(s, lanes, (float)n->start);
         float w = (float)n->length * s->px_per_sec / 1000.0f;
         float y = midi_y(s, lanes, n->midi);
-        int   selected = (i == s->selected);
+        /* Everything in the selection is drawn as picked, not only the last
+         * one clicked - otherwise a group drag is three notes moving and one
+         * note looking like it is. */
+        int   selected = n->sel != 0u;
         /* A tied note has no phonemes of its own and is not silent for it - it
          * sings the vowel it inherits. Reading emptiness as "not spelled yet"
          * would draw every slur as an unfinished note. */
@@ -543,23 +546,64 @@ static void step(bm_roll_ui *s, int forward)
 
 /* ------------------------------------------------------------------ */
 
-/* A tie needs something to be tied to. Not whether it would *sound* - that is
- * bm_roll_check_ties's job and it runs after every edit - only whether offering
- * the control makes sense at all. */
-static int tie_possible(const bm_roll_ui *s, int index)
-{
-    return index > 0 && index < s->song.roll.count;
-}
-
 /* Tying pulls the note back onto the end of the one before it.
  *
  * A tie means "carry on the sound that is happening", so a gap in front of one
  * is a contradiction rather than a variation - and closing the gap is what
  * somebody asking for a tie meant. Untying leaves the note where it is: it has
  * become an ordinary note that happens to start there, which is true. */
+/* Whether TIE would do anything, and what it would say if it would not.
+ *
+ * Two notes selected is the gesture: pick the syllable, control-click the note
+ * to hold it over, and tie. One selected still works and means the same thing
+ * with the note before it implied. More than two is refused rather than guessed
+ * at - a tie joins a pair, and "tie these five" has several readings, none of
+ * them obviously the one that was meant. */
+static const char *tie_trouble(const bm_roll_ui *s)
+{
+    int n = bm_roll_selected(&s->song.roll);
+
+    if (n > 2) return "tie joins two notes - pick two";
+    if (n == 2) {
+        int a = bm_roll_first_selected(&s->song.roll);
+        int b = bm_roll_last_selected(&s->song.roll);
+        if (b != a + 1) return "those two have a note between them";
+        return 0;
+    }
+    if (s->selected <= 0) return "nothing before this note to hold over";
+    return 0;
+}
+
 static void set_tie(bm_roll_ui *s, int index, int on)
 {
     bm_note *n;
+    int      pair = (bm_roll_selected(&s->song.roll) == 2);
+
+    if (pair) {
+        int a = bm_roll_first_selected(&s->song.roll);
+        int b = bm_roll_last_selected(&s->song.roll);
+
+        if (b != a + 1) {
+            snprintf(s->said, sizeof s->said,
+                     "those two have a note between them");
+            return;
+        }
+        mark(s, 0u);
+        if (on) {
+            bm_roll_tie_pair(&s->song.roll, a, b);
+        } else {
+            s->song.roll.note[b].tie = 0u;
+            bm_roll_check_ties(&s->song.roll);
+        }
+        /* The pair becomes one thing, so what is selected is the note that
+         * now carries the syllable. */
+        bm_roll_select_only(&s->song.roll, a);
+        s->selected = a;
+        memset(&s->lyric_st, 0, sizeof s->lyric_st);
+        memset(&s->phon_st, 0, sizeof s->phon_st);
+        s->dirty = 1;
+        return;
+    }
 
     if (index <= 0 || index >= s->song.roll.count) return;
     mark(s, 0u);
@@ -684,6 +728,27 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
         if (hit >= 0) {
             const bm_note *n = &s->song.roll.note[hit];
             int edge = edge_at(s, lanes, hit, m.x);
+            int add = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+                      IsKeyDown(KEY_LEFT_SUPER)   || IsKeyDown(KEY_RIGHT_SUPER);
+
+            /* Control adds to what is already picked; a plain click starts
+             * again - which is the arrangement every list, every file manager
+             * and every other note editor uses, so it is the one nobody has to
+             * be told about.
+             *
+             * A note that is already in the selection is left in it: clicking
+             * one of several to drag them all must not throw the rest away. */
+            if (add) {
+                bm_roll_select_toggle(&s->song.roll, hit);
+                if (!s->song.roll.note[hit].sel) {
+                    /* Just taken out of the selection: nothing to drag. */
+                    s->selected = bm_roll_first_selected(&s->song.roll);
+                    s->drag = BM_ROLL_DRAG_NONE;
+                    return;
+                }
+            } else if (!s->song.roll.note[hit].sel) {
+                bm_roll_select_only(&s->song.roll, hit);
+            }
 
             s->selected = hit;
             s->drag_index = hit;
@@ -726,6 +791,7 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
             at = bm_roll_add(&s->song.roll, start, len, midi, "", "");
             if (at < 0) return;                    /* the roll is full */
 
+            bm_roll_select_only(&s->song.roll, at);
             s->selected = at;
             s->drag_index = at;
             s->drag = BM_ROLL_DRAG_LENGTH;
@@ -797,6 +863,20 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
                 n->length = end - start;
                 s->drag_index = bm_roll_sort(&s->song.roll, s->drag_index);
                 s->selected = s->drag_index;
+            } else if (bm_roll_selected(&s->song.roll) > 1) {
+                /* A group. Everything moves by what the held note would have
+                 * moved by, and the group stops at whatever it runs into
+                 * rather than pushing the song around - see
+                 * bm_roll_move_selected. No note crosses another, so no index
+                 * changes and the drag keeps hold of what it started with. */
+                int want  = snap_to(s, x_time(s, lanes, m.x) - s->drag_grab);
+                int midi  = y_midi(s, lanes, m.y);
+                int dt    = want - n->start;
+                int semis = (midi >= 12 && midi <= 108) ? midi - n->midi : 0;
+
+                if (bm_roll_move_selected(&s->song.roll, dt, semis) && semis != 0) {
+                    s->audition = s->drag_index + 1;
+                }
             } else {
                 int start = snap_to(s, x_time(s, lanes, m.x) - s->drag_grab);
                 int midi = y_midi(s, lanes, m.y);
@@ -813,8 +893,8 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
                 n->start = start;
                 s->drag_index = bm_roll_sort(&s->song.roll, s->drag_index);
                 s->selected = s->drag_index;
+                bm_roll_deoverlap(&s->song.roll, s->drag_index);
             }
-            bm_roll_deoverlap(&s->song.roll, s->drag_index);
             /* A note dragged away from the one it was tied to is not tied to
              * it any more. The tie is a claim about two notes touching, and it
              * stops being true the moment they do not. */
@@ -834,8 +914,17 @@ static void handle_mouse(bm_ui *ui, bm_roll_ui *s, Rectangle ruler,
      * a note every time somebody mistyped a syllable. */
     if (ui->focus == 0 && s->selected >= 0 &&
         (IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE))) {
+        int i;
+
         mark(s, 0u);
-        bm_roll_remove(&s->song.roll, s->selected);
+        /* Backwards, so that removing one does not renumber the ones still to
+         * go. */
+        for (i = s->song.roll.count - 1; i >= 0; i--) {
+            if (s->song.roll.note[i].sel) bm_roll_remove(&s->song.roll, i);
+        }
+        if (s->song.roll.count > 0 && bm_roll_selected(&s->song.roll) == 0) {
+            s->selected = -1;
+        }
         if (s->selected >= s->song.roll.count) s->selected = s->song.roll.count - 1;
         bm_roll_check_ties(&s->song.roll);
         s->dirty = 1;
@@ -916,7 +1005,18 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
      * fields below have a note to be about the moment the tab is opened. The
      * first one, because that is where a song starts and where the playhead
      * is. */
-    if (s->selected < 0 && s->song.roll.count > 0) s->selected = 0;
+    if (s->selected < 0 && s->song.roll.count > 0) {
+        s->selected = 0;
+        bm_roll_select_only(&s->song.roll, 0);
+    }
+
+    /* The primary and the selection have to agree: the fields below edit the
+     * primary, and a primary that is not in the selection would show one note
+     * while TIE and Delete acted on others. */
+    if (s->selected >= 0 && s->selected < s->song.roll.count &&
+        !s->song.roll.note[s->selected].sel) {
+        s->selected = bm_roll_first_selected(&s->song.roll);
+    }
 
     keys  = (Rectangle){ area.x, area.y + 18.0f + RULER_H, KEYS_W,
                          area.height - 18.0f - RULER_H - FOOT_H - BAR_H };
@@ -1229,12 +1329,22 @@ int bm_roll_panel(bm_ui *ui, bm_roll_ui *s, Rectangle area, int use_dict,
              * place that decides it. */
             {
                 int on = (int)n->tie;
-                int can = tie_possible(s, s->selected);
+                int can = (tie_trouble(s) == 0);
 
                 if (bm_toggle(ui, (Rectangle){ area.x + area.width - 90.0f,
                                                y, 84.0f, LINE_H },
                               "TIE", &on, can)) {
                     set_tie(s, s->selected, on);
+                } else if (!can &&
+                           CheckCollisionPointRec(GetMousePosition(),
+                               (Rectangle){ area.x + area.width - 90.0f, y,
+                                            84.0f, LINE_H })) {
+                    /* Not gated on the caret being elsewhere. Clicking a note
+                     * puts the caret in its word, so a message that waited for
+                     * an empty focus was one nobody would ever see. */
+                    /* Greyed out is only half an answer. Hovering it says
+                     * which of the two reasons it is. */
+                    snprintf(s->said, sizeof s->said, "%s", tie_trouble(s));
                 }
             }
         } else {
@@ -1397,10 +1507,20 @@ static char HELP[] =
 "  TIE  -  ONE SYLLABLE OVER TWO NOTES\n"
 "================================================================\n"
 "\n"
-"  TIE, or the T key, makes the selected note carry on the vowel that\n"
-"  is already sounding instead of starting a syllable of its own. It\n"
-"  has no word of its own; it sings what the note before it was\n"
-"  singing, and it glides onto its pitch instead of stepping.\n"
+"  Control-click adds a note to the selection instead of replacing\n"
+"  it, and dragging any note in a selection moves all of them - the\n"
+"  notes after them give way, and the group keeps its own shape.\n"
+"  Delete removes the lot.\n"
+"\n"
+"  TIE is what two selected notes are for: pick the syllable, add the\n"
+"  note to hold it over, and press TIE. The later note gives up its\n"
+"  own word and carries on the first one\u0027s vowel, gliding onto its\n"
+"  pitch instead of stepping. With one note selected it means the same\n"
+"  thing with the note before it implied.\n"
+"\n"
+"  Two, and only two. A tie joins a pair, and \"tie these five\" has\n"
+"  several readings with no way to tell which was meant - so it is\n"
+"  refused, and the button says why when you point at it.\n"
 "\n"
 "  Both halves of that are what legato is. Nothing re-articulates,\n"
 "  because there is no consonant in front of the held vowel - and the\n"

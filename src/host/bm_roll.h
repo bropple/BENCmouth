@@ -62,6 +62,16 @@ typedef struct bm_note {
      * whatever came after it was re-articulated whatever the file said. See
      * bm_roll_check_ties. */
     unsigned char tie;
+
+    /* Selected in an editor. Transient: never written to a file, never read
+     * from one, and meaningless to anything that only sings a song.
+     *
+     * It lives on the note rather than in a set the editor keeps beside the
+     * roll, and that is the whole reason this works: notes are sorted, inserted
+     * and removed constantly, so a set of indices would be wrong after every
+     * one of those and would have to be repaired at each. A flag on the note is
+     * carried by the same memmove that moves the note. */
+    unsigned char sel;
 } bm_note;
 
 typedef struct bm_roll {
@@ -100,6 +110,45 @@ int  bm_roll_deoverlap(bm_roll *r, int keep);
  * only honest meaning of changing it is changing the numbers written against
  * it. */
 void bm_roll_retime(bm_roll *r, float from, float to);
+
+/* ------------------------------------------------------------------ *
+ * Selection
+ *
+ * More than one note at a time, because the things people want to do to a run
+ * of notes - move them, delete them, tie a pair - are the same things they want
+ * to do to one, and doing them one at a time is not the same as doing them
+ * together: a group moved note by note passes through arrangements nobody asked
+ * for on the way.
+ * ------------------------------------------------------------------ */
+
+int  bm_roll_selected(const bm_roll *r);         /* how many */
+int  bm_roll_first_selected(const bm_roll *r);   /* lowest index, or -1 */
+int  bm_roll_last_selected(const bm_roll *r);    /* highest index, or -1 */
+void bm_roll_select_none(bm_roll *r);
+void bm_roll_select_only(bm_roll *r, int index);
+void bm_roll_select_toggle(bm_roll *r, int index);
+
+/* Moves every selected note by the same amount of time and the same number of
+ * semitones, and returns nonzero if anything moved.
+ *
+ * Clamped rather than pushed: the group stops where it would collide with a
+ * note that is not part of it, and where the earliest of it would go before
+ * zero or any of it outside the range [note] accepts. A single note pushes its
+ * neighbours along, because that is how room is made for a syllable; a group
+ * doing the same would rewrite the rest of the song to make way for a gesture
+ * that was only meant to nudge three notes.
+ *
+ * Because the group cannot cross anything, the roll stays in time order and no
+ * index changes - which is what keeps a drag holding the notes it started
+ * with. */
+int  bm_roll_move_selected(bm_roll *r, int dt, int semitones);
+
+/* Ties `later` to `earlier`: it gives up its own word and carries on the
+ * vowel of the note before it. They have to be next to each other in time,
+ * because a tie is "keep singing what is already sounding" and there is nothing
+ * to keep singing across a note in between. Returns 0 if they are not, or if
+ * either index is wrong. */
+int  bm_roll_tie_pair(bm_roll *r, int earlier, int later);
 
 /* Drops any tie that has stopped meaning anything - one on the first note, one
  * on a note that no longer touches the note before it, or one whose chain leads

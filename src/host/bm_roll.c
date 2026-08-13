@@ -139,6 +139,7 @@ int bm_roll_add(bm_roll *r, int start, int length, int midi,
     /* Explicitly, because the slot may be one a removed note left behind and a
      * new note that arrived already tied would be very hard to account for. */
     n->tie = 0u;
+    n->sel = 0u;
     copy_field(n->phon, sizeof n->phon, phon);
     copy_field(n->lyric, sizeof n->lyric, lyric);
     r->count++;
@@ -217,6 +218,145 @@ void bm_roll_retime(bm_roll *r, float from, float to)
          * that will no longer sing. */
         if (r->note[i].length > 10000) r->note[i].length = 10000;
     }
+}
+
+/* ------------------------------------------------------------------ *
+ * Selection
+ * ------------------------------------------------------------------ */
+
+int bm_roll_selected(const bm_roll *r)
+{
+    int i, n = 0;
+
+    if (r == 0) return 0;
+    for (i = 0; i < r->count; i++) if (r->note[i].sel) n++;
+    return n;
+}
+
+int bm_roll_first_selected(const bm_roll *r)
+{
+    int i;
+
+    if (r == 0) return -1;
+    for (i = 0; i < r->count; i++) if (r->note[i].sel) return i;
+    return -1;
+}
+
+int bm_roll_last_selected(const bm_roll *r)
+{
+    int i;
+
+    if (r == 0) return -1;
+    for (i = r->count - 1; i >= 0; i--) if (r->note[i].sel) return i;
+    return -1;
+}
+
+void bm_roll_select_none(bm_roll *r)
+{
+    int i;
+
+    if (r == 0) return;
+    for (i = 0; i < r->count; i++) r->note[i].sel = 0u;
+}
+
+void bm_roll_select_only(bm_roll *r, int index)
+{
+    bm_roll_select_none(r);
+    if (r != 0 && index >= 0 && index < r->count) r->note[index].sel = 1u;
+}
+
+void bm_roll_select_toggle(bm_roll *r, int index)
+{
+    if (r == 0 || index < 0 || index >= r->count) return;
+    r->note[index].sel = (unsigned char)(r->note[index].sel ? 0 : 1);
+}
+
+int bm_roll_move_selected(bm_roll *r, int dt, int semitones)
+{
+    int i, moved = 0;
+    int room_left = 1 << 30;
+
+    if (r == 0 || bm_roll_selected(r) == 0) return 0;
+
+    /* Leftwards, the group stops at whatever is in front of it. It could
+     * shorten that note instead - which is what a single note dragged left
+     * does - but a group passing over three notes would shorten three, and a
+     * gesture that damages everything it crosses is not one to offer for a
+     * whole selection at once. */
+    for (i = 0; i < r->count; i++) {
+        int gap;
+
+        if (!r->note[i].sel) continue;
+        if (i == 0 || !r->note[i - 1].sel) {
+            gap = (i == 0) ? r->note[i].start
+                           : r->note[i].start - (r->note[i - 1].start +
+                                                 r->note[i - 1].length);
+            if (gap < room_left) room_left = gap;
+        }
+    }
+    if (dt < -room_left) dt = -room_left;
+
+    /* Rightwards there is no limit, because the notes after it give way - the
+     * same way they do for one note, and for the same reason: pushing the rest
+     * of the line along is how room is made in the middle of it. A contiguous
+     * melody has no gaps at all, so a group that stopped at the next note
+     * could never move at all, which is what clamping both ways turned out to
+     * mean. */
+
+    {
+        int lowest = 127, highest = 0;
+
+        for (i = 0; i < r->count; i++) {
+            if (!r->note[i].sel) continue;
+            if (r->note[i].midi < lowest)  lowest  = r->note[i].midi;
+            if (r->note[i].midi > highest) highest = r->note[i].midi;
+        }
+        if (lowest + semitones < 12)   semitones = 12 - lowest;
+        if (highest + semitones > 108) semitones = 108 - highest;
+    }
+
+    if (dt == 0 && semitones == 0) return 0;
+
+    for (i = 0; i < r->count; i++) {
+        if (!r->note[i].sel) continue;
+        r->note[i].start += dt;
+        r->note[i].midi  += semitones;
+        moved = 1;
+    }
+
+    /* One pass, left to right, pushing anything that is now overlapped. The
+     * group cannot have crossed anything - it was clamped on the left and only
+     * pushes on the right - so the roll is still in time order and no note has
+     * changed index, which is what lets a drag keep hold of what it grabbed. */
+    for (i = 1; i < r->count; i++) {
+        int prev_end = r->note[i - 1].start + r->note[i - 1].length;
+        if (r->note[i].start < prev_end) r->note[i].start = prev_end;
+    }
+
+    return moved;
+}
+
+int bm_roll_tie_pair(bm_roll *r, int earlier, int later)
+{
+    bm_note *n;
+
+    if (r == 0) return 0;
+    if (earlier < 0 || later >= r->count) return 0;
+    /* Next to each other, or there is something sounding in between and
+     * nothing for the tie to carry on. */
+    if (later != earlier + 1) return 0;
+
+    n = &r->note[later];
+    n->start = r->note[earlier].start + r->note[earlier].length;
+    n->tie = 1u;
+    /* The later note is overwritten by the earlier one: it gives up its own
+     * word, because it no longer has one to sing. */
+    n->phon[0] = '\0';
+    n->lyric[0] = '\0';
+
+    bm_roll_deoverlap(r, later);
+    bm_roll_check_ties(r);
+    return r->note[later].tie ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------ *

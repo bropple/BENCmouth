@@ -441,6 +441,29 @@ Still open, in order:
       Not covered: the text tab and the score editor, which are text boxes with no history
       of their own. A word typed into a *note* is an edit to the roll and is covered.
 
+- [x] **More than one note at a time.** Control-click adds to the selection, dragging any
+      note in it moves all of them, Delete removes the lot, and TIE joins a selected pair -
+      which is what tie should have been from the start. It used to act on one note and
+      imply the other, so holding a syllable over a second note was three steps and a
+      guess about which note it would reach for.
+
+      The selected flag lives on the note rather than in a set beside the roll, and that is
+      the whole reason it works: notes are sorted, inserted and removed constantly, so a
+      set of indices would be wrong after every one of those. A flag is carried by the same
+      memmove that moves the note.
+
+      **A group pushes rightwards and stops leftwards**, and the first version had it
+      clamping both ways - which is defensible in isolation and useless in practice, since
+      a melody has no gaps in it and a group that stopped at the next note could never move
+      at all. Driving it was what showed that: two notes selected, dragged, and nothing
+      happened. Leftwards it still stops rather than shortening every note it passes, which
+      is the same asymmetry a single note has and for the same reason.
+
+      Tying more than two is refused rather than guessed at, and the greyed button says
+      which reason it is when you point at it - a message that was at first gated on
+      nothing having the caret, which meant it never appeared at all, because clicking a
+      note puts the caret in its word.
+
 - [x] **The playhead is a handle.** It was a seven by three pixel dash at the bottom of
       the ruler, which is a thing you find by trying everything - and the person using it
       found it, decided it was the scrollbar, and reported that scrolling did not work.

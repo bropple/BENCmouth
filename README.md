@@ -1021,8 +1021,12 @@ spelling. Drag a note to move it, drag its right edge to lengthen it, Delete rem
 The wheel scrolls pitch, shift-wheel scrolls time, control-wheel zooms, and SNAP is in
 beats so it follows the tempo.
 
-**TIE** is legato: the selected note carries on the vowel already sounding instead of
-starting a syllable of its own, and glides onto its pitch rather than stepping. Tied notes
+**Control-click** adds notes to the selection; dragging any of them moves all of them,
+keeping their shape while the notes after give way. **TIE** is legato and is what two
+selected notes are for: pick the syllable, add the note to hold it over, press TIE. The
+later note gives up its own word and carries on the first one's vowel, gliding onto its
+pitch rather than stepping. Two at a time only — a tie joins a pair, and "tie these five"
+has several readings with no way to tell which was meant. Tied notes
 draw joined — no line cutting them apart in the same lane, a stroke connecting them across
 lanes — and the note's word field is replaced by the vowel it inherits. A word's closing
 consonants move to the end of the slur, which is what a singer does: `straight` held over

@@ -448,6 +448,101 @@ static void test_undo(void)
     check(now.tempo > 95.0f && now.tempo < 97.0f, "and the tempo with it");
 }
 
+/* Selecting more than one, and doing things to all of them at once. */
+static void test_selection(void)
+{
+    bm_roll r;
+
+    printf("more than one note at a time\n");
+
+    bm_roll_init(&r);
+    bm_roll_add(&r, 0,    500, 60, "M IY1", "one");
+    bm_roll_add(&r, 500,  500, 62, "M IY1", "two");
+    bm_roll_add(&r, 1000, 500, 64, "M IY1", "three");
+    bm_roll_add(&r, 2000, 500, 65, "M IY1", "four");   /* after a gap */
+
+    check(bm_roll_selected(&r) == 0, "a new note is not selected");
+    bm_roll_select_only(&r, 1);
+    check(bm_roll_selected(&r) == 1, "one selected");
+    bm_roll_select_toggle(&r, 2);
+    check(bm_roll_selected(&r) == 2, "and a second, without losing the first");
+    check(bm_roll_first_selected(&r) == 1 && bm_roll_last_selected(&r) == 2,
+          "which are the two that were picked");
+    bm_roll_select_toggle(&r, 2);
+    check(bm_roll_selected(&r) == 1, "toggling takes one back out");
+
+    /* A group moves together and keeps its shape. */
+    bm_roll_select_only(&r, 2);
+    bm_roll_select_toggle(&r, 3);
+    check(bm_roll_move_selected(&r, 200, 0) != 0, "a group moves");
+    check(r.note[2].start == 1200 && r.note[3].start == 2200,
+          "and every note in it by the same amount");
+    check(r.note[1].start == 500, "leaving the ones outside it alone");
+
+    /* Leftwards it stops at whatever is in front of it, rather than shortening
+     * three notes on its way past. */
+    check(bm_roll_move_selected(&r, -1000, 0) != 0, "dragged back into the note before");
+    check(r.note[2].start == 1000, "it stops where that note ends");
+    check(r.note[1].start == 500 && r.note[1].length == 500,
+          "which is untouched, and the same length it was");
+    check(r.note[3].start == 2000, "and the group kept its shape on the way");
+
+    /* Rightwards it pushes, because a melody has no gaps in it and a group
+     * that stopped at the next note could never move at all. */
+    {
+        bm_roll q;
+        bm_roll_init(&q);
+        bm_roll_add(&q, 0,    500, 60, "M IY1", "one");
+        bm_roll_add(&q, 500,  500, 62, "M IY1", "two");
+        bm_roll_add(&q, 1000, 500, 64, "M IY1", "three");
+        bm_roll_add(&q, 1500, 500, 65, "M IY1", "four");
+
+        bm_roll_select_only(&q, 1);
+        check(bm_roll_move_selected(&q, 250, 0) != 0,
+              "a group in a line with no gaps still moves");
+        check(q.note[1].start == 750, "it goes where it was dragged");
+        check(q.note[2].start == 1250 && q.note[3].start == 1750,
+              "and the notes after it give way, keeping their lengths");
+        check(q.note[2].length == 500 && q.note[3].length == 500,
+              "none of them shortened");
+        check(q.note[0].start == 0 && q.note[0].length == 500,
+              "and the one in front is untouched");
+    }
+
+    /* Pitch moves as one, clamped by whichever note runs out first. */
+    bm_roll_select_only(&r, 0);
+    bm_roll_select_toggle(&r, 1);
+    (void)bm_roll_move_selected(&r, 0, 12);
+    check(r.note[0].midi == 72 && r.note[1].midi == 74, "an octave up, together");
+    (void)bm_roll_move_selected(&r, 0, 100);
+    check(r.note[1].midi == 108, "the top note stops at the top of the range");
+    check(r.note[0].midi == 106, "and the other keeps its interval");
+}
+
+/* Tying a pair, which is what two selected notes are for. */
+static void test_tie_pair(void)
+{
+    bm_roll r;
+
+    printf("tying a selected pair\n");
+
+    bm_roll_init(&r);
+    bm_roll_add(&r, 0,    500, 60, "S T R EY1 T", "straight");
+    bm_roll_add(&r, 700,  500, 67, "M IY1", "me");     /* a gap before it */
+    bm_roll_add(&r, 1400, 500, 64, "M IY1", "three");
+
+    check(bm_roll_tie_pair(&r, 0, 1) == 1, "a pair ties");
+    check(r.note[1].tie != 0, "the later note is the one that gives way");
+    check(r.note[1].start == 500, "and is pulled back to touch the earlier one");
+    check(r.note[1].lyric[0] == '\0' && r.note[1].phon[0] == '\0',
+          "losing the word it had, because it sings the other one's vowel");
+    check(strcmp(bm_roll_tied_vowel(&r, 1), "EY1") == 0, "which is that vowel");
+
+    check(bm_roll_tie_pair(&r, 0, 2) == 0,
+          "two notes with another between them cannot be tied");
+    check(r.note[2].tie == 0, "and nothing happens to them");
+}
+
 int main(void)
 {
     printf("\nBENCmouth note roll tests\n\n");
@@ -461,6 +556,8 @@ int main(void)
     test_file_round_trip();
     test_a_song_without_a_roll_still_loads();
     test_bad_note_lines();
+    test_selection();
+    test_tie_pair();
     test_undo();
     printf("\n%s (%d failure%s)\n\n",
            failures ? "FAILED" : "all passed",
