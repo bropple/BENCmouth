@@ -9,6 +9,9 @@
  * without touching the filesystem.
  */
 
+/* The roll comes with it: a song now carries the notes it was drawn from, so
+ * the parser calls into bm_roll.c and the two travel together. */
+#include "../src/host/bm_roll.c"
 #include "../src/host/bm_songfile.c"
 
 #include <stdio.h>

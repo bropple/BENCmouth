@@ -4,6 +4,88 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.3.0
+
+**The piano roll and the plugin are more experimental than the rest of this.** The
+synthesizer, the CLI and the first two tabs have been through several releases; these
+have been through one. Expect rough edges, and expect some of this to change shape.
+Songs are readable `.bmsong` text, so nothing you write is trapped in a format that
+only this version understands.
+
+**A piano roll, and a plugin.**
+
+The GUI has a third tab: notes on a grid, a syllable typed into each, lengths dragged.
+It is honest about time in a way the score tab could not be — `[dur N]` makes a note last
+N milliseconds *including its consonants*, and where a syllable will not fit, the note
+overruns and says so in amber rather than quietly pushing everything after it late.
+`TIE` slurs: the note carries on the vowel already sounding and glides onto its pitch,
+with the word's closing consonants moved to the end of the slur, which is what a singer
+does with "straight" held over two notes.
+
+**Editing it.** Ctrl+click selects more than one note — drag them together and they keep
+their spacing, or take exactly two and `TIE` joins them, the later one giving up its word
+to carry the earlier one's vowel. Right-click a note for a menu: delete it, send it up or
+down an octave, move it to a named pitch. Drag either edge to change where a note starts
+or how long it lasts, with the cursor saying so before you press. Ctrl+Z and Ctrl+Y, with
+a drag or a typed word counting as one step rather than sixty. Zoom in and out, and the
+grid takes whatever height the window has. Dragging a note up or down says it at the new
+pitch as it passes, so choosing a note by ear does not mean letting go to hear it.
+
+**The voice's pitch sliders go dim on a score that names its own notes.** They were live
+controls that did nothing: `[note]` is a key on the keyboard rather than a shift of the
+voice, and the roll writes one on every note, so `pitch` and `range` decided nothing while
+the effects beside them went on working. Both rows now say so. `[pitch]` is the other
+thing — it moves the line without replacing the voice underneath — and leaves them live.
+
+**Fixed: a word too long for one note was cut mid-phoneme.** A note holds one syllable,
+but the word box takes more, and "extraordinary" spells to 33 characters against a buffer
+of 32. The tail was dropped wherever it landed, which is the bad part — the pieces ARPABET
+leaves behind are mostly still phonemes, `NG` cut short is `N` and `TH` is `T`, so the
+note went on singing with a sound in it nobody chose. It now stops at a phoneme boundary
+and says the word did not fit.
+
+**`BENCmouth.clap`** — the same song inside a DAW. It is a score player: the plugin owns
+the song, the host owns the transport, and pressing play, scrubbing or looping is followed
+exactly, because the score is rendered ahead of time and the host's playhead indexes into
+it. A project file stores the song as readable `.bmsong` text.
+
+**CLAP, VST3 and — on macOS — AU.** The VST3 and the AU are shims that load the CLAP, so
+they always install together with it; a shim on its own appears in a host's list and then
+fails to load, which looks like a broken plugin rather than a missing one.
+
+- **Windows**: the installer offers *CLAP plugin* and *VST3 plugin* as components. Ticking
+  the VST3 ticks the CLAP.
+- **macOS**: a second disk image, `bencmouth-plugins-*-macos-universal.dmg`, with every
+  format in it and an **Install Plug-Ins** script that puts each where its host looks. It
+  carries the application too — the plugin opens its window by starting it. Universal and
+  ad-hoc signed; not notarized, so Gatekeeper wants telling once.
+- **Linux**: `BENCmouth.clap` into `~/.clap`, `BENCmouth.vst3` into `~/.vst3`, or
+  `make clap-install vst3-install`.
+
+**The plugin's window is the BENCmouth application**, started by the plugin and talking to
+it through a block they share. It opens on the project's song and publishes every edit
+back. That it is a separate process is forced rather than chosen: raylib keeps its window
+in one file-scope global, so a process gets exactly one however many instances a host
+loads — and a crashing editor does not take the DAW with it.
+
+**Fixed: the installer could crash while adding `bm` to PATH.** The buffer it appends the
+directory to was allocated with no room for it — "the size of your PATH, plus zero" — so
+every `/PATH` install wrote about fifty bytes past the end of a heap block, and whether
+that crashed depended on how the allocator had rounded the block and what happened to be
+next to it. On a profile with no PATH at all it allocated nothing and copied the whole
+directory into it.
+
+The cause was one register. The size of the slack was worked out into `$0`, handed to a
+macro, and read back after two `System::Call`s had used `$0` for their return codes — so
+by the time it was used it was the number zero. The macro now captures its argument on its
+first line, before anything can overwrite it, which is the property it should have had:
+the same macro was correct all along when the uninstaller passed it a literal.
+
+CI now runs the installer under full page heap, which puts an inaccessible page
+immediately after every allocation — so this class of bug stops being a matter of luck and
+becomes an access violation on the instruction that causes it. Every existing PATH check
+passed while this bug shipped; that is what the new one is for.
+
 ## New in 0.2.4
 
 **The Windows installer can put `bm` on your PATH.** A tickbox, off by default, and the

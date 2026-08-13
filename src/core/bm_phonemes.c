@@ -275,3 +275,20 @@ const bm_phoneme *bm_phoneme_at(int index)
     if (index < 0 || index >= BM_PHONEME_TABLE_SIZE) return 0;
     return &BM_PHONEMES[index];
 }
+
+/* Public, and declared in bencmouth.h rather than here: an editor needs to find
+ * the vowel in a syllable, and the alternative is a second list of which
+ * phonemes are vowels living outside this file. */
+int bm_phoneme_is_vowel(const char *token, size_t len)
+{
+    const bm_phoneme *p;
+
+    if (token == 0) return 0;
+    if (len == 0) {
+        while (token[len] != '\0') len++;
+    }
+    /* bm_phoneme_lookup already ignores a trailing stress digit, which is what
+     * makes "IY1" and "IY" the same question. */
+    p = bm_phoneme_lookup(token, len);
+    return (p != 0 && (p->cls == BM_CLS_VOWEL || p->cls == BM_CLS_DIPHTHONG));
+}

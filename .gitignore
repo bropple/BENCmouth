@@ -37,3 +37,9 @@ mkembed
 # What the release job assembles for makensis, out of files that are already
 # either committed or built. The setup .exe itself is covered by *.exe above.
 stage/
+
+# CLAP headers, fetched by `make clap-fetch`. MIT, and a tagged download rather
+# than a submodule for the reason the dictionary is not checked in: it is an
+# input the build can reproduce, not something this project maintains.
+vendor/
+build/

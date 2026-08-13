@@ -29,8 +29,8 @@ extern "C" {
  * and tools/check_version.sh holds a release tag to it - v0.2.0 and v0.2.1
  * both shipped an About box saying 0.1.3, because nothing compared the two. */
 #define BM_VERSION_MAJOR 0
-#define BM_VERSION_MINOR 2
-#define BM_VERSION_PATCH 4
+#define BM_VERSION_MINOR 3
+#define BM_VERSION_PATCH 0
 
 /* ------------------------------------------------------------------ *
  * Compile-time configuration
@@ -717,6 +717,77 @@ size_t bm_read(bm_engine *engine, bm_sample *out, size_t max_samples);
 int bm_is_speaking(const bm_engine *engine);
 
 /* ------------------------------------------------------------------ *
+ * Measuring
+ *
+ * What an utterance will sound like in time, without rendering it: where each
+ * phoneme starts, how long it lasts, and which text produced it.
+ *
+ * This exists because the length of a sung note is not the number written in
+ * the score. [hold] sets the vowel, and the consonants around it keep their
+ * own lengths on top - so at [hold 400] the syllable "IY1" runs 550 ms, "M IY1"
+ * 660 ms and "S T R EY1 T" 1100 ms. An editor that draws notes on a grid cannot
+ * work that out for itself without reimplementing the frame generator, and a
+ * second implementation would be free to disagree with the one making the
+ * sound. [dur] fixes the *asking* side of that; this fixes the telling side.
+ *
+ * The answer is exact rather than an estimate: it comes from the same
+ * arithmetic the renderer uses, so a span here is where the audio really is.
+ * Both are quantized to the frame rate - 10 ms at the default 100 frames per
+ * second - and that quantization is reported rather than hidden.
+ * ------------------------------------------------------------------ */
+
+typedef struct bm_span {
+    uint32_t start_ms;    /* from the beginning of the utterance */
+    uint32_t length_ms;
+
+    /* Byte offset in the phoneme string where this phoneme's token began, so a
+     * caller can map a sound back to the characters that asked for it. */
+    uint32_t source;
+
+    /* Which [dur] group the phoneme belongs to: 1-based, 0 for none. A score
+     * compiled from a note grid writes one [dur] per note, which makes this the
+     * note number - fold the spans by it and you have the timeline. */
+    uint16_t group;
+
+    uint8_t  vowel;       /* nonzero if this is the phoneme carrying the length */
+    uint8_t  reserved;
+} bm_span;
+
+/* Nonzero if `token` names a vowel or a diphthong - the phoneme a sung note's
+ * length and pitch live in, and the one a tied note carries on. `len` may be 0
+ * for a NUL-terminated string; a trailing stress digit is allowed.
+ *
+ * Exposed so that an editor can find the vowel in a syllable without keeping
+ * its own list of which phonemes those are. There is one such list and it is
+ * the table in bm_phonemes.c; a second one somewhere else would be right until
+ * the day the first one changed.
+ */
+int bm_phoneme_is_vowel(const char *token, size_t len);
+
+/* Measures `phonemes` - the same string bm_speak_phonemes() accepts, markup and
+ * all - into `out`, and reports the total duration.
+ *
+ * `scratch` is working space, owned by the call only; nothing in it survives
+ * the return, and it may be the same storage a live engine is not using. It is
+ * a parameter rather than a local because the frame generator is too large to
+ * put on a caller's stack uninvited, which is the same reason bm_engine_init
+ * takes storage instead of allocating.
+ *
+ * `config` may be 0 for the defaults. The voice matters: speed, flatten and
+ * prosody all change how long things take.
+ *
+ * `out` may be 0 (with `out_cap` 0) to ask only for the total. Otherwise
+ * `*out_count` is set to the number of phonemes the string produced, whether or
+ * not they all fitted, and BM_ERR_OVERFLOW is returned when they did not - so a
+ * caller that guessed too small learns the size it needed rather than a
+ * truncated answer it might mistake for the whole thing.
+ */
+bm_result bm_measure(bm_engine_storage *scratch, const bm_config *config,
+                     const char *phonemes, size_t len,
+                     bm_span *out, size_t out_cap, size_t *out_count,
+                     uint32_t *total_ms);
+
+/* ------------------------------------------------------------------ *
  * Lower layers, exposed for testing and for callers who want them
  * ------------------------------------------------------------------ */
 
@@ -734,6 +805,9 @@ bm_result bm_text_to_phonemes(const char *text, size_t text_len,
  *   [pitch 90]    base pitch in Hz for everything after it
  *   [speed 1.4]   rate multiplier
  *   [pause 400]   milliseconds of silence, inserted here
+ *   [note C4]     absolute pitch by name, for singing
+ *   [hold 400]    length of the vowels that follow
+ *   [dur 400]     total length of the run that follows, consonants included
  *   [reset]       back to the voice's own settings
  *
  *   bm_speak_text(e, "normally. [pitch 70][speed 0.8] and now slowly.", 0);

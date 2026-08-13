@@ -156,6 +156,425 @@ that need an actual decision when we get there:
       descenders and raised a scrollbar for text that fitted. The inset now shrinks below
       the height of two lines.
 
+## The piano roll, and the plugin
+
+The goal is a third tab: notes on a grid, a phoneme typed into each one, durations
+dragged - and, later, the same thing inside a DAW as a CLAP and a VST3, following the
+host's transport. `../BENCsynth` has already done the plugin half once and its
+`docs/PLUGIN.md` is the reference.
+
+Two things had to be true before any of it could be drawn, and neither was.
+
+- [x] **`[dur MS]`** (`apply_dur_groups` in `bm_frames.c`). `[hold]` sets the length of
+      the vowels and lets the consonants take whatever they take on top. Measured, at
+      `[hold 400]`: `IY1` sounds for 450 ms, `M IY1` for 560 ms, `S T R EY1 T` for 1000 ms.
+      Three notes written the same length, drawn the same width, playing at three
+      different lengths - and the error is different for every note and accumulates, so
+      by the second bar the grid is decorative.
+
+      That is not a bug in `[hold]`. Stretching a consonant cluster bodily *does* turn the
+      word into a groan, and for a score you read rather than a score you draw, vowel-only
+      is the right answer. So `[dur]` is a second way of asking rather than a change to
+      the first: `[dur 400]` means the run occupies 400 ms in total, consonants included.
+      Every existing `.bmsong` renders sample-for-sample as it did - `songs/daisy.bmsong`
+      is still 11.88 s.
+
+      The run is delimited by the brackets rather than by syllabification. A group ends at
+      the next `[dur]`, at a `[pause]`, at `[reset]` or at the end of the string, which is
+      unambiguous and needs no English phonology; a compiled note grid writes one `[dur]`
+      per note, so the question never arises there. Group membership is carried as an id
+      rather than found by looking for equal lengths, because two notes of the same length
+      in a row is what a melody mostly *is*, and matching on the value would merge them.
+
+      **When it will not fit, the consonants compress.** The time comes out of the vowel
+      first, down to 60 ms, and after that out of the consonants via the existing `speed`
+      modifier, capped at half length - which is what a singer does with a word too long
+      for its beat. `S T R EY1 T` has 600 ms of consonants in it and sings in a 400 ms note
+      through that mechanism. Below the cap it overruns rather than pretending, and
+      `bm_measure()` reports the length it really came out at.
+
+      The lengths are assigned, then **measured and corrected**. Every duration goes
+      through a rounding to whole frames and back and no segment is ever shorter than one
+      frame, so the errors are all in the same direction and do not cancel; predicting
+      them would have meant a second model of `segment_frames` sitting beside the first,
+      which is the arrangement this whole change exists to remove.
+
+- [x] **`bm_measure()`** (`src/core/bm_measure.c`). Where each phoneme starts, how long it
+      lasts, the byte offset of the token that produced it, and which `[dur]` group it
+      belongs to - without rendering a sample. An editor cannot work any of that out for
+      itself without reimplementing the frame generator, and a second implementation would
+      be free to drift from the one making the sound. A timeline that is approximately
+      right is worse than none: it looks authoritative.
+
+      So there is no arithmetic in the file. Every length comes from
+      `bm_frame_gen_phoneme_frames()`, which is the renderer's own `segment_frames()`
+      summed up. `tests/test_timing.c` renders through `bm_read()` and compares sample
+      counts against the prediction: the difference is the 100 ms filter ring-out and
+      nothing else, on all three scores it tries.
+
+      It takes a `bm_engine_storage` as scratch rather than allocating or putting a
+      hundred kilobytes on the caller's stack, which is the arrangement `bm_engine_init`
+      already uses.
+
+- [x] **`[pause N]` is N milliseconds.** Found while checking that a compiled roll sounds
+      at the times it was drawn at: the third note came in 30 ms late, every time. The
+      length a pause is given lands on the silence phoneme's *steady* segment, and the
+      silence also has a 30 ms transition in front of it - so `[pause 400]` had always
+      been 430 ms of silence. Never audible on its own, and it is the gap between two
+      phrases, so nothing ever pointed at it. On a grid it is the same accumulating error
+      `[dur]` exists to remove, arriving through the rests instead.
+
+      Fixed the way `[dur]` is: the total is what was asked for. Every shipped song is
+      exactly 30 ms shorter per rest - boing has six of them and lost 180 ms, good-news
+      has none and did not move - which is the arithmetic being right rather than a
+      regression, and is imperceptible either way.
+
+- [x] **The ROLL tab** (`src/host/bm_roll.c`, `src/gui/bm_roll_ui.c`). A note is a pitch,
+      a start, a length and a lyric; the lyric is typed as a word and spelled by the front
+      end, with the phoneme field there to type over when the dictionary is wrong. It
+      compiles to a score and plays through `bm_speak_phonemes()`, so the audio path did
+      not change at all.
+
+      The model, the compiler and the file format are in the host layer and know nothing
+      about a screen, which is what lets `tests/test_roll.c` cover all three - including
+      the property the tab exists for: compile a roll, measure the result, and check the
+      notes sound at the times they were drawn at.
+
+      **Notes cannot overlap**, and that is not a simplification - there is one voice.
+      Dragging a note onto its neighbour makes the neighbour give way, which also makes
+      the compile exact by construction rather than by clamping something later.
+
+      **An overrun is drawn.** A note is the length it asks for until its consonants will
+      not fit, and then it runs over; the excess is an amber bar past the note's right
+      edge and the readout says what it really sounds for. This is the whole reason
+      `bm_measure()` was built first: the figure comes from the code that makes the sound,
+      so a roll with no amber in it plays exactly as drawn.
+
+      Stored as repeated `note =` lines in the `.bmsong` header - one more key rather than
+      a second block, so `score =` goes on being the thing that ends the header - beside
+      the compiled score, which is still what sings. `bm -S` needed no changes. A file
+      with no notes opens in the ROLL tab as a refusal rather than as an empty grid,
+      because a score can say things a grid cannot draw.
+
+      Driven under Xvfb with xdotool to check the gesture end to end, which is worth
+      recording as a technique: **raylib misses a click that is pressed and released
+      between two frames**, so `xdotool click` does nothing and press, sleep, release is
+      what works. The window is not at the origin either - read the offset from
+      `xdotool getwindowgeometry --shell` rather than assuming it.
+
+- [x] **Legato** - `[glide MS]` in the core, TIE in the roll. Asked for as "changing tone
+      without stopping the pronunciation", and the answer turned out to be that half of it
+      already worked and the other half was wired to the wrong switch.
+
+      **The tone half needed nothing.** Put the same vowel on the next note with no
+      consonant in front of it and the formant targets do not move across the boundary, so
+      nothing re-articulates. Measured in 25 ms windows, the envelope of two notes on one
+      vowel is `0499999...` - indistinguishable from a single held note - where re-singing
+      the consonant dips it to `5778`.
+
+      **The pitch half was a step**, and the reason was an accident: `f0_smooth` chases its
+      target across phoneme boundaries, but that lives on the `prosody > 0` branch and
+      singing turns prosody off, because prosody is speech planning and a written melody
+      wants none of it. Pitch smoothing is a different concern that happened to be behind
+      the same switch. Turning prosody up is not the fix either - it scoops into *every*
+      note change by about 140 ms, which is right for a slur and drunk for a stepwise
+      melody.
+
+      So `[glide MS]` belongs to the transition rather than to the voice: a slur is
+      something a score asks for on one note, not a mode a singer is in. Geometric, so the
+      middle of an interval is where the ear expects it - a fifth from 262 Hz passes
+      through 321 and not 327 - which is the same argument `glide_freq` already makes about
+      formants. Default 0 is exactly the old behaviour, so nothing existing moved.
+
+      The first note of a phrase is never glided into. It falls out of the smoother being
+      seeded on its first frame rather than glided into, and it is the right answer: there
+      is nothing to glide from.
+
+      **The tie is where the real work was.** A tied note carries the vowel of the note it
+      is tied to - through a chain of ties, since a run of them is one held vowel - and the
+      first measurement of it was wrong in a way that only the audio showed: tying onto
+      "S T R EY1 T" left the final T at the end of the *first* note, so the tone closed
+      before the slur began and the envelope had a gap exactly where the legato was meant
+      to be. The coda has to move to the end of the held note: `S T R EY1` then `EY1 T`,
+      which is what a singer does.
+
+      Two editor bugs came out of testing it, both worth recording because neither is
+      about ties:
+
+      - **Selecting a note moved it.** A press applied the grid snap whether or not the
+        mouse then moved, so clicking a note that was not already on the grid nudged it.
+        The opening scale was 400 ms notes against a 250 ms grid, so *every* first click
+        moved something. Fixed both ends: a drag has to travel two pixels before it counts,
+        and the opening scale is quarter notes at its own tempo.
+      - **The default view could not show its own scale.** Twelve lanes at 12 px, and C4 to
+        C5 is thirteen semitones, so the roll opened with the first note of its own opening
+        bars off the bottom. Lanes are 11 px.
+
+Still open, in order:
+
+- [x] **Offline render, and a transport** (`src/host/bm_render.c`, `src/host/bm_player.c`).
+      The engine is queue-and-pull: there is no seek in it, and a DAW asks for bar nine
+      constantly. Rather than teaching it to seek, render the score once and index into
+      what comes out - scrubbing, looping and playing from the middle stop being engine
+      problems and become arithmetic.
+
+      **In-process it renders at about 640x real time**: 45 seconds of audio in 70 ms. The
+      97x measured earlier was `bm` from a cold start and included loading the dictionary
+      and writing a WAV. So re-rendering is affordable, and the split is that measuring a
+      score is live on every edit while rendering it happens on SING.
+
+      The two halves are split by what they cost and what thread they can be on.
+      `bm_render_score` allocates and runs the DSP; `bm_player_read` allocates nothing,
+      locks nothing and is a memcpy with an index. A host with its own transport calls
+      `bm_player_locate` each block instead of letting the player advance itself, which is
+      the shape the plugin needs - and building it this way round means the standalone and
+      the plugin will play through the same code rather than two versions of it.
+
+      The ROLL tab now has a real playhead: drag it in the ruler, SING from wherever it is,
+      LOOP, and the head reads from the position of the samples actually going out rather
+      than from the frame clock, so it does not drift when a frame is dropped.
+
+      **Two buffers, used alternately.** `bm_render_score` reallocates, and the audio
+      thread may be inside a memcpy from the buffer when a new render starts - so the one
+      being played is never the one being written, and a buffer a callback could still be
+      reading stays alive until the render after next. One spare copy of the audio, and
+      the only way this could have crashed is gone.
+
+      It also deleted a duplicate: `SAVE WAV` had its own realloc-and-pull loop, which is
+      exactly what `bm_render_score` is. Two of them would have been two chances to get
+      the growth arithmetic wrong.
+
+      `tests/test_player.c` covers it with no audio device and no window. The case worth
+      naming is a block that spans the loop point: an audio callback hits it a few times a
+      second, and a player that zero-fills the tail of that block instead of wrapping
+      clicks once per pass - which sounds like a bad loop point rather than like a bug.
+
+- [x] **The CLAP** (`src/clap/bencmouth_clap.c`, `make clap`). A score player: the plugin
+      owns the song, the host owns the transport, and the two meet at a position in
+      seconds. `process()` is a locate and a memcpy - everything that could stall happens
+      on the main thread, and the audio thread never allocates, never locks and never
+      touches the engine.
+
+      Located every block rather than free-running, so a loop, a scrub or a click in the
+      ruler is followed exactly instead of caught up with. Seconds where the host offers
+      them, beats through the tempo where it does not - which is exact while that tempo
+      holds and wrong across an earlier tempo change, so a host with a seconds timeline is
+      always believed instead.
+
+      **State is the `.bmsong` text**, not a private blob. A project file then contains
+      something a person can read, the same bytes open in the editor and in `bm -S`, and
+      the format only had to be got right once. That needed `bm_song_format` - the writer
+      working on memory with the file as a wrapper, which is the arrangement the parser has
+      had since it was written and for the same reason.
+
+      **Two parameters**, and the shortness of the list is the design rather than a gap in
+      it. The audio is rendered ahead of the transport, so anything changing how the voice
+      sounds means rendering again - fine for an edit, useless for automation. So the
+      parameters are the ones that apply to samples that already exist: gain is a multiply,
+      sync is a decision about where to read.
+
+      It opens with a song in it. An empty instrument gives no way to tell "installed
+      wrong" from "working, and silent because it has nothing to sing".
+
+      `tools/clap_host.c` (`make clap-test`) loads it the way a DAW does and plays it -
+      transport, locating, parameters, and a state round trip. It found the thing worth
+      finding: the first block at position zero is *silent*, which is the frame generator
+      starting from a vocal tract at rest and gliding out of it over about 40 ms. The test
+      now asserts that it is quiet at the top and sounding fifty milliseconds later, which
+      pins where the transport is rather than merely that noise came out.
+
+      A `.bmsong` can be loaded through CLAP's preset-load extension, which is the only way
+      to get a song in until the editor exists.
+
+- [x] **Six things the roll needed once somebody used it.**
+      - Both fields are there from the moment the tab opens: the first note is
+        selected, and WORD and PHONEMES are drawn empty rather than replaced by
+        the words "no note selected" - which answered a question nobody asked
+        and hid the two boxes the tab is mostly about.
+      - **A scrollbar under the grid.** Sideways used to be shift-wheel and
+        nothing else: a gesture with no sign it exists, on the one axis a song
+        is long in. It dims when the whole song is already on screen.
+      - **Both ends of a note are handles**, the left one moving where it starts
+        and the right one how long it is, with the pointer turning into a double
+        arrow and two pixels of contrast drawn into the ends. The grab was five
+        pixels and invisible, so the note simply moved instead and the gesture
+        read as missing.
+      - **A right-click menu**: octave and semitone either way, tie, delete.
+        That needed a general menu in the widget set - the one there was is four
+        fixed clipboard actions belonging to the text boxes.
+      - **A note says itself as it is dragged through pitches.** Choosing a note
+        by ear is the point of dragging it up and down, and doing that in
+        silence means drag, let go, listen, and go back for another try.
+      - **Zoom buttons**, and the grid takes whatever height the window has
+        spare. The other two tabs are a fixed amount of content and a taller
+        band would be empty; a piano roll is the one thing here always short of
+        room.
+
+- [x] **Undo, and redo** (`bm_roll_history` in `src/host/bm_roll.c`). Whole snapshots of
+      the roll rather than a command list with an inverse per gesture: a note grid is a
+      small document, and a snapshot cannot desynchronize from the thing it describes
+      because it *is* the thing. Thirty-two levels each way, which is 1.13 MB - a number
+      worth spending against the certainty of getting an undo stack right.
+
+      **A gesture is one step.** A drag reports a change every frame and a typed word one
+      every letter, so marks carry a token saying which gesture they belong to and only
+      the first of a run is recorded. That is the whole of the coalescing, and it lives in
+      the caller because only the caller knows where a gesture begins.
+
+      Two ordering bugs worth recording, both of the same shape - the state was captured
+      *after* the change it was supposed to precede. A text box changes its buffer and then
+      reports it, so the old text goes back for the instant the snapshot is taken; and the
+      tempo slider has already moved by the time the retime runs, so the mark records the
+      tempo the notes are still written against rather than the one they are about to be.
+
+      The history is in the roll's UI struct and the struct is now `static` in main. It is
+      1.13 MB, which is nothing in .bss and far too much for a stack frame - and the frame
+      was main's, on a thread whose stack is a megabyte on Windows. It would have run here
+      and crashed on the machine it was written for.
+
+      Driving it under Xvfb found nothing wrong with the feature and something worth
+      knowing about the testing: **raylib misses a key pressed and released between two
+      frames**, exactly as it misses such a click. `xdotool key ctrl+z` does nothing;
+      holding the modifier down across frames - keydown, sleep, keydown, sleep, keyup -
+      works. The first run of the test looked like a broken undo and was a broken test.
+
+      Not covered: the text tab and the score editor, which are text boxes with no history
+      of their own. A word typed into a *note* is an edit to the roll and is covered.
+
+- [x] **More than one note at a time.** Control-click adds to the selection, dragging any
+      note in it moves all of them, Delete removes the lot, and TIE joins a selected pair -
+      which is what tie should have been from the start. It used to act on one note and
+      imply the other, so holding a syllable over a second note was three steps and a
+      guess about which note it would reach for.
+
+      The selected flag lives on the note rather than in a set beside the roll, and that is
+      the whole reason it works: notes are sorted, inserted and removed constantly, so a
+      set of indices would be wrong after every one of those. A flag is carried by the same
+      memmove that moves the note.
+
+      **A group pushes rightwards and stops leftwards**, and the first version had it
+      clamping both ways - which is defensible in isolation and useless in practice, since
+      a melody has no gaps in it and a group that stopped at the next note could never move
+      at all. Driving it was what showed that: two notes selected, dragged, and nothing
+      happened. Leftwards it still stops rather than shortening every note it passes, which
+      is the same asymmetry a single note has and for the same reason.
+
+      Tying more than two is refused rather than guessed at, and the greyed button says
+      which reason it is when you point at it - a message that was at first gated on
+      nothing having the caret, which meant it never appeared at all, because clicking a
+      note puts the caret in its word.
+
+- [x] **The playhead is a handle.** It was a seven by three pixel dash at the bottom of
+      the ruler, which is a thing you find by trying everything - and the person using it
+      found it, decided it was the scrollbar, and reported that scrolling did not work.
+      Two controls, one of which looked like neither.
+
+      A wedge now, pointing down at the line it moves, in a ruler four pixels taller to
+      hold it, brighter while the pointer is anywhere in the strip. The whole ruler is the
+      target and always was; what was missing was anything saying so.
+
+- [x] **The scrollbar is a handle, and the playhead comes back.** Two more from using it.
+      The bar was ten pixels with a six-pixel thumb of flat colour, which is a thing you
+      can see and not a thing that looks like it can be picked up - sixteen now, with the
+      three notches every toolkit uses to mean "handle" and a brighter fill under the
+      pointer.
+
+      And the head returns to where the pass started when the song runs out. It used to be
+      left at the end, which was wrong twice: nothing is there to look at, and SING would
+      then play from the top while the marker still said the end - the one thing on screen
+      claiming to say where the next note comes from, disagreeing with where it does.
+      Stopping by hand still leaves it where it was stopped, because that is a position
+      somebody just chose.
+
+Still open:
+
+- [x] **The editor, in another process** (`src/plugin/bm_shm.c`, `src/plugin/bm_spawn.c`,
+      `bencmouth-gui --editor`). The plugin's window is the standalone, started by the
+      plugin and attached to a block they share. Floating only: CLAP supports a
+      plugin-created top-level window outright, and it is the only thing raylib can do.
+
+      **What crosses is the .bmsong text.** One thing to serialize, and it is the thing the
+      file format already describes - no note structs, no versioned binary layout, nothing
+      two builds compiled a month apart have to agree about. The worst a mismatch can do is
+      a header key one end does not know, which the parser has had an answer for since it
+      was written.
+
+      Each channel is a seqlock, and `tests/test_shm.c` tests it the only way that means
+      anything: across a real fork, with the child publishing four thousand songs while the
+      parent reads. The first version of that test caught seven of the four thousand and
+      would have missed a tear in the rest - the reader is a sequence compare and the writer
+      is a 64 KB memcpy, so a counted loop finishes long before the writer does.
+
+      **And then it found a real one.** Both the seqlock and the player published across
+      threads with `volatile` and a compiler barrier, under a comment asserting that was
+      all that was needed "on the architectures this runs on". That is false: `volatile`
+      orders the compiler and says nothing about the processor, and arm64 is weakly
+      ordered. Four thousand rounds passed on the x86 machine it was written on - x86
+      orders stores for you - and the first Apple Silicon runner it met read two halves of
+      two different songs.
+
+      The same mistake was in `bm_player_set_source`, where it is worse: a callback that
+      saw the new length against the old pointer would read off the end of a shorter
+      render, in a DAW, on the audio thread. One real fence now, in `src/host/bm_fence.h`,
+      used by both - a second copy would be right until the day one of them changed.
+
+      Worth keeping as the general lesson: a lock-free test that passes on x86 has told you
+      nothing about arm64, and CI on both is the only way to find out.
+
+      **The editor is asked to close, not killed**, so it can put its own window away; it
+      is killed only if it will not go. An editor that dies leaves the plugin holding the
+      last song it sent, which is the right outcome - the music should not disappear
+      because a window did.
+
+      Publishing is held back while the mouse is down and for a moment after. Every
+      published song costs the plugin a re-render, and a drag that published every frame
+      would ask for sixty of them a second and stutter the audio it was editing.
+
+      `make editor-test` runs the real plugin against the real editor under a virtual
+      display, and it found the bug this arrangement was always going to have: the plugin
+      pumps the editor from `on_main_thread`, which only happens because something asked
+      for it - so it pumped exactly once, at the moment the window opened, and never
+      noticed another edit. An open editor now asks for the next callback on every one.
+
+- [x] **CI builds and plays the plugin on all three platforms**, and the macOS job asserts
+      the three things that make a plugin report as damaged or simply absent - signed,
+      universal, no `.dSYM` - before this has ever shipped, because BENCsynth shipped a
+      release failing all three. The Linux job additionally starts the editor under Xvfb
+      and checks that an edit reaches the audio.
+
+- [x] **VST3 through clap-wrapper** (`cmake/CMakeLists.txt`, `make vst3`), and the AU
+      alongside it on macOS. Both are shims: neither contains any BENCmouth, each finds
+      `BENCmouth.clap` at run time and loads it, so they install together with it and a
+      shim on its own does nothing.
+
+      **The VST3 SDK is pinned to a commit, not taken at tip.** At 3.8.1 the SDK declares
+      `iid` in more than one base class and every clap-wrapper up to v0.16.0 fails against
+      it - dozens of "reference to 'iid' is ambiguous", not one of which names a version as
+      the cause. The pin is the commit the wrapper is known to build against.
+
+      `make vst3-test` asks the built shim what its factory contains, which is the failure
+      worth catching: a wrapper that builds and finds nothing has an *empty* factory, and
+      in a DAW that is indistinguishable from a plugin that failed to install. Checked both
+      ways - with the CLAP installed it offers "BENCmouth", and with it moved aside the
+      factory is null and the test fails.
+
+- [x] **The installers carry the plugins.** The Windows installer offers CLAP and VST3 as
+      components, machine-wide into `%COMMONPROGRAMFILES%` - not the per-user CLAP path,
+      because an elevated installer sees the *elevating* account's `LOCALAPPDATA` and a
+      "per-user" install would land wherever the consent prompt was approved. Ticking the
+      VST3 ticks the CLAP, since the first is useless without the second. The uninstaller
+      reads back where it put them rather than assuming.
+
+      macOS gets a second disk image with every format in it and a script that installs
+      each where its host looks, carrying the application as well - the plugin opens its
+      window by starting it, so a plug-in installed alone plays a song it cannot show you.
+
+- [ ] **MIDI in, for auditioning a syllable live.** Decided against as the *primary*
+      interface and still worth having as a secondary one: MIDI has no channel to carry a
+      lyric, so a note list and a lyric list matched by order would come apart the moment
+      either was edited - but playing the current syllable from a keyboard while writing is
+      a different and much smaller thing.
+
 ## Voices of other machines
 
 - [x] **The classic set** - `Compact`, `Announcer`, `Operator`, `Cadet`, `Hushed`,

@@ -92,6 +92,19 @@ typedef struct bm_ui {
     int   menu_action;
     int   menu_readonly;   /* the owner cannot be edited: COPY and SELECT ALL */
 
+    /* A right-click menu of whatever the caller lists.
+     *
+     * Separate from the one above, which is four fixed clipboard actions
+     * belonging to the text boxes. Bending that one into a general menu would
+     * mean every text box carrying a list it never uses; this is the same
+     * deferred-drawing arrangement and nothing else in common. */
+    int          list_owner;          /* whose menu it is; 0 = nobody's */
+    int          list_open;           /* still on screen */
+    const char **list_items;
+    int          list_count;
+    Rectangle    list_rect;
+    int          list_choice;         /* 1-based, cleared when taken */
+
     /* A slider readout being typed into. Shares `focus` with the text boxes,
      * which is what makes clicking from one to the other put the caret where
      * you clicked and nowhere else - two independent notions of focus would
@@ -208,10 +221,16 @@ int   bm_toggle(const bm_ui *ui, Rectangle r, const char *label, int *on,
  * bm_textbox and drawn from the same numbering: focus is one thing, so a
  * slider and a text box must not share an id.
  *
+ * `enabled` of zero draws the row dimmed and takes no input by any of the three
+ * routes. For a parameter the sound is currently ignoring - a voice's pitch
+ * under a score that sets its own - which is worth showing rather than hiding:
+ * the value is still what the voice says, and a row that vanished when a song
+ * was loaded would look like the setting had been lost.
+ *
  * Returns nonzero on any frame the value changed, whichever of the three ways
- * changed it. */
+ * changed it. Always zero when disabled. */
 int   bm_slider(bm_ui *ui, int id, Rectangle r, const char *label,
-                float *value, float lo, float hi, const char *fmt);
+                float *value, float lo, float hi, const char *fmt, int enabled);
 /* Scrolls when the list is taller than the space beneath it: the mouse wheel
  * moves it and a bar on the right says where you are. Opening it scrolls the
  * current selection into view, because a list that opens at the top when the
@@ -250,6 +269,25 @@ int   bm_textview(bm_ui *ui, int id, Rectangle r, char *s, bm_edit *st, Color c)
  * Draws nothing and leaves `*first` at 0 when everything fits. */
 void  bm_scroll_rows(bm_ui *ui, int id, Rectangle area, int total, int visible,
                      int *first);
+
+/* A right-click menu at (x, y), owned by `id` and listing `items`.
+ *
+ * Opened where the click happened and drawn by bm_ui_overlay, for the reason
+ * every popup here is: a menu drawn where it is declared ends up underneath
+ * whatever is declared after it, and the controls beneath it stay live.
+ *
+ * `items` must outlive the menu - a static table, not a local.
+ */
+void  bm_menu(bm_ui *ui, int id, float x, float y,
+              const char **items, int count);
+
+/* What was picked, 1-based, or 0. Reading it takes it: a menu choice is an
+ * event, and the caller acts on it once. */
+int   bm_menu_chosen(bm_ui *ui, int id);
+
+/* Nonzero while `id`'s menu is up, for a caller that wants to keep drawing the
+ * thing the menu belongs to as selected. */
+int   bm_menu_is_open(const bm_ui *ui, int id);
 
 /* Draws whatever popped up, above everything else. Call once, last, before
  * EndDrawing. */

@@ -161,6 +161,152 @@ static void test_singing(void)
     }
 }
 
+/* What the editor now tells people, checked against the engine that has to make
+ * it true.
+ *
+ * The roll writes [note] on every note, so a voice's own pitch and intonation
+ * range stop deciding anything the moment a score names a key - and the GUI
+ * dims both sliders and says so. That is a claim about this behaviour, made in
+ * a place that cannot see it, so it is pinned here: if [note] ever becomes a
+ * transposition, or f0_range starts shaping a sung line, the greyed rows become
+ * a lie and this is what should catch it.
+ *
+ * [pitch] is deliberately on the other side of the line. It moves the voice
+ * rather than replacing it, so f0_base still counts underneath and the sliders
+ * are left live for it. */
+/* The whole F0 track, not its last frame.
+ *
+ * The last frame is where this was first measured and it very nearly shipped a
+ * wrong answer: under [pitch 200] the line starts and ends on the same number
+ * whatever f0_base says, and differs across 74 of the 111 frames in between.
+ * A contour is the shape, so the shape is what gets compared. */
+static int f0_differs(const char *phonemes, float base_a, float range_a,
+                      float base_b, float range_b)
+{
+    bm_frame_gen ga, gb;
+    bm_voice     va, vb;
+    bm_frame     fa, fb;
+    int          differs = 0, frames = 0;
+
+    bm_voice_default(&va); va.f0_base = base_a; va.f0_range = range_a;
+    bm_voice_default(&vb); vb.f0_base = base_b; vb.f0_range = range_b;
+    bm_frame_gen_init(&ga, 100.0f, &va);
+    bm_frame_gen_init(&gb, 100.0f, &vb);
+
+    if (bm_frame_gen_set_phonemes(&ga, phonemes, 0) != BM_OK) return -1;
+    if (bm_frame_gen_set_phonemes(&gb, phonemes, 0) != BM_OK) return -1;
+
+    while (bm_frame_gen_next(&ga, &fa) && bm_frame_gen_next(&gb, &fb)) {
+        frames++;
+        if (fa.f0 != fb.f0) differs++;
+    }
+    printf("    %-30s %d of %d frames move\n", phonemes, differs, frames);
+    return frames > 0 ? differs : -1;
+}
+
+static void test_note_overrides_the_voice(void)
+{
+    printf("a named note answers to nothing\n");
+
+    check(f0_differs("[note C4] M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) == 0,
+          "f0_base does not move a named note");
+    check(f0_differs("[note C4] M IY1 S OW1", 118.0f, 0.0f, 118.0f, 10.0f) == 0,
+          "f0_range does not shape a named note");
+
+    /* The same voices on the same syllables without the command, so that the
+     * two above are about [note] and not about the measurement. */
+    check(f0_differs("M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) > 0,
+          "without it, f0_base decides");
+    check(f0_differs("M IY1 S OW1", 118.0f, 0.0f, 118.0f, 10.0f) > 0,
+          "without it, f0_range decides");
+
+    /* [pitch] is a shift, not a key: it moves the line without replacing the
+     * voice underneath. The editor leaves both sliders live under it, and this
+     * is the measurement that says it should. */
+    check(f0_differs("[pitch 200] M IY1 S OW1", 90.0f, 4.0f, 240.0f, 4.0f) > 0,
+          "[pitch] still answers to f0_base");
+}
+
+/* Pitch at a given frame, which is what a glide has to be measured in: the
+ * question is not where it ends up but how it got there. */
+static float f0_at(const char *phonemes, int frame, float prosody)
+{
+    bm_frame_gen g;
+    bm_voice     v;
+    bm_frame     f;
+    int          i = 0;
+
+    bm_voice_default(&v);
+    v.prosody = prosody;
+    v.vibrato = 0.0f;
+    bm_frame_gen_init(&g, 100.0f, &v);
+    if (bm_frame_gen_set_phonemes(&g, phonemes, 0) != BM_OK) return -1.0f;
+
+    while (bm_frame_gen_next(&g, &f)) {
+        if (i++ == frame) return f.f0;
+    }
+    return -1.0f;
+}
+
+/* [glide] is the pitch half of legato. The tone half needs no command - two
+ * notes on one vowel do not re-articulate - but a note was always reached in a
+ * single frame, so a slur stepped. */
+static void test_glide(void)
+{
+    /* C4 for 400 ms and then G4: 262 Hz to 392 Hz, the change at frame 40. */
+    const char *step  = "[dur 400][note C4] AA1 [dur 400][note G4] AA1";
+    const char *slur  = "[dur 400][note C4] AA1 [glide 60][dur 400][note G4] AA1";
+    bm_result rc;
+
+    printf("legato\n");
+
+    check(f0_at(step, 40, 0.0f) > 380.0f,
+          "without it a note is reached in one frame");
+    check(f0_at(slur, 40, 0.0f) < 300.0f && f0_at(slur, 40, 0.0f) > 262.0f,
+          "with it the pitch has only set off");
+    check(f0_at(slur, 46, 0.0f) > 385.0f, "and has arrived six frames later");
+    printf("    stepped %.0f Hz at the boundary, glided %.0f, then %.0f\n",
+           (double)f0_at(step, 40, 0.0f), (double)f0_at(slur, 40, 0.0f),
+           (double)f0_at(slur, 46, 0.0f));
+
+    /* Geometric, not linear in hertz: the halfway point of a fifth from 262 is
+     * 321 and not 327, which is where the ear puts it. The glide sets off on
+     * the frame the note changes, so frame 42 is the third of its six. */
+    {
+        float mid = f0_at(slur, 42, 0.0f);
+        printf("    halfway through: %.0f Hz (geometric 321, linear 327)\n",
+               (double)mid);
+        check(mid > 310.0f && mid < 325.0f, "and it is geometric on the way");
+    }
+
+    /* A longer glide is longer, and is still going where the short one has
+     * already arrived. */
+    {
+        const char *slow = "[dur 400][note C4] AA1 [glide 200][dur 400][note G4] AA1";
+        check(f0_at(slow, 46, 0.0f) < f0_at(slur, 46, 0.0f),
+              "[glide 200] is still on its way when [glide 60] has landed");
+    }
+
+    /* Nothing to glide from: a phrase that scooped up to its own first note
+     * out of silence would be an effect nobody asked for. */
+    check(f0_at("[glide 200][dur 800][note G4] AA1", 2, 0.0f) > 385.0f,
+          "the first note of a phrase is not glided into");
+
+    /* It governs an absolute note whether or not the prosody planner is
+     * running, since it is a property of the note and not of the voice. */
+    check(f0_at(slur, 40, 0.85f) < 300.0f, "and it works with prosody on too");
+
+    /* Off by default, and off again when asked. */
+    check(f0_at("[dur 400][note C4] AA1 [glide 60][dur 400][note G4] AA1 "
+                "[glide 0][dur 400][note C4] AA1", 80, 0.0f) < 270.0f,
+          "[glide 0] steps again");
+
+    (void)measure("AA1 [glide 3000] AA1", 0, &rc);
+    check(rc == BM_ERR_ARG, "a glide longer than any slur is rejected");
+    (void)measure("AA1 [glide] AA1", 0, &rc);
+    check(rc == BM_ERR_ARG, "and one with no argument at all");
+}
+
 static void test_errors(void)
 {
     bm_result rc;
@@ -240,6 +386,8 @@ int main(void)
     test_on_passes_through();
     test_effects();
     test_singing();
+    test_note_overrides_the_voice();
+    test_glide();
     test_errors();
     test_survives_the_engine();
     printf("\n%s (%d failure%s)\n\n",

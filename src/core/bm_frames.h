@@ -47,6 +47,27 @@ typedef struct bm_phoneme_mod {
     float          speed;   /* multiplier;    0 = use the voice */
     unsigned short dur_ms;  /* steady length; 0 = use the phoneme */
 
+    /* [dur]: how long the whole run of phonemes carrying this group is to
+     * last, and which run that is. Where dur_ms says "hold the vowel this
+     * long", these say "make all of this take this long, consonants
+     * included" - see the [dur] note above apply_dur_groups in bm_frames.c.
+     *
+     * The group id is carried per phoneme rather than the run being found by
+     * looking for equal totals, because two adjacent notes of the same length
+     * are the common case in a melody and would otherwise merge into one. */
+    unsigned short dur_total; /* ms;            0 = not in a group */
+    unsigned short dur_group; /* 1-based id;    0 = not in a group */
+
+    /* [glide]: how long an absolute note takes to be reached, rather than
+     * being arrived at in one frame. 0 is an instant change, which is what a
+     * note always was.
+     *
+     * It belongs to the note being moved to rather than to the voice, because
+     * a slur is something a score asks for on one note and not a mode a singer
+     * is in: real singing steps cleanly onto a re-articulated note and slides
+     * onto a tied one, and a voice-wide setting cannot tell those apart. */
+    unsigned short f0_glide_ms;
+
     /* Whether f0 replaces the planned contour or transposes it.
      *
      * [pitch] transposes: the intonation of everything after it is preserved,
@@ -65,6 +86,13 @@ typedef struct bm_frame_gen {
     unsigned char     stress[BM_MAX_PHONEMES];
     bm_phoneme_mod    mod[BM_MAX_PHONEMES];
 
+    /* Byte offset in the input string where each phoneme's token began.
+     * Carried so that a caller measuring a score can say which text produced
+     * the sound it is looking at - an editor drawing notes on a grid has to
+     * map a span back to the characters that made it, and recovering that by
+     * re-parsing outside would mean two parsers that must agree forever. */
+    uint32_t          src[BM_MAX_PHONEMES];
+
     /* Planned by bm_prosody.c when the voice asks for it. Consulted only when
      * voice.prosody > 0; below that the older whole-utterance contour runs
      * instead, untouched. */
@@ -82,6 +110,15 @@ typedef struct bm_frame_gen {
 
     float f0_smooth;   /* pitch chases its target; see bm_frame_gen_next */
     int   f0_started;
+
+    /* A [glide] in progress: where it started, where it is going, and how far
+     * through it is. Held rather than derived because the pitch it starts from
+     * is wherever the last frame left off - which is not the previous note when
+     * a glide is interrupted by a faster one. */
+    float f0_glide_from;
+    float f0_glide_to;
+    int   f0_glide_len;    /* frames */
+    int   f0_glide_at;
 
     bm_frame from;     /* state at the start of the current transition */
     bm_frame to;
@@ -104,5 +141,13 @@ int bm_frame_gen_next(bm_frame_gen *g, bm_frame *out);
 
 /* Total frames the current sequence will produce. */
 int bm_frame_gen_length(const bm_frame_gen *g);
+
+/* Frames phoneme `index` occupies, every segment of it together.
+ *
+ * Exposed so that measuring an utterance and rendering it go through the same
+ * arithmetic. A second implementation of "how long is this" would be free to
+ * drift from the one that makes the sound, and a piano roll drawn from a
+ * timeline that disagrees with the audio is worse than one with no timeline. */
+int bm_frame_gen_phoneme_frames(const bm_frame_gen *g, int index);
 
 #endif /* BM_FRAMES_H */
