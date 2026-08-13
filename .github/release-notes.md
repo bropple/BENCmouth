@@ -4,7 +4,13 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
-## Unreleased
+## New in 0.3.0
+
+**The piano roll and the plugin are more experimental than the rest of this.** The
+synthesizer, the CLI and the first two tabs have been through several releases; these
+have been through one. Expect rough edges, and expect some of this to change shape.
+Songs are readable `.bmsong` text, so nothing you write is trapped in a format that
+only this version understands.
 
 **A piano roll, and a plugin.**
 
@@ -15,6 +21,28 @@ overruns and says so in amber rather than quietly pushing everything after it la
 `TIE` slurs: the note carries on the vowel already sounding and glides onto its pitch,
 with the word's closing consonants moved to the end of the slur, which is what a singer
 does with "straight" held over two notes.
+
+**Editing it.** Ctrl+click selects more than one note — drag them together and they keep
+their spacing, or take exactly two and `TIE` joins them, the later one giving up its word
+to carry the earlier one's vowel. Right-click a note for a menu: delete it, send it up or
+down an octave, move it to a named pitch. Drag either edge to change where a note starts
+or how long it lasts, with the cursor saying so before you press. Ctrl+Z and Ctrl+Y, with
+a drag or a typed word counting as one step rather than sixty. Zoom in and out, and the
+grid takes whatever height the window has. Dragging a note up or down says it at the new
+pitch as it passes, so choosing a note by ear does not mean letting go to hear it.
+
+**The voice's pitch sliders go dim on a score that names its own notes.** They were live
+controls that did nothing: `[note]` is a key on the keyboard rather than a shift of the
+voice, and the roll writes one on every note, so `pitch` and `range` decided nothing while
+the effects beside them went on working. Both rows now say so. `[pitch]` is the other
+thing — it moves the line without replacing the voice underneath — and leaves them live.
+
+**Fixed: a word too long for one note was cut mid-phoneme.** A note holds one syllable,
+but the word box takes more, and "extraordinary" spells to 33 characters against a buffer
+of 32. The tail was dropped wherever it landed, which is the bad part — the pieces ARPABET
+leaves behind are mostly still phonemes, `NG` cut short is `N` and `TH` is `T`, so the
+note went on singing with a sound in it nobody chose. It now stops at a phoneme boundary
+and says the word did not fit.
 
 **`BENCmouth.clap`** — the same song inside a DAW. It is a score player: the plugin owns
 the song, the host owns the transport, and pressing play, scrubbing or looping is followed

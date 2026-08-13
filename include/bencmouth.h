@@ -29,8 +29,8 @@ extern "C" {
  * and tools/check_version.sh holds a release tag to it - v0.2.0 and v0.2.1
  * both shipped an About box saying 0.1.3, because nothing compared the two. */
 #define BM_VERSION_MAJOR 0
-#define BM_VERSION_MINOR 2
-#define BM_VERSION_PATCH 4
+#define BM_VERSION_MINOR 3
+#define BM_VERSION_PATCH 0
 
 /* ------------------------------------------------------------------ *
  * Compile-time configuration
