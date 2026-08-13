@@ -16,9 +16,11 @@ public-domain 1976 US Naval Research Laboratory report. See `ref/README.md` for 
 provenance.
 
 **No dynamic allocation. No libm in the core. No I/O below the host layer.** The engine
-holds all its state in caller-supplied storage — 19 KB without the effects stage, 76 KB
+holds all its state in caller-supplied storage — 23 KB without the effects stage, 82 KB
 with it, since two of those effects are delay lines — which means it drops into a
-microcontroller, an audio callback, or a WASM module unchanged.
+microcontroller, an audio callback, or a WASM module unchanged. It has been run on
+emulated Cortex-M3, M4F and M7, where it renders audio byte-identical to the x86-64
+build; see [embedded/README.md](embedded/README.md).
 
 ![the BENCmouth GUI](assets/gui.png)
 
@@ -718,7 +720,15 @@ Tunables, all overridable with `-D`:
 | `BM_FIXED_POINT` | 0 | set 1 for a Q18 integer sample loop (no FPU needed) |
 | `BM_WITH_MARKUP` | 1 | set 0 to drop the inline-markup parser |
 | `BM_WITH_DICT` | 0 | set 1 (via `make dict`) to compile CMUdict in |
-| `BM_ENGINE_RESERVED` | 65536 | storage union size; actual use is ~8.5 KB |
+| `BM_WITH_EFFECTS` | 1 | set 0 to drop the stage *and* its 58 KB of delay lines |
+| `BM_ENGINE_RESERVED` | 131072 | storage union size; actual use is 83,912 with effects, 23,184 without |
+
+`BM_WITH_EFFECTS` is the largest single lever on RAM and `BM_MAX_PHONEMES` is the second.
+See [embedded/README.md](embedded/README.md) for flash and RAM measured at each setting,
+for instruction counts taken by running the core on emulated Cortex-M3, M4F and M7, and
+for the two results that matter when choosing a part: every configuration renders audio
+byte-identical to the x86-64 build, and an FPU is worth 16.7× while `BM_FIXED_POINT`
+recovers only 1.34× of that — so target a Cortex-M4F, not an M0 or M3.
 
 ---
 
