@@ -715,7 +715,7 @@ Tunables, all overridable with `-D`:
 |---|---|---|
 | `BM_MAX_PHONEMES` | 512 | phonemes buffered per utterance |
 | `BM_MAX_TEXT` | 1024 | bytes of text buffered |
-| `BM_NFORMANTS` | 5 | drop to 3 below ~10 kHz output |
+| `BM_NFORMANTS` | 5 | 3 is usable below ~10 kHz, but saves only 7.5% and is not `-Werror` clean — see [embedded/README.md](embedded/README.md) |
 | `BM_SAMPLE_FLOAT` | 1 | set 0 for `int16_t` output |
 | `BM_FIXED_POINT` | 0 | set 1 for a Q18 integer sample loop (no FPU needed) |
 | `BM_WITH_MARKUP` | 1 | set 0 to drop the inline-markup parser |

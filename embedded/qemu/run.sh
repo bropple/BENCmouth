@@ -6,6 +6,7 @@
 # Usage:  embedded/qemu/run.sh              all configurations
 #         embedded/qemu/run.sh m3-fixed     just one
 #         OPT=-O2 embedded/qemu/run.sh      at a different optimisation level
+#         EXTRA=-DBM_NFORMANTS=3 embedded/qemu/run.sh
 #
 # Requires qemu-system-arm, arm-none-eabi-gcc and glib headers (for the plugin).
 # Newlib, specs files and semihosting libraries are deliberately unused - see
@@ -43,6 +44,7 @@ CORE=$(ls src/core/*.c | grep -v dict_data)
 COMMON="-std=c99 -ffreestanding -ffp-contract=off -fno-common -Iinclude -Isrc/core -I$H"
 HOSTCOMMON="-std=c99 -ffp-contract=off -Iinclude -Isrc/core -I$H"
 OPT="${OPT:--Os}"
+EXTRA="${EXTRA:-}"
 RATE="${RATE:-22050}"
 
 # name|machine|cpu|arch flags|core config
@@ -62,10 +64,10 @@ host_run() {   # $1 = core config
     local cfg="$1" d="$OUT/host" f
     rm -rf "$d"; mkdir -p "$d"
     for f in $CORE; do
-        gcc $HOSTCOMMON $OPT $cfg -c "$f" -o "$d/$(basename "$f" .c).o" \
+        gcc $HOSTCOMMON $OPT $cfg $EXTRA -c "$f" -o "$d/$(basename "$f" .c).o" \
             2>"$d/cc.err" || { echo "host compile FAILED $f"; return 1; }
     done
-    gcc $HOSTCOMMON $OPT $cfg -DBENCH_RATE=$RATE "$H/bench.c" "$d"/*.o \
+    gcc $HOSTCOMMON $OPT $cfg $EXTRA -DBENCH_RATE=$RATE "$H/bench.c" "$d"/*.o \
         -o "$d/bench" -lm 2>"$d/ld.err" || { echo "host link FAILED"; return 1; }
     "$d/bench"
 }
@@ -76,7 +78,7 @@ build_core() { # $1 name  $2 arch  $3 cfg
     local name="$1" arch="$2" cfg="$3" d="$OUT/$name" f
     rm -rf "$d"; mkdir -p "$d"
     for f in $CORE "$H/startup.c" "$H/shim.c"; do
-        arm-none-eabi-gcc $COMMON $OPT $arch $cfg \
+        arm-none-eabi-gcc $COMMON $OPT $arch $cfg $EXTRA \
             -c "$f" -o "$d/$(basename "$f" .c).o" 2>"$d/cc.err" || {
                 echo "compile FAILED $(basename "$f")"; sed 's/^/      /' "$d/cc.err" | head -3; return 1; }
     done
@@ -86,7 +88,10 @@ run_one() { # $1 name  $2 machine  $3 cpu  $4 arch  $5 cfg  $6 render
     local name="$1" machine="$2" cpu="$3" arch="$4" cfg="$5" render="$6"
     local d="$OUT/$name"
 
-    arm-none-eabi-gcc $COMMON $OPT $arch $cfg -DBM_QEMU_TARGET=1 \
+    # $EXTRA must reach bench.c too. BM_NFORMANTS sizes arrays inside bm_voice,
+    # which bm_config embeds, which bench.c puts on its stack - build the two
+    # halves with different values and the struct layouts disagree silently.
+    arm-none-eabi-gcc $COMMON $OPT $arch $cfg $EXTRA -DBM_QEMU_TARGET=1 \
         -DBENCH_RATE=$RATE -DBENCH_RENDER=$render \
         -c "$H/bench.c" -o "$d/bench.o" 2>"$d/cc.err" || {
             echo "compile FAILED bench.c"; sed 's/^/      /' "$d/cc.err" | head -3; return 1; }

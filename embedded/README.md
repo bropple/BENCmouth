@@ -187,9 +187,30 @@ that was only buying 1.34x to begin with.
 | 8000 | 37,600 | 4.700 s | 0.1004 | 0.4871 |
 
 No instability, no clipping, duration preserved. 8 kHz buys 2.76x the cycle
-budget of 22050 and costs the top of the spectrum - set `BM_NFORMANTS=3` below
-about 10 kHz, and expect sibilants to suffer first. Comparison renders are in
-`render/mcu-*.wav`.
+budget of 22050 and costs the top of the spectrum - sibilants suffer first.
+Comparison renders are in `render/mcu-*.wav`.
+
+### BM_NFORMANTS
+
+The README suggests dropping to 3 below about 10 kHz. Measured, that is worth
+less than it sounds on both axes:
+
+- **7.5% of the instruction count.** 7,081 per sample against 7,651, on M3 fixed
+  point, still bit-exact against the host. Removing four of twelve resonators
+  saves almost nothing, for the same reason fixed point saves almost nothing:
+  in a Q18 build a resonator tick makes zero soft-float calls and is already
+  close to free. The glottis is the cost, and it does not care how many
+  formants there are.
+- **About 6.3 dB of level.** F4 and F5 carry real energy; dropping them takes
+  RMS from 0.100 to 0.045. Anything comparing the two needs gain compensation
+  or it is comparing loudness.
+
+It also is not warning-clean. `bm_phonemes.h` and `bm_voice.c` hold formant
+tables written as five literal values, so a build with `BM_NFORMANTS=3` emits
+"excess elements in array initializer" for each one. The excess initialisers are
+discarded, which happens to be the intended behaviour - F1 through F3 are kept -
+but a `-Werror` build will not compile. Setting this to anything but 5 means
+fixing those tables first.
 
 The Q18 loop measures **52.1 dB SNR** against the float reference over a
 14-second utterance, against the 52.9 dB `bm_fixed.h` claims for the format.
