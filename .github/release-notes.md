@@ -4,6 +4,19 @@ An original work in the spirit of S.A.M., built from the published literature on
 cascade/parallel formant synthesis rather than from any existing implementation.
 See `ref/README.md` for provenance, including the sources deliberately not consulted.
 
+## New in 0.3.2
+
+**Windows: it installs into `C:\Program Files\BENCO\BENCmouth`** rather than
+straight into Program Files. There are several BENC programs now and they are
+one company's; a row of them scattered through Program Files reads as several
+unrelated things from several unrelated people. The uninstaller takes the
+BENCO folder too, when it is empty and this was the last one in it.
+
+The plug-ins are unaffected — CLAP and VST3 go where their hosts look, which
+was never this directory. An existing installation is upgraded where it
+already is, so this is where a fresh install goes; an older BENCmouth stays in
+`Program Files\BENCmouth` until it is uninstalled.
+
 ## New in 0.3.1
 
 **The GUI opens ten and a half seconds faster on Windows**, on the machines where
