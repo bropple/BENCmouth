@@ -498,10 +498,25 @@ jobs:
             Write-Host "  --  no VST3 in this installer"
           }
 
-          # _?= keeps the uninstaller from copying itself to temp and returning
-          # before it has finished, which is what makes -Wait meaningless.
-          Start-Process -FilePath 'C:\Program Files\BENCO\BENCmouth\uninstall.exe' `
-                        -ArgumentList '/S', '_?=C:\Program Files\BENCO\BENCmouth' -Wait
+          # Deliberately without _?= this time, so the uninstaller does what it
+          # does for a real person: copy itself to temp, delete the original
+          # and the directory it was in, and exit. _?= suppresses exactly that
+          # - it keeps uninstall.exe in place, so the install directory can
+          # never end up empty and the last thing the script does can never be
+          # observed.
+          #
+          # The cost is that the first process returns immediately and the work
+          # happens in the temp copy, which NSIS names Au_.exe. So: wait for
+          # the launcher, then wait for the copy.
+          $p = Start-Process -FilePath 'C:\Program Files\BENCO\BENCmouth\uninstall.exe' `
+                             -ArgumentList '/S' -PassThru
+          $p.WaitForExit()
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Process -Name 'Au_' -ErrorAction SilentlyContinue) -and
+                 (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 300
+          }
+          Start-Sleep -Milliseconds 500
 
           # And taken back out again. A plugin left behind in a shared folder
           # after an uninstall is worse than one that never installed: the host
@@ -511,11 +526,11 @@ jobs:
           Write-Host "  ok  both plug-ins removed"
 
           # The install directory, and the BENCO folder above it. The
-          # uninstaller removes that second one only when it is empty, so on a
-          # runner - where BENCmouth is the only BENC program installed - it
-          # should be gone. This is the assertion for a line that cannot be
-          # tested any other way: RMDir without /r either takes the folder or
-          # silently does not, and reading the script cannot tell you which.
+          # uninstaller takes that second one only when it is empty, and on a
+          # runner BENCmouth is the only BENC program installed - so it should
+          # be gone. This is the check for a line that cannot be verified any
+          # other way: RMDir without /r either removes the folder or silently
+          # does not, and reading the script cannot tell you which.
           if (Test-Path 'C:\Program Files\BENCO\BENCmouth') {
             throw "the install directory survived the uninstall"
           }
