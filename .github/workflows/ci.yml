@@ -471,7 +471,7 @@ jobs:
           }
           Write-Host "  ok  PATH untouched by the default install"
 
-          $bm = 'C:\Program Files\BENCmouth\bm.exe'
+          $bm = 'C:\Program Files\BENCO\BENCmouth\bm.exe'
           if (-not (Test-Path $bm)) { throw "bm.exe was not installed" }
           & $bm --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "bm.exe --help exited $LASTEXITCODE" }
@@ -500,8 +500,8 @@ jobs:
 
           # _?= keeps the uninstaller from copying itself to temp and returning
           # before it has finished, which is what makes -Wait meaningless.
-          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
-                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          Start-Process -FilePath 'C:\Program Files\BENCO\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCO\BENCmouth' -Wait
 
           # And taken back out again. A plugin left behind in a shared folder
           # after an uninstall is worse than one that never installed: the host
@@ -510,7 +510,21 @@ jobs:
           if (Test-Path $vst3) { throw "the VST3 survived the uninstall: $vst3" }
           Write-Host "  ok  both plug-ins removed"
 
-          Remove-Item -Recurse -Force 'C:\Program Files\BENCmouth' `
+          # The install directory, and the BENCO folder above it. The
+          # uninstaller removes that second one only when it is empty, so on a
+          # runner - where BENCmouth is the only BENC program installed - it
+          # should be gone. This is the assertion for a line that cannot be
+          # tested any other way: RMDir without /r either takes the folder or
+          # silently does not, and reading the script cannot tell you which.
+          if (Test-Path 'C:\Program Files\BENCO\BENCmouth') {
+            throw "the install directory survived the uninstall"
+          }
+          if (Test-Path 'C:\Program Files\BENCO') {
+            throw "the BENCO folder survived the uninstall, and it was empty"
+          }
+          Write-Host "  ok  install directory and the empty BENCO folder removed"
+
+          Remove-Item -Recurse -Force 'C:\Program Files\BENCO' `
                       -ErrorAction SilentlyContinue
 
       - name: /PATH adds exactly one entry, and the uninstaller takes it back
@@ -531,7 +545,7 @@ jobs:
           if ($added.Count -ne 1) {
             throw "expected one BENCmouth entry, found $($added.Count): $($added -join ' | ')"
           }
-          if ($added[0] -ne 'C:\Program Files\BENCmouth') {
+          if ($added[0] -ne 'C:\Program Files\BENCO\BENCmouth') {
             throw "the entry is not the install directory: $($added[0])"
           }
           Write-Host "  ok  one entry, and it is the install directory"
@@ -549,8 +563,8 @@ jobs:
           }
           Write-Host "  ok  an upgrade keeps the entry, and keeps exactly one"
 
-          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
-                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          Start-Process -FilePath 'C:\Program Files\BENCO\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCO\BENCmouth' -Wait
           $end = [Environment]::GetEnvironmentVariable('Path', 'User')
           Write-Host "  end:    $end"
           if ($end -ne $before) {
@@ -637,8 +651,8 @@ jobs:
           }
           Write-Host "  ok  a 3000-character PATH survived, with one entry added"
 
-          Start-Process -FilePath 'C:\Program Files\BENCmouth\uninstall.exe' `
-                        -ArgumentList '/S', '_?=C:\Program Files\BENCmouth' -Wait
+          Start-Process -FilePath 'C:\Program Files\BENCO\BENCmouth\uninstall.exe' `
+                        -ArgumentList '/S', '_?=C:\Program Files\BENCO\BENCmouth' -Wait
           $end = [Environment]::GetEnvironmentVariable('Path', 'User')
           if ($end -ne $before) {
             throw "PATH was not restored exactly after a long-PATH install"
