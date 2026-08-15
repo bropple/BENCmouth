@@ -1123,6 +1123,15 @@ a missing helper program.
 raylib is the only third-party dependency in the project and it is confined to
 `src/gui/` — `make`, `make test` and `make check-freestanding` all work without it.
 
+**Building raylib yourself, for Windows:** run `tools/no-gamepads.sh` against the raylib
+source before building it, as every workflow here does. GLFW looks for game controllers
+while the window is being created, and on a machine with a lot of things plugged into it
+that took ten and a half seconds before the window appeared — measured. Nothing in this
+program reads a joystick. A raylib built without the script works perfectly and opens
+slowly on exactly one kind of machine; the same wait shows up in Windows' own Game
+Controllers panel (`joy.cpl`) there, which is how to tell it apart from anything this
+program is doing.
+
 On macOS the GUI ships as a disk image: mount `bencmouth-gui-VERSION-macos-arm64.dmg`
 and drag BENCmouth to Applications. Inside it is `BENCmouth.app`, which is not packaging
 taste — a bundle is the only way a macOS program gets an icon. Windows reads the icon from a resource inside the
