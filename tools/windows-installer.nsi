@@ -50,7 +50,15 @@ Name "BENCmouth ${VERSION}"
 OutFile "${OUTFILE}"
 Unicode true
 RequestExecutionLevel admin
-InstallDir "$PROGRAMFILES64\BENCmouth"
+
+; Under a BENCO folder, not straight into Program Files. There are several of
+; these now and they are one company's; a row of BENC-somethings scattered
+; through Program Files reads as several unrelated things from several
+; unrelated people.
+;
+; The uninstaller takes the BENCO folder with it only when this was the last
+; one in it - see the end of the uninstall section.
+InstallDir "$PROGRAMFILES64\BENCO\BENCmouth"
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -102,7 +110,7 @@ VIAddVersionKey "LegalCopyright"  "MIT licensed"
 ; dark tiles on MUI's white; that part is by design.
 
 !define MUI_WELCOMEPAGE_TITLE "BENCmouth ${VERSION}"
-!define MUI_WELCOMEPAGE_TEXT "A formant speech synthesizer. Text in, speech out.$\r$\n$\r$\nThis installs the BENCmouth window and the bm command-line program, with the voices and the songs, into Program Files for everyone who uses this computer.$\r$\n$\r$\nAn existing BENCmouth is replaced, not installed beside."
+!define MUI_WELCOMEPAGE_TEXT "A formant speech synthesizer. Text in, speech out.$\r$\n$\r$\nThis installs the BENCmouth window and the bm command-line program, with the voices and the songs, into Program Files\BENCO for everyone who uses this computer.$\r$\n$\r$\nAn existing BENCmouth is replaced, not installed beside."
 
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Run BENCmouth"
@@ -713,6 +721,19 @@ Section "Uninstall"
   RMDir  "$INSTDIR\voices"
   RMDir  "$INSTDIR\songs"
   RMDir  "$INSTDIR"
+
+  ; And the BENCO folder above it, when this went to the default place.
+  ;
+  ; RMDir without /r removes a directory only when it is empty, so BENCO goes
+  ; when this was the last BENC program in it and stays when another is still
+  ; installed beside it. RMDir /r there would uninstall the neighbours.
+  ;
+  ; Only for the default directory. Setup lets the directory be changed, and
+  ; what sits above a path somebody typed themselves is not this uninstaller's
+  ; to remove - an install into D:\Apps\BENCmouth should not take D:\Apps with
+  ; it on the way out, however empty it happens to be.
+  StrCmp $INSTDIR "$PROGRAMFILES64\BENCO\BENCmouth" 0 +2
+    RMDir "$INSTDIR\.."
 
   ; The plugins, from wherever they were put. Read back from the registry
   ; rather than assumed, so a future release that changes the location still
